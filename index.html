@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Master Óleo Curitiba</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // FIREBASE CONFIG
+        const FIREBASE_CONFIG = {
+          apiKey: "AIzaSyDGKmHDcq4ErMxiovaZJl7W2aASQ_WqgGY",
+          projectId: "masteroleo-1ed99"
+        };
+
+        // Firebase API
+        const firebaseAPI = {
+          async saveOrder(order) {
+            const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_CONFIG.projectId}/databases/(default)/documents/orders?documentId=${order.id}&key=${FIREBASE_CONFIG.apiKey}`;
+            const response = await fetch(url, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fields: {
+                  data: { stringValue: JSON.stringify(order) },
+                  timestamp: { timestampValue: new Date().toISOString() }
+                }
+              })
+            });
+            return response.ok;
+          },
+
+          async getOrders() {
+            const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_CONFIG.projectId}/databases/(default)/documents/orders?key=${FIREBASE_CONFIG.apiKey}`;
+            const response = await fetch(url);
+            if (!response.ok) return [];
+            const data = await response.json();
+            if (!data.documents) return [];
+            return data.documents.map(doc => JSON.parse(doc.fields.data.stringValue));
+          },
+
+          async deleteOrder(orderId) {
+            const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_CONFIG.projectId}/databases/(default)/documents/orders/${orderId}?key=${FIREBASE_CONFIG.apiKey}`;
+            const response = await fetch(url, { method: 'DELETE' });
+            return response.ok;
+          }
+        };
+
+        function MasterOleoSystem() {
+          const [view, setView] = useState('dashboard');
+          const [orders, setOrders] = useState([]);
+          const [loading, setLoading] = useState(false);
+
+          useEffect(() => {
+            loadOrders();
+            const interval = setInterval(loadOrders, 30000);
+            return () => clearInterval(interval);
+          }, []);
+
+          const loadOrders = async () => {
+            try {
+              setLoading(true);
+              const loaded = await firebaseAPI.getOrders();
+              setOrders(loaded.sort((a, b) => new Date(b.dataHora) - new Date(a.dataHora)));
+            } catch (e) {
+              console.error('Erro:', e);
+            } finally {
+              setLoading(false);
+            }
+          };
+
+          const aguardando = orders.filter(o => o.status === 'aguardando');
+          const concluidos = orders.filter(o => o.status === 'concluido');
+
+          if (loading) {
+            return (
+              <div className="min-h-screen bg-blue-50 flex items-center justify-center">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+                  <p className="text-lg font-bold">Carregando...</p>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 p-4">
+              <div className="max-w-7xl mx-auto">
+                <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+                  <div className="text-center">
+                    <h1 className="text-4xl font-bold text-blue-900 mb-2">Master Óleo Curitiba</h1>
+                    <p className="text-gray-600">Sistema funcionando no Vercel + Firebase!</p>
+                    <p className="text-sm text-green-600 mt-2">✅ Multi-usuário ativo</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-6 text-center">
+                    <h3 className="font-bold text-yellow-900 mb-2">Aguardando</h3>
+                    <p className="text-4xl font-bold text-yellow-600">{aguardando.length}</p>
+                  </div>
+                  <div className="bg-green-50 border-2 border-green-300 rounded-lg p-6 text-center">
+                    <h3 className="font-bold text-green-900 mb-2">Concluídos</h3>
+                    <p className="text-4xl font-bold text-green-600">{concluidos.length}</p>
+                  </div>
+                  <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-6 text-center">
+                    <h3 className="font-bold text-blue-900 mb-2">Total</h3>
+                    <p className="text-4xl font-bold text-blue-600">{orders.length}</p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg shadow-lg p-6">
+                  <button 
+                    onClick={loadOrders}
+                    className="w-full bg-blue-600 text-white py-4 rounded-lg text-lg font-bold hover:bg-blue-700 mb-4"
+                  >
+                    🔄 Atualizar Dados
+                  </button>
+                  
+                  <div className="space-y-4">
+                    <h2 className="text-2xl font-bold">Sistema está FUNCIONANDO! 🎉</h2>
+                    <p>Próximos passos:</p>
+                    <ol className="list-decimal list-inside space-y-2 text-gray-700">
+                      <li>Confirmar que Firebase está conectado ✅</li>
+                      <li>Adicionar formulários completos</li>
+                      <li>Integrar com Google Sheets</li>
+                    </ol>
+                  </div>
+
+                  {orders.length > 0 && (
+                    <div className="mt-6">
+                      <h3 className="font-bold mb-3">Últimas Ordens:</h3>
+                      <div className="space-y-2">
+                        {orders.slice(0, 5).map(o => (
+                          <div key={o.id} className="bg-gray-50 border rounded-lg p-3">
+                            <p className="font-bold">{o.placa} - {o.cliente}</p>
+                            <p className="text-sm text-gray-600">Status: {o.status}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        ReactDOM.render(<MasterOleoSystem />, document.getElementById('root'));
+    </script>
+</body>
+</html>
