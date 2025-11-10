@@ -3,766 +3,2030 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Master Óleo Curitiba</title>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Master Óleo Curitiba - Sistema de Gestão</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .stats {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .stat {
+            text-align: center;
+            padding: 10px 20px;
+            background: #f7fafc;
+            border-radius: 10px;
+        }
+        
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #718096;
+            text-transform: uppercase;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #5a67d8;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-success {
+            background: #48bb78;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #38a169;
+        }
+        
+        .btn-danger {
+            background: #f56565;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #e53e3e;
+        }
+        
+        .btn-secondary {
+            background: #718096;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #4a5568;
+        }
+        
+        .filters {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .filter-btn {
+            padding: 8px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        
+        .filter-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        
+        .cards-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+            position: relative;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+        
+        .card-aguardando {
+            border-left: 5px solid #f6ad55;
+        }
+        
+        .card-concluido {
+            border-left: 5px solid #48bb78;
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .order-number {
+            background: #667eea;
+            color: white;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        
+        .queue-position {
+            background: #f6ad55;
+            color: white;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        
+        .card-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 10px;
+        }
+        
+        .card-info {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .info-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #4a5568;
+        }
+        
+        .info-label {
+            font-weight: 600;
+            color: #2d3748;
+        }
+        
+        .services-list {
+            background: #f7fafc;
+            padding: 10px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        
+        .service-item {
+            font-size: 13px;
+            color: #4a5568;
+            padding: 3px 0;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .badge-upsell {
+            background: #ffd700;
+            color: #744210;
+        }
+        
+        .badge-problem {
+            background: #fc8181;
+            color: #742a2a;
+        }
+        
+        .card-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 15px;
+            max-width: 900px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+        }
+        
+        .modal-header {
+            padding: 25px;
+            border-bottom: 2px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 10;
+        }
+        
+        .modal-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2d3748;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: #718096;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.3s;
+        }
+        
+        .close-btn:hover {
+            background: #f7fafc;
+            color: #2d3748;
+        }
+        
+        .modal-body {
+            padding: 25px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-label {
+            display: block;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .form-input,
+        .form-select,
+        .form-textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.3s;
+            font-family: inherit;
+        }
+        
+        .form-input:focus,
+        .form-select:focus,
+        .form-textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .form-textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            background: #f7fafc;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .checkbox-group:hover {
+            background: #edf2f7;
+        }
+        
+        .checkbox-group input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        
+        .checkbox-group label {
+            cursor: pointer;
+            font-weight: 500;
+            flex: 1;
+        }
+        
+        .step-indicator {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f7fafc;
+            border-radius: 10px;
+        }
+        
+        .step {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .step-number {
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            color: #718096;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        
+        .step.active .step-number {
+            background: #667eea;
+            color: white;
+        }
+        
+        .step.completed .step-number {
+            background: #48bb78;
+            color: white;
+        }
+        
+        .step-label {
+            font-weight: 600;
+            color: #718096;
+        }
+        
+        .step.active .step-label {
+            color: #667eea;
+        }
+        
+        .alert {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .alert-success {
+            background: #c6f6d5;
+            color: #22543d;
+            border-left: 4px solid #48bb78;
+        }
+        
+        .alert-warning {
+            background: #feebc8;
+            color: #744210;
+            border-left: 4px solid #f6ad55;
+        }
+        
+        .alert-danger {
+            background: #fed7d7;
+            color: #742a2a;
+            border-left: 4px solid #f56565;
+        }
+        
+        .alert-info {
+            background: #bee3f8;
+            color: #2c5282;
+            border-left: 4px solid #4299e1;
+        }
+        
+        .photo-upload {
+            border: 2px dashed #cbd5e0;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .photo-upload:hover {
+            border-color: #667eea;
+            background: #f7fafc;
+        }
+        
+        .photo-preview {
+            max-width: 200px;
+            max-height: 200px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #718096;
+        }
+        
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+        
+        .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2d3748;
+            margin: 20px 0 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        
+        .value-display {
+            background: #f7fafc;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        
+        .value-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            font-size: 16px;
+        }
+        
+        .value-label {
+            font-weight: 600;
+            color: #4a5568;
+        }
+        
+        .value-amount {
+            font-weight: bold;
+            color: #2d3748;
+        }
+        
+        .value-total {
+            border-top: 2px solid #cbd5e0;
+            padding-top: 12px;
+            margin-top: 8px;
+        }
+        
+        .value-total .value-amount {
+            color: #667eea;
+            font-size: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .cards-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .stats {
+                justify-content: center;
+            }
+        }
+    </style>
 </head>
 <body>
     <div id="root"></div>
-    
-    <script>
-        const { useState, useEffect, createElement: h } = React;
 
-        const FIREBASE = {
-          apiKey: "AIzaSyDGKmHDcq4ErMxiovaZJl7W2aASQ_WqgGY",
-          projectId: "masteroleo-1ed99"
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Configuração Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyDGKmHDcq4ErMxiovaZJl7W2aASQ_WqgGY",
+            authDomain: "masteroleo-1ed99.firebaseapp.com",
+            projectId: "masteroleo-1ed99",
+            storageBucket: "masteroleo-1ed99.firebasestorage.app",
+            messagingSenderId: "242752297319",
+            appId: "1:242752297319:web:e6384e400ba2abc2aa37c2",
+            measurementId: "G-QL78TZBW3V"
         };
 
-        const firebaseAPI = {
-          async save(order) {
-            const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE.projectId}/databases/(default)/documents/orders?documentId=${order.id}&key=${FIREBASE.apiKey}`;
-            const res = await fetch(url, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                fields: {
-                  data: { stringValue: JSON.stringify(order) },
-                  ts: { timestampValue: new Date().toISOString() }
-                }
-              })
+        // Inicializar Firebase
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+
+        // Função para obter data/hora no horário de Brasília
+        const getBrasilDateTime = () => {
+            return new Date().toLocaleString('pt-BR', {
+                timeZone: 'America/Sao_Paulo',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
             });
-            return res.ok;
-          },
-
-          async getAll() {
-            const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE.projectId}/databases/(default)/documents/orders?key=${FIREBASE.apiKey}`;
-            const res = await fetch(url);
-            if (!res.ok) return [];
-            const data = await res.json();
-            if (!data.documents) return [];
-            return data.documents.map(doc => JSON.parse(doc.fields.data.stringValue));
-          },
-
-          async delete(id) {
-            const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE.projectId}/databases/(default)/documents/orders/${id}?key=${FIREBASE.apiKey}`;
-            const res = await fetch(url, { method: 'DELETE' });
-            return res.ok;
-          }
         };
 
-        const getBRTime = () => new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-        const getBRDate = () => new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-');
+        // Função para formatar data/hora para input
+        const formatDateTimeForInput = () => {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        };
 
+        // Função para calcular diferença de tempo
+        const calcularDiferencaTempo = (inicio, fim) => {
+            const dataInicio = new Date(inicio.replace(/(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})/, '$3-$2-$1T$4:$5:$6'));
+            const dataFim = new Date(fim.replace(/(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})/, '$3-$2-$1T$4:$5:$6'));
+            const diffMs = dataFim - dataInicio;
+            const diffMinutes = Math.floor(diffMs / 60000);
+            const hours = Math.floor(diffMinutes / 60);
+            const minutes = diffMinutes % 60;
+            return `${hours}h ${minutes}min`;
+        };
+
+        // Componente principal
         function App() {
-          const [view, setView] = useState('dash');
-          const [orders, setOrders] = useState([]);
-          const [current, setCurrent] = useState(null);
-          const [step, setStep] = useState(1);
-          const [loading, setLoading] = useState(false);
-          const [filtro, setFiltro] = useState('hoje');
-          const [showDetails, setShowDetails] = useState(null);
+            const [orders, setOrders] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [showNewOrderModal, setShowNewOrderModal] = useState(false);
+            const [showExecuteModal, setShowExecuteModal] = useState(false);
+            const [showDetailsModal, setShowDetailsModal] = useState(false);
+            const [selectedOrder, setSelectedOrder] = useState(null);
+            const [filterDate, setFilterDate] = useState('today');
+            const [customDateStart, setCustomDateStart] = useState('');
+            const [customDateEnd, setCustomDateEnd] = useState('');
 
-          const [form, setForm] = useState({
-            vendedor: '', placa: '', marca: '', modelo: '', motor: '', ano: '', cambio: '', combustivel: '',
-            cliente: '', tel: '', cpf: '', dataNasc: '', km: '', valorInicial: '', apto: '', motivo: '',
-            dataHora: new Date().toISOString().slice(0, 16),
-            oleoMotor: false, oleoMarca: '', oleoQtd: '',
-            filtroOleo: false, filtroTipo: '',
-            arMotor: false, arMotorCod: '',
-            arCond: false, arCondCod: '',
-            combust: false, combustCod: '',
-            cambioM: false, cambioMMarca: '', cambioMQtd: '',
-            cambioA: false, cambioAMarca: '', cambioAQtd: '', cambioAFiltro: false, cambioAFiltroCod: '',
-            palhetas: false, palhetasCod: '',
-            militec: false,
-            aditivo: false, aditivoQual: '',
-            flush: false, flushDesc: ''
-          });
-
-          const [svc, setSvc] = useState({
-            lubrif: '', km: '', obsCarro: '', obsOferta: '', fotos: [], upsells: []
-          });
-
-          const vendedores = ['Caio', 'Carlos', 'Faust', 'Luis'];
-          const lubris = ['Caio', 'Luis'];
-
-          useEffect(() => {
-            load();
-            const i = setInterval(load, 30000);
-            return () => clearInterval(i);
-          }, []);
-
-          const load = async () => {
-            try {
-              setLoading(true);
-              const data = await firebaseAPI.getAll();
-              setOrders(data.sort((a, b) => new Date(b.dataHora) - new Date(a.dataHora)));
-            } catch (e) {
-              console.error(e);
-            } finally {
-              setLoading(false);
-            }
-          };
-
-          const save = async (order) => {
-            try {
-              setLoading(true);
-              const ok = await firebaseAPI.save(order);
-              if (ok) {
-                await load();
-                return true;
-              }
-              return false;
-            } catch (e) {
-              alert('Erro ao salvar');
-              return false;
-            } finally {
-              setLoading(false);
-            }
-          };
-
-          const del = async (id) => {
-            if (!confirm('Cancelar?')) return;
-            try {
-              await firebaseAPI.delete(id);
-              await load();
-              alert('Cancelada');
-            } catch (e) {
-              alert('Erro');
-            }
-          };
-
-          const newOrder = () => {
-            setForm({
-              vendedor: '', placa: '', marca: '', modelo: '', motor: '', ano: '', cambio: '', combustivel: '',
-              cliente: '', tel: '', cpf: '', dataNasc: '', km: '', valorInicial: '', apto: '', motivo: '',
-              dataHora: new Date().toISOString().slice(0, 16),
-              oleoMotor: false, oleoMarca: '', oleoQtd: '',
-              filtroOleo: false, filtroTipo: '',
-              arMotor: false, arMotorCod: '',
-              arCond: false, arCondCod: '',
-              combust: false, combustCod: '',
-              cambioM: false, cambioMMarca: '', cambioMQtd: '',
-              cambioA: false, cambioAMarca: '', cambioAQtd: '', cambioAFiltro: false, cambioAFiltroCod: '',
-              palhetas: false, palhetasCod: '',
-              militec: false,
-              aditivo: false, aditivoQual: '',
-              flush: false, flushDesc: ''
-            });
-            setView('new');
-            setStep(1);
-          };
-
-          const submitOrder = async () => {
-            if (!form.vendedor || !form.placa || !form.cliente) {
-              alert('Preencha vendedor, placa e cliente');
-              return;
-            }
-
-            const order = {
-              id: Date.now().toString(),
-              num: orders.length + 1,
-              ...form,
-              status: 'aguardando',
-              lubrif: null,
-              inicio: null,
-              fim: null,
-              fezUpsell: false,
-              qtdUpsell: 0,
-              valUpsell: 0,
-              valTotal: parseFloat(form.valorInicial) || 0,
-              problema: false
+            // Carregar ordens do Firebase
+            const loadOrders = async () => {
+                try {
+                    setLoading(true);
+                    const snapshot = await db.collection('orders').orderBy('numeroOrdem', 'desc').get();
+                    const ordersData = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    setOrders(ordersData);
+                } catch (error) {
+                    console.error('Erro ao carregar ordens:', error);
+                    alert('Erro ao carregar ordens. Verifique o console.');
+                } finally {
+                    setLoading(false);
+                }
             };
 
-            const ok = await save(order);
-            if (ok) {
-              setView('dash');
-              alert('Criada!');
-            }
-          };
+            useEffect(() => {
+                loadOrders();
+                const interval = setInterval(loadOrders, 30000); // Auto-refresh a cada 30s
+                return () => clearInterval(interval);
+            }, []);
 
-          const startSvc = (o) => {
-            setCurrent(o);
-            setSvc({ lubrif: '', km: o.km || '', obsCarro: '', obsOferta: '', fotos: [], upsells: [] });
-            setView('svc');
-            setStep(1);
-          };
+            // Filtrar ordens por data
+            const getFilteredOrders = () => {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
 
-          const finishSvc = async () => {
-            if (!svc.lubrif) {
-              alert('Selecione lubrificador');
-              return;
-            }
+                return orders.filter(order => {
+                    if (!order.dataHora) return false;
 
-            const valUpsell = svc.upsells.reduce((sum, u) => sum + u.val, 0);
+                    const orderDate = new Date(order.dataHora);
+                    orderDate.setHours(0, 0, 0, 0);
 
-            const updated = {
-              ...current,
-              status: 'concluido',
-              lubrif: svc.lubrif,
-              km: svc.km,
-              obsCarro: svc.obsCarro,
-              obsOferta: svc.obsOferta,
-              fotos: svc.fotos,
-              inicio: getBRTime(),
-              fim: getBRTime(),
-              fezUpsell: svc.upsells.length > 0,
-              qtdUpsell: svc.upsells.length,
-              valUpsell: valUpsell,
-              upsellsDet: svc.upsells,
-              valTotal: (parseFloat(current.valorInicial) || 0) + valUpsell
+                    switch (filterDate) {
+                        case 'today':
+                            return orderDate.getTime() === today.getTime();
+                        case 'week':
+                            const weekAgo = new Date(today);
+                            weekAgo.setDate(weekAgo.getDate() - 7);
+                            return orderDate >= weekAgo;
+                        case 'month':
+                            const monthAgo = new Date(today);
+                            monthAgo.setMonth(monthAgo.getMonth() - 1);
+                            return orderDate >= monthAgo;
+                        case 'custom':
+                            if (!customDateStart || !customDateEnd) return true;
+                            const start = new Date(customDateStart);
+                            const end = new Date(customDateEnd);
+                            return orderDate >= start && orderDate <= end;
+                        default:
+                            return true;
+                    }
+                });
             };
 
-            const ok = await save(updated);
-            if (ok) {
-              setView('dash');
-              setCurrent(null);
-              alert('Finalizado!');
-            }
-          };
+            const filteredOrders = getFilteredOrders();
+            const aguardando = filteredOrders.filter(o => o.status === 'aguardando');
+            const concluidos = filteredOrders.filter(o => o.status === 'concluido');
 
-          const addUpsell = (nome, val) => {
-            const v = parseFloat(val) || 0;
-            setSvc(s => ({ ...s, upsells: [...s.upsells, { nome, val: v }] }));
-          };
+            // Calcular próximo número de ordem
+            const getNextOrderNumber = () => {
+                if (orders.length === 0) return 1;
+                const maxNumber = Math.max(...orders.map(o => o.numeroOrdem || 0));
+                return maxNumber + 1;
+            };
 
-          const getResumo = (o) => {
-            const s = [];
-            if (o.oleoMotor) s.push(`Oleo ${o.oleoMarca} ${o.oleoQtd}L`);
-            if (o.filtroOleo) s.push(`Filtro ${o.filtroTipo}`);
-            if (o.arMotor) s.push(`Ar Motor ${o.arMotorCod}`);
-            if (o.arCond) s.push(`Ar Cond ${o.arCondCod}`);
-            if (o.combust) s.push(`Combust ${o.combustCod}`);
-            if (o.cambioM) s.push(`Cambio M ${o.cambioMMarca}`);
-            if (o.cambioA) s.push(`Cambio A ${o.cambioAMarca}`);
-            if (o.palhetas) s.push(`Palhetas ${o.palhetasCod}`);
-            if (o.militec) s.push('Militec');
-            if (o.aditivo) s.push(`Aditivo ${o.aditivoQual}`);
-            if (o.flush) s.push('Flush');
-            return s.join(', ') || 'Nenhum';
-          };
+            // Função para cancelar ordem
+            const cancelarOrdem = async (orderId) => {
+                if (confirm('Tem certeza que deseja cancelar esta ordem?')) {
+                    try {
+                        await db.collection('orders').doc(orderId).delete();
+                        alert('Ordem cancelada com sucesso!');
+                        loadOrders();
+                    } catch (error) {
+                        console.error('Erro ao cancelar ordem:', error);
+                        alert('Erro ao cancelar ordem.');
+                    }
+                }
+            };
 
-          const filtrar = () => {
-            let f = orders.filter(o => o.status === 'concluido');
-            if (filtro === 'hoje') {
-              const hoje = getBRDate();
-              f = f.filter(o => o.dataHora.slice(0, 10) === hoje);
-            } else if (filtro === 'semana') {
-              const sem = new Date();
-              sem.setDate(sem.getDate() - 7);
-              f = f.filter(o => new Date(o.dataHora) >= sem);
-            } else if (filtro === 'mes') {
-              const mes = new Date();
-              mes.setMonth(mes.getMonth() - 1);
-              f = f.filter(o => new Date(o.dataHora) >= mes);
-            }
-            return f;
-          };
+            return (
+                <div className="container">
+                    <div className="header">
+                        <div className="logo">
+                            🚗 Master Óleo Curitiba
+                        </div>
+                        <div className="stats">
+                            <div className="stat">
+                                <div className="stat-number">{aguardando.length}</div>
+                                <div className="stat-label">Aguardando</div>
+                            </div>
+                            <div className="stat">
+                                <div className="stat-number">{concluidos.length}</div>
+                                <div className="stat-label">Concluídos</div>
+                            </div>
+                            <div className="stat">
+                                <div className="stat-number">{filteredOrders.length}</div>
+                                <div className="stat-label">Total</div>
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                            <button className="btn btn-primary" onClick={() => setShowNewOrderModal(true)}>
+                                ➕ Nova Ordem
+                            </button>
+                            <button className="btn btn-secondary" onClick={loadOrders}>
+                                🔄 Atualizar
+                            </button>
+                        </div>
+                    </div>
 
-          const aguard = orders.filter(o => o.status === 'aguardando');
-          const concl = filtrar();
+                    <div className="filters">
+                        <span style={{ fontWeight: 'bold', color: '#2d3748' }}>Filtrar por:</span>
+                        <button 
+                            className={`filter-btn ${filterDate === 'today' ? 'active' : ''}`}
+                            onClick={() => setFilterDate('today')}
+                        >
+                            Hoje
+                        </button>
+                        <button 
+                            className={`filter-btn ${filterDate === 'week' ? 'active' : ''}`}
+                            onClick={() => setFilterDate('week')}
+                        >
+                            Última Semana
+                        </button>
+                        <button 
+                            className={`filter-btn ${filterDate === 'month' ? 'active' : ''}`}
+                            onClick={() => setFilterDate('month')}
+                        >
+                            Último Mês
+                        </button>
+                        <button 
+                            className={`filter-btn ${filterDate === 'all' ? 'active' : ''}`}
+                            onClick={() => setFilterDate('all')}
+                        >
+                            Todos
+                        </button>
+                    </div>
 
-          if (loading) {
-            return h('div', { className: 'min-h-screen bg-blue-50 flex items-center justify-center' },
-              h('div', { className: 'text-center' },
-                h('div', { className: 'animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4' }),
-                h('p', { className: 'text-lg font-bold' }, 'Carregando...')
-              )
+                    {loading ? (
+                        <div className="loading">
+                            <div className="spinner"></div>
+                        </div>
+                    ) : (
+                        <>
+                            {aguardando.length > 0 && (
+                                <>
+                                    <h2 style={{ color: 'white', marginBottom: '15px', fontSize: '22px' }}>
+                                        🟡 Aguardando Atendimento ({aguardando.length})
+                                    </h2>
+                                    <div className="cards-container">
+                                        {aguardando.map((order, index) => (
+                                            <CardAguardando 
+                                                key={order.id} 
+                                                order={order} 
+                                                position={index + 1}
+                                                onIniciar={() => {
+                                                    setSelectedOrder(order);
+                                                    setShowExecuteModal(true);
+                                                }}
+                                                onCancelar={() => cancelarOrdem(order.id)}
+                                            />
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+
+                            {concluidos.length > 0 && (
+                                <>
+                                    <h2 style={{ color: 'white', marginBottom: '15px', marginTop: '30px', fontSize: '22px' }}>
+                                        🟢 Concluídos ({concluidos.length})
+                                    </h2>
+                                    <div className="cards-container">
+                                        {concluidos.map(order => (
+                                            <CardConcluido 
+                                                key={order.id} 
+                                                order={order}
+                                                onVer={() => {
+                                                    setSelectedOrder(order);
+                                                    setShowDetailsModal(true);
+                                                }}
+                                            />
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+
+                            {filteredOrders.length === 0 && (
+                                <div className="empty-state">
+                                    <div className="empty-state-icon">📋</div>
+                                    <h3>Nenhuma ordem encontrada</h3>
+                                    <p>Comece criando uma nova ordem</p>
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {showNewOrderModal && (
+                        <NovaOrdemModal 
+                            onClose={() => setShowNewOrderModal(false)}
+                            onSuccess={() => {
+                                setShowNewOrderModal(false);
+                                loadOrders();
+                            }}
+                            nextOrderNumber={getNextOrderNumber()}
+                        />
+                    )}
+
+                    {showExecuteModal && selectedOrder && (
+                        <ExecutarServicoModal 
+                            order={selectedOrder}
+                            onClose={() => {
+                                setShowExecuteModal(false);
+                                setSelectedOrder(null);
+                            }}
+                            onSuccess={() => {
+                                setShowExecuteModal(false);
+                                setSelectedOrder(null);
+                                loadOrders();
+                            }}
+                        />
+                    )}
+
+                    {showDetailsModal && selectedOrder && (
+                        <DetalhesModal 
+                            order={selectedOrder}
+                            onClose={() => {
+                                setShowDetailsModal(false);
+                                setSelectedOrder(null);
+                            }}
+                            onUpdate={loadOrders}
+                        />
+                    )}
+                </div>
             );
-          }
-
-          if (view === 'dash') {
-            return h('div', { className: 'min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 p-4' },
-              h('div', { className: 'max-w-7xl mx-auto' },
-                h('div', { className: 'bg-white rounded-lg shadow-lg p-6 mb-6' },
-                  h('div', { className: 'flex justify-between items-center' },
-                    h('div', null,
-                      h('h1', { className: 'text-3xl font-bold text-blue-900' }, 'Master Óleo Curitiba'),
-                      h('p', { className: 'text-gray-600' }, 'Sistema Completo v2.0')
-                    ),
-                    h('div', { className: 'flex gap-2' },
-                      h('button', { onClick: load, className: 'bg-blue-500 text-white px-4 py-3 rounded-lg' }, 'Atualizar'),
-                      h('button', { onClick: newOrder, className: 'bg-blue-600 text-white px-6 py-3 rounded-lg' }, '+ Nova')
-                    )
-                  )
-                ),
-
-                h('div', { className: 'grid grid-cols-3 gap-4 mb-6' },
-                  h('div', { className: 'bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4' },
-                    h('h3', { className: 'font-bold' }, 'Aguardando'),
-                    h('p', { className: 'text-3xl font-bold text-yellow-600' }, aguard.length)
-                  ),
-                  h('div', { className: 'bg-green-50 border-2 border-green-300 rounded-lg p-4' },
-                    h('h3', { className: 'font-bold' }, 'Concluídos'),
-                    h('p', { className: 'text-3xl font-bold text-green-600' }, concl.length)
-                  ),
-                  h('div', { className: 'bg-blue-50 border-2 border-blue-300 rounded-lg p-4' },
-                    h('h3', { className: 'font-bold' }, 'Total'),
-                    h('p', { className: 'text-3xl font-bold text-blue-600' }, orders.length)
-                  )
-                ),
-
-                h('div', { className: 'bg-white rounded-lg shadow-lg p-6' },
-                  aguard.length > 0 && h('div', { className: 'mb-6' },
-                    h('h3', { className: 'font-bold mb-3 text-lg' }, 'Fila de Espera'),
-                    h('div', { className: 'space-y-2' },
-                      aguard.map((o, i) =>
-                        h('div', { key: o.id, className: 'bg-yellow-50 border rounded-lg p-4' },
-                          h('div', { className: 'flex justify-between' },
-                            h('div', { className: 'flex-1' },
-                              h('div', { className: 'flex items-center gap-2 mb-2' },
-                                h('span', { className: 'bg-yellow-600 text-white px-3 py-1 rounded font-bold' }, `#${i + 1}`),
-                                h('span', { className: 'bg-blue-600 text-white px-2 py-1 rounded text-xs' }, `Ordem ${o.num}`),
-                                h('p', { className: 'font-bold' }, `${o.placa} - ${o.marca} ${o.modelo}`),
-                                h('span', { className: 'text-sm text-gray-600' }, `Motor ${o.motor}`)
-                              ),
-                              h('p', { className: 'text-sm' }, `Cliente: ${o.cliente}`),
-                              h('p', { className: 'text-sm' }, `Vendedor: ${o.vendedor}`),
-                              h('p', { className: 'text-xs text-gray-600 mb-2' }, new Date(o.dataHora).toLocaleString('pt-BR')),
-                              h('div', { className: 'bg-white p-2 rounded border' },
-                                h('p', { className: 'text-xs font-bold' }, 'Serviços:'),
-                                h('p', { className: 'text-xs' }, getResumo(o))
-                              )
-                            ),
-                            h('div', { className: 'flex flex-col gap-2' },
-                              h('button', { onClick: () => startSvc(o), className: 'bg-blue-600 text-white px-4 py-2 rounded' }, 'Iniciar'),
-                              h('button', { onClick: () => del(o.id), className: 'bg-red-500 text-white px-4 py-2 rounded' }, 'Cancelar')
-                            )
-                          )
-                        )
-                      )
-                    )
-                  ),
-
-                  h('div', null,
-                    h('div', { className: 'flex justify-between items-center mb-3' },
-                      h('h3', { className: 'font-bold text-lg' }, 'Concluídos'),
-                      h('div', { className: 'flex gap-2' },
-                        h('button', { onClick: () => setFiltro('hoje'), className: `px-3 py-1 rounded ${filtro === 'hoje' ? 'bg-blue-600 text-white' : 'bg-gray-200'}` }, 'Hoje'),
-                        h('button', { onClick: () => setFiltro('semana'), className: `px-3 py-1 rounded ${filtro === 'semana' ? 'bg-blue-600 text-white' : 'bg-gray-200'}` }, 'Semana'),
-                        h('button', { onClick: () => setFiltro('mes'), className: `px-3 py-1 rounded ${filtro === 'mes' ? 'bg-blue-600 text-white' : 'bg-gray-200'}` }, 'Mês')
-                      )
-                    ),
-
-                    concl.length > 0 ? h('div', { className: 'space-y-2' },
-                      concl.map(o =>
-                        h('div', { key: o.id, className: 'bg-green-50 border rounded-lg p-4' },
-                          h('div', { className: 'flex justify-between' },
-                            h('div', { className: 'flex-1' },
-                              h('div', { className: 'flex items-center gap-2 mb-2' },
-                                h('span', { className: 'bg-green-600 text-white px-2 py-1 rounded text-xs font-bold' }, `#${o.num}`),
-                                h('p', { className: 'font-bold' }, `${o.placa} - ${o.marca} ${o.modelo}`),
-                                h('span', { className: 'text-sm text-gray-600' }, `Motor ${o.motor}`),
-                                o.fezUpsell && h('span', { className: 'bg-purple-600 text-white text-xs px-2 py-1 rounded' }, `💰 +R$${o.valUpsell.toFixed(2)}`)
-                              ),
-                              h('p', { className: 'text-sm' }, `Cliente: ${o.cliente}`),
-                              h('p', { className: 'text-sm' }, `Lubrificador: ${o.lubrif}`)
-                            ),
-                            h('div', { className: 'text-right' },
-                              h('p', { className: 'text-xs text-gray-600' }, 'Inicial'),
-                              h('p', { className: 'text-sm font-semibold' }, `R$ ${parseFloat(o.valorInicial || 0).toFixed(2)}`),
-                              h('p', { className: 'text-xs text-gray-600 mt-1' }, 'Final'),
-                              h('p', { className: 'text-lg font-bold text-green-700' }, `R$ ${o.valTotal.toFixed(2)}`),
-                              h('button', { onClick: () => setShowDetails(o), className: 'bg-blue-600 text-white px-3 py-1 rounded text-sm mt-2' }, 'Ver')
-                            )
-                          )
-                        )
-                      )
-                    ) : h('p', { className: 'text-gray-500 text-center py-4' }, 'Nenhuma ordem')
-                  )
-                )
-              )
-            );
-          }
-
-          if (view === 'new' && step === 1) {
-            return h('div', { className: 'min-h-screen bg-blue-50 p-4' },
-              h('div', { className: 'max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-6 max-h-screen overflow-y-auto' },
-                h('h2', { className: 'text-2xl font-bold mb-6' }, 'Dados do Cliente'),
-                h('div', { className: 'space-y-4' },
-                  h('div', { className: 'grid grid-cols-2 gap-4' },
-                    h('div', null,
-                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Vendedor'),
-                      h('select', { value: form.vendedor, onChange: (e) => setForm({ ...form, vendedor: e.target.value }), className: 'w-full p-3 border rounded' },
-                        h('option', { value: '' }, 'Selecione'),
-                        ...vendedores.map(v => h('option', { key: v, value: v }, v))
-                      )
-                    ),
-                    h('div', null,
-                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Data/Hora'),
-                      h('input', { type: 'datetime-local', value: form.dataHora, onChange: (e) => setForm({ ...form, dataHora: e.target.value }), className: 'w-full p-3 border rounded' })
-                    )
-                  ),
-                  h('div', null,
-                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Cliente'),
-                    h('input', { value: form.cliente, onChange: (e) => setForm({ ...form, cliente: e.target.value }), className: 'w-full p-3 border rounded' })
-                  ),
-                  h('div', { className: 'grid grid-cols-2 gap-4' },
-                    h('div', null,
-                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Telefone'),
-                      h('input', { value: form.tel, onChange: (e) => setForm({ ...form, tel: e.target.value }), className: 'w-full p-3 border rounded' })
-                    ),
-                    h('div', null,
-                      h('label', { className: 'block text-sm font-bold mb-2' }, 'CPF'),
-                      h('input', { value: form.cpf, onChange: (e) => setForm({ ...form, cpf: e.target.value }), className: 'w-full p-3 border rounded' })
-                    )
-                  ),
-                  h('div', null,
-                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Data Nascimento'),
-                    h('input', { type: 'date', value: form.dataNasc, onChange: (e) => setForm({ ...form, dataNasc: e.target.value }), className: 'w-full p-3 border rounded' })
-                  ),
-                  h('div', null,
-                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Placa'),
-                    h('input', { value: form.placa, onChange: (e) => setForm({ ...form, placa: e.target.value.toUpperCase() }), className: 'w-full p-3 border rounded uppercase' })
-                  ),
-                  h('div', { className: 'grid grid-cols-3 gap-4' },
-                    h('div', null,
-                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Marca'),
-                      h('input', { value: form.marca, onChange: (e) => setForm({ ...form, marca: e.target.value }), className: 'w-full p-3 border rounded' })
-                    ),
-                    h('div', null,
-                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Modelo'),
-                      h('input', { value: form.modelo, onChange: (e) => setForm({ ...form, modelo: e.target.value }), className: 'w-full p-3 border rounded' })
-                    ),
-                    h('div', null,
-                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Ano'),
-                      h('input', { type: 'number', value: form.ano, onChange: (e) => setForm({ ...form, ano: e.target.value }), className: 'w-full p-3 border rounded' })
-                    )
-                  ),
-                  h('div', { className: 'grid grid-cols-3 gap-4' },
-                    h('div', null,
-                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Motor'),
-                      h('input', { value: form.motor, onChange: (e) => setForm({ ...form, motor: e.target.value }), className: 'w-full p-3 border rounded' })
-                    ),
-                    h('div', null,
-                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Câmbio'),
-                      h('select', { value: form.cambio, onChange: (e) => setForm({ ...form, cambio: e.target.value }), className: 'w-full p-3 border rounded' },
-                        h('option', { value: '' }, 'Selecione'),
-                        h('option', null, 'Manual'),
-                        h('option', null, 'Automatico')
-                      )
-                    ),
-                    h('div', null,
-                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Combustível'),
-                      h('select', { value: form.combustivel, onChange: (e) => setForm({ ...form, combustivel: e.target.value }), className: 'w-full p-3 border rounded' },
-                        h('option', { value: '' }, 'Selecione'),
-                        h('option', null, 'Gasolina'),
-                        h('option', null, 'Diesel'),
-                        h('option', null, 'Flex'),
-                        h('option', null, 'GNV')
-                      )
-                    )
-                  )
-                ),
-                h('div', { className: 'flex gap-4 mt-6' },
-                  h('button', { onClick: () => setView('dash'), className: 'flex-1 bg-gray-300 py-3 rounded' }, 'Cancelar'),
-                  h('button', { onClick: () => setStep(2), className: 'flex-1 bg-blue-600 text-white py-3 rounded' }, 'Próximo')
-                )
-              )
-            );
-          }
-
-          if (view === 'new' && step === 2) {
-            return h('div', { className: 'min-h-screen bg-blue-50 p-4' },
-              h('div', { className: 'max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-6 max-h-screen overflow-y-auto' },
-                h('h2', { className: 'text-2xl font-bold mb-6' }, 'Serviços'),
-                h('div', { className: 'space-y-4' },
-                  h('div', { className: 'border rounded p-4' },
-                    h('label', { className: 'flex items-center gap-2 mb-2' },
-                      h('input', { type: 'checkbox', checked: form.oleoMotor, onChange: (e) => setForm({ ...form, oleoMotor: e.target.checked }), className: 'w-5 h-5' }),
-                      h('span', { className: 'font-bold' }, 'Óleo Motor')
-                    ),
-                    form.oleoMotor && h('div', { className: 'space-y-2 mt-2' },
-                      h('input', { placeholder: 'Marca', value: form.oleoMarca, onChange: (e) => setForm({ ...form, oleoMarca: e.target.value }), className: 'w-full p-2 border rounded' }),
-                      h('input', { type: 'number', step: '0.01', placeholder: 'Quantidade (L)', value: form.oleoQtd, onChange: (e) => setForm({ ...form, oleoQtd: e.target.value }), className: 'w-full p-2 border rounded' })
-                    )
-                  ),
-                  h('div', { className: 'border rounded p-4' },
-                    h('label', { className: 'flex items-center gap-2 mb-2' },
-                      h('input', { type: 'checkbox', checked: form.filtroOleo, onChange: (e) => setForm({ ...form, filtroOleo: e.target.checked }), className: 'w-5 h-5' }),
-                      h('span', { className: 'font-bold' }, 'Filtro Óleo')
-                    ),
-                    form.filtroOleo && h('input', { placeholder: 'Qual filtro?', value: form.filtroTipo, onChange: (e) => setForm({ ...form, filtroTipo: e.target.value }), className: 'w-full p-2 border rounded mt-2' })
-                  ),
-                  h('div', { className: 'border rounded p-4' },
-                    h('label', { className: 'flex items-center gap-2 mb-2' },
-                      h('input', { type: 'checkbox', checked: form.arMotor, onChange: (e) => setForm({ ...form, arMotor: e.target.checked }), className: 'w-5 h-5' }),
-                      h('span', { className: 'font-bold' }, 'Ar Motor')
-                    ),
-                    form.arMotor && h('input', { placeholder: 'Código', value: form.arMotorCod, onChange: (e) => setForm({ ...form, arMotorCod: e.target.value }), className: 'w-full p-2 border rounded mt-2' })
-                  ),
-                  h('div', { className: 'border rounded p-4' },
-                    h('label', { className: 'flex items-center gap-2 mb-2' },
-                      h('input', { type: 'checkbox', checked: form.arCond, onChange: (e) => setForm({ ...form, arCond: e.target.checked }), className: 'w-5 h-5' }),
-                      h('span', { className: 'font-bold' }, 'Ar Condicionado')
-                    ),
-                    form.arCond && h('input', { placeholder: 'Código', value: form.arCondCod, onChange: (e) => setForm({ ...form, arCondCod: e.target.value }), className: 'w-full p-2 border rounded mt-2' })
-                  ),
-                  h('div', { className: 'border rounded p-4' },
-                    h('label', { className: 'flex items-center gap-2 mb-2' },
-                      h('input', { type: 'checkbox', checked: form.cambioM, onChange: (e) => setForm({ ...form, cambioM: e.target.checked }), className: 'w-5 h-5' }),
-                      h('span', { className: 'font-bold' }, 'Câmbio Manual')
-                    ),
-                    form.cambioM && h('div', { className: 'space-y-2 mt-2' },
-                      h('input', { placeholder: 'Marca', value: form.cambioMMarca, onChange: (e) => setForm({ ...form, cambioMMarca: e.target.value }), className: 'w-full p-2 border rounded' }),
-                      h('input', { type: 'number', step: '0.01', placeholder: 'Quantidade (L)', value: form.cambioMQtd, onChange: (e) => setForm({ ...form, cambioMQtd: e.target.value }), className: 'w-full p-2 border rounded' })
-                    )
-                  ),
-                  h('div', { className: 'border rounded p-4' },
-                    h('label', { className: 'flex items-center gap-2 mb-2' },
-                      h('input', { type: 'checkbox', checked: form.cambioA, onChange: (e) => setForm({ ...form, cambioA: e.target.checked }), className: 'w-5 h-5' }),
-                      h('span', { className: 'font-bold' }, 'Câmbio Automático')
-                    ),
-                    form.cambioA && h('div', { className: 'space-y-2 mt-2' },
-                      h('input', { placeholder: 'Marca', value: form.cambioAMarca, onChange: (e) => setForm({ ...form, cambioAMarca: e.target.value }), className: 'w-full p-2 border rounded' }),
-                      h('input', { type: 'number', step: '0.01', placeholder: 'Quantidade (L)', value: form.cambioAQtd, onChange: (e) => setForm({ ...form, cambioAQtd: e.target.value }), className: 'w-full p-2 border rounded' }),
-                      h('label', { className: 'flex items-center gap-2 mt-2' },
-                        h('input', { type: 'checkbox', checked: form.cambioAFiltro, onChange: (e) => setForm({ ...form, cambioAFiltro: e.target.checked }), className: 'w-4 h-4' }),
-                        h('span', null, 'Tem filtro?')
-                      ),
-                      form.cambioAFiltro && h('input', { placeholder: 'Código do filtro', value: form.cambioAFiltroCod, onChange: (e) => setForm({ ...form, cambioAFiltroCod: e.target.value }), className: 'w-full p-2 border rounded mt-2' })
-                    )
-                  ),
-                  h('div', { className: 'border rounded p-4' },
-                    h('label', { className: 'flex items-center gap-2 mb-2' },
-                      h('input', { type: 'checkbox', checked: form.palhetas, onChange: (e) => setForm({ ...form, palhetas: e.target.checked }), className: 'w-5 h-5' }),
-                      h('span', { className: 'font-bold' }, 'Palhetas')
-                    ),
-                    form.palhetas && h('input', { placeholder: 'Código', value: form.palhetasCod, onChange: (e) => setForm({ ...form, palhetasCod: e.target.value }), className: 'w-full p-2 border rounded mt-2' })
-                  ),
-                  h('div', { className: 'border rounded p-4' },
-                    h('label', { className: 'flex items-center gap-2' },
-                      h('input', { type: 'checkbox', checked: form.militec, onChange: (e) => setForm({ ...form, militec: e.target.checked }), className: 'w-5 h-5' }),
-                      h('span', { className: 'font-bold' }, 'Militec/Nano')
-                    )
-                  ),
-                  h('div', { className: 'border rounded p-4' },
-                    h('label', { className: 'flex items-center gap-2 mb-2' },
-                      h('input', { type: 'checkbox', checked: form.aditivo, onChange: (e) => setForm({ ...form, aditivo: e.target.checked }), className: 'w-5 h-5' }),
-                      h('span', { className: 'font-bold' }, 'Aditivo')
-                    ),
-                    form.aditivo && h('input', { placeholder: 'Qual?', value: form.aditivoQual, onChange: (e) => setForm({ ...form, aditivoQual: e.target.value }), className: 'w-full p-2 border rounded mt-2' })
-                  ),
-                  h('div', { className: 'border rounded p-4' },
-                    h('label', { className: 'flex items-center gap-2 mb-2' },
-                      h('input', { type: 'checkbox', checked: form.flush, onChange: (e) => setForm({ ...form, flush: e.target.checked }), className: 'w-5 h-5' }),
-                      h('span', { className: 'font-bold' }, 'Flush')
-                    ),
-                    form.flush && h('textarea', { placeholder: 'Descrição', value: form.flushDesc, onChange: (e) => setForm({ ...form, flushDesc: e.target.value }), className: 'w-full p-2 border rounded mt-2', rows: 2 })
-                  )
-                ),
-                h('div', { className: 'flex gap-4 mt-6' },
-                  h('button', { onClick: () => setStep(1), className: 'flex-1 bg-gray-300 py-3 rounded' }, 'Voltar'),
-                  h('button', { onClick: () => setStep(3), className: 'flex-1 bg-blue-600 text-white py-3 rounded' }, 'Próximo')
-                )
-              )
-            );
-          }
-
-          if (view === 'new' && step === 3) {
-            return h('div', { className: 'min-h-screen bg-blue-50 p-4' },
-              h('div', { className: 'max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-6' },
-                h('h2', { className: 'text-2xl font-bold mb-6' }, 'Finalização'),
-                h('div', { className: 'space-y-4' },
-                  h('div', null,
-                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Apto para ofertas?'),
-                    h('select', { value: form.apto, onChange: (e) => setForm({ ...form, apto: e.target.value }), className: 'w-full p-3 border rounded' },
-                      h('option', { value: '' }, 'Selecione'),
-                      h('option', null, 'sim'),
-                      h('option', null, 'nao')
-                    )
-                  ),
-                  form.apto === 'nao' && h('div', null,
-                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Motivo'),
-                    h('textarea', { value: form.motivo, onChange: (e) => setForm({ ...form, motivo: e.target.value }), className: 'w-full p-3 border rounded', rows: 3 })
-                  ),
-                  h('div', null,
-                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Valor Inicial'),
-                    h('input', { type: 'number', step: '0.01', value: form.valorInicial, onChange: (e) => setForm({ ...form, valorInicial: e.target.value }), className: 'w-full p-3 border rounded' })
-                  )
-                ),
-                h('div', { className: 'flex gap-4 mt-6' },
-                  h('button', { onClick: () => setStep(2), className: 'flex-1 bg-gray-300 py-3 rounded' }, 'Voltar'),
-                  h('button', { onClick: submitOrder, className: 'flex-1 bg-green-600 text-white py-3 rounded' }, 'Criar Ordem')
-                )
-              )
-            );
-          }
-
-          if (view === 'svc' && step === 1) {
-            return h('div', { className: 'min-h-screen bg-blue-50 p-4' },
-              h('div', { className: 'max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-6' },
-                h('h2', { className: 'text-2xl font-bold mb-6' }, 'Executar Serviço'),
-                h('div', { className: 'bg-blue-50 border rounded p-4 mb-6' },
-                  h('p', { className: 'font-bold text-lg mb-2' }, `${current.placa} - ${current.marca} ${current.modelo} ${current.ano}`),
-                  h('p', { className: 'text-sm' }, `Motor: ${current.motor} | Cliente: ${current.cliente}`),
-                  current.apto === 'sim' ? h('p', { className: 'text-green-600 font-bold mt-2' }, '✅ CLIENTE ACEITA OFERTAS!') : h('p', { className: 'text-red-600 font-bold mt-2' }, '❌ Não oferecer serviços extras')
-                ),
-                h('div', { className: 'space-y-4' },
-                  h('div', null,
-                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Lubrificador'),
-                    h('select', { value: svc.lubrif, onChange: (e) => setSvc({ ...svc, lubrif: e.target.value }), className: 'w-full p-3 border rounded' },
-                      h('option', { value: '' }, 'Selecione'),
-                      ...lubris.map(l => h('option', { key: l, value: l }, l))
-                    )
-                  ),
-                  h('div', null,
-                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Quilometragem'),
-                    h('input', { type: 'number', value: svc.km, onChange: (e) => setSvc({ ...svc, km: e.target.value }), className: 'w-full p-3 border rounded' })
-                  ),
-                  h('div', { className: 'bg-gray-50 border rounded p-4' },
-                    h('h4', { className: 'font-bold mb-2' }, 'Serviços a Realizar:'),
-                    h('p', { className: 'text-sm' }, getResumo(current))
-                  )
-                ),
-                h('div', { className: 'flex gap-4 mt-6' },
-                  h('button', { onClick: () => setView('dash'), className: 'flex-1 bg-gray-300 py-3 rounded' }, 'Cancelar'),
-                  h('button', { onClick: () => setStep(2), className: 'flex-1 bg-blue-600 text-white py-3 rounded' }, 'Continuar')
-                )
-              )
-            );
-          }
-
-          if (view === 'svc' && step === 2 && current.apto === 'sim') {
-            return h('div', { className: 'min-h-screen bg-blue-50 p-4' },
-              h('div', { className: 'max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-6 max-h-screen overflow-y-auto' },
-                h('h2', { className: 'text-2xl font-bold mb-6' }, 'Ofertas Adicionais (Upsell)'),
-                h('div', { className: 'bg-green-100 border-2 border-green-400 rounded p-4 mb-4' },
-                  h('p', { className: 'font-bold text-green-800' }, '✅ Cliente APTO para ofertas! Ofereça os serviços abaixo:')
-                ),
-                h('div', { className: 'space-y-4' },
-                  !current.arMotor && h('div', { className: 'border rounded p-4' },
-                    h('p', { className: 'font-bold mb-2' }, 'Filtro Ar Motor'),
-                    h('input', { placeholder: 'Valor R, type: 'number', step: '0.01', id: 'arMotorVal', className: 'w-full p-2 border rounded mb-2' }),
-                    h('button', { onClick: () => { const v = document.getElementById('arMotorVal').value; if (v) addUpsell('Filtro Ar Motor', v); }, className: 'bg-green-600 text-white px-4 py-2 rounded w-full' }, 'Adicionar')
-                  ),
-                  !current.arCond && h('div', { className: 'border rounded p-4' },
-                    h('p', { className: 'font-bold mb-2' }, 'Filtro Ar Condicionado'),
-                    h('input', { placeholder: 'Valor R, type: 'number', step: '0.01', id: 'arCondVal', className: 'w-full p-2 border rounded mb-2' }),
-                    h('button', { onClick: () => { const v = document.getElementById('arCondVal').value; if (v) addUpsell('Filtro Ar Cond', v); }, className: 'bg-green-600 text-white px-4 py-2 rounded w-full' }, 'Adicionar')
-                  ),
-                  !current.palhetas && h('div', { className: 'border rounded p-4' },
-                    h('p', { className: 'font-bold mb-2' }, 'Palhetas'),
-                    h('input', { placeholder: 'Valor R, type: 'number', step: '0.01', id: 'palhetasVal', className: 'w-full p-2 border rounded mb-2' }),
-                    h('button', { onClick: () => { const v = document.getElementById('palhetasVal').value; if (v) addUpsell('Palhetas', v); }, className: 'bg-green-600 text-white px-4 py-2 rounded w-full' }, 'Adicionar')
-                  ),
-                  svc.upsells.length > 0 && h('div', { className: 'bg-purple-50 border-2 border-purple-300 rounded p-4' },
-                    h('h4', { className: 'font-bold mb-2' }, 'Itens Vendidos:'),
-                    svc.upsells.map((u, i) =>
-                      h('div', { key: i, className: 'flex justify-between items-center bg-white p-2 rounded mb-2' },
-                        h('span', null, u.nome),
-                        h('span', { className: 'font-bold' }, `R$ ${u.val.toFixed(2)}`),
-                        h('button', { onClick: () => setSvc({ ...svc, upsells: svc.upsells.filter((_, idx) => idx !== i) }), className: 'text-red-600' }, '✕')
-                      )
-                    ),
-                    h('p', { className: 'font-bold text-lg mt-2' }, `Total Upsell: R$ ${svc.upsells.reduce((s, u) => s + u.val, 0).toFixed(2)}`)
-                  )
-                ),
-                h('div', { className: 'flex gap-4 mt-6' },
-                  h('button', { onClick: () => setStep(1), className: 'flex-1 bg-gray-300 py-3 rounded' }, 'Voltar'),
-                  h('button', { onClick: () => setStep(3), className: 'flex-1 bg-blue-600 text-white py-3 rounded' }, 'Próximo')
-                )
-              )
-            );
-          }
-
-          const finalStep = current && current.apto === 'sim' ? 3 : 2;
-          if (view === 'svc' && step === finalStep) {
-            const valTotal = (parseFloat(current.valorInicial) || 0) + svc.upsells.reduce((s, u) => s + u.val, 0);
-            return h('div', { className: 'min-h-screen bg-blue-50 p-4' },
-              h('div', { className: 'max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-6' },
-                h('h2', { className: 'text-2xl font-bold mb-6' }, 'Finalizar Serviço'),
-                h('div', { className: 'space-y-4' },
-                  h('div', null,
-                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Observações sobre o carro'),
-                    h('textarea', { value: svc.obsCarro, onChange: (e) => setSvc({ ...svc, obsCarro: e.target.value }), className: 'w-full p-3 border rounded', rows: 3, placeholder: 'Vazamentos, problemas...' })
-                  ),
-                  h('div', null,
-                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Observações sobre ofertas'),
-                    h('textarea', { value: svc.obsOferta, onChange: (e) => setSvc({ ...svc, obsOferta: e.target.value }), className: 'w-full p-3 border rounded', rows: 3, placeholder: 'Não tinha filtro...' })
-                  ),
-                  svc.upsells.length > 0 && h('div', { className: 'bg-purple-50 border rounded p-4' },
-                    h('h4', { className: 'font-bold mb-2' }, '💰 Itens Vendidos (Upsell):'),
-                    svc.upsells.map((u, i) =>
-                      h('p', { key: i, className: 'text-sm' }, `• ${u.nome}: R$ ${u.val.toFixed(2)}`)
-                    )
-                  ),
-                  h('div', { className: 'bg-gray-50 border rounded p-4' },
-                    h('p', { className: 'text-sm' }, `Valor Inicial: R$ ${parseFloat(current.valorInicial || 0).toFixed(2)}`),
-                    h('p', { className: 'text-sm' }, `Valor Upsell: R$ ${svc.upsells.reduce((s, u) => s + u.val, 0).toFixed(2)}`),
-                    h('p', { className: 'text-lg font-bold mt-2' }, `TOTAL: R$ ${valTotal.toFixed(2)}`)
-                  )
-                ),
-                h('div', { className: 'flex gap-4 mt-6' },
-                  h('button', { onClick: () => setStep(current.apto === 'sim' ? 2 : 1), className: 'flex-1 bg-gray-300 py-3 rounded' }, 'Voltar'),
-                  h('button', { onClick: finishSvc, className: 'flex-1 bg-green-600 text-white py-3 rounded' }, 'Finalizar Serviço')
-                )
-              )
-            );
-          }
-
-          if (showDetails) {
-            return h('div', { className: 'min-h-screen bg-blue-50 p-4' },
-              h('div', { className: 'max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-6 max-h-screen overflow-y-auto' },
-                h('div', { className: 'flex justify-between items-center mb-6' },
-                  h('h2', { className: 'text-2xl font-bold' }, `Detalhes Ordem #${showDetails.num}`),
-                  h('button', { onClick: () => setShowDetails(null), className: 'text-gray-500 text-2xl' }, '✕')
-                ),
-                h('div', { className: 'space-y-4' },
-                  h('div', { className: 'grid grid-cols-2 gap-4 bg-blue-50 p-4 rounded' },
-                    h('div', null, h('p', { className: 'text-sm font-bold' }, 'Status'), h('p', { className: showDetails.status === 'concluido' ? 'text-green-600' : 'text-yellow-600' }, showDetails.status)),
-                    h('div', null, h('p', { className: 'text-sm font-bold' }, 'Placa'), h('p', null, showDetails.placa)),
-                    h('div', null, h('p', { className: 'text-sm font-bold' }, 'Cliente'), h('p', null, showDetails.cliente)),
-                    h('div', null, h('p', { className: 'text-sm font-bold' }, 'Veículo'), h('p', null, `${showDetails.marca} ${showDetails.modelo} ${showDetails.ano}`)),
-                    h('div', null, h('p', { className: 'text-sm font-bold' }, 'Motor'), h('p', null, showDetails.motor)),
-                    h('div', null, h('p', { className: 'text-sm font-bold' }, 'Vendedor'), h('p', null, showDetails.vendedor)),
-                    h('div', null, h('p', { className: 'text-sm font-bold' }, 'Lubrificador'), h('p', null, showDetails.lubrif || 'N/A')),
-                    h('div', null, h('p', { className: 'text-sm font-bold' }, 'KM'), h('p', null, showDetails.km || 'N/A'))
-                  ),
-                  h('div', { className: 'border-t pt-4' },
-                    h('h3', { className: 'font-bold mb-2' }, 'Serviços Realizados'),
-                    h('div', { className: 'bg-gray-50 p-4 rounded' },
-                      h('p', { className: 'text-sm' }, getResumo(showDetails))
-                    )
-                  ),
-                  h('div', { className: 'grid grid-cols-2 gap-4' },
-                    h('div', { className: 'border rounded p-4' },
-                      h('p', { className: 'text-sm font-bold mb-2' }, 'Valor Inicial'),
-                      h('p', { className: 'text-lg font-bold text-blue-600' }, `R$ ${parseFloat(showDetails.valorInicial || 0).toFixed(2)}`)
-                    ),
-                    h('div', { className: 'border rounded p-4 bg-green-50' },
-                      h('p', { className: 'text-sm font-bold mb-2' }, 'Valor Total'),
-                      h('p', { className: 'text-2xl font-bold text-green-700' }, `R$ ${showDetails.valTotal.toFixed(2)}`)
-                    )
-                  ),
-                  showDetails.fezUpsell && h('div', { className: 'bg-purple-50 border-2 border-purple-300 rounded p-4' },
-                    h('h4', { className: 'font-bold mb-2' }, `💰 Upsell: ${showDetails.qtdUpsell} itens - R$ ${showDetails.valUpsell.toFixed(2)}`),
-                    showDetails.upsellsDet && showDetails.upsellsDet.map((u, i) =>
-                      h('p', { key: i, className: 'text-sm' }, `• ${u.nome}: R$ ${u.val.toFixed(2)}`)
-                    )
-                  ),
-                  showDetails.obsCarro && h('div', { className: 'border rounded p-4' },
-                    h('p', { className: 'text-sm font-bold mb-2' }, 'Observações do Carro'),
-                    h('p', { className: 'text-sm' }, showDetails.obsCarro)
-                  ),
-                  showDetails.obsOferta && h('div', { className: 'border rounded p-4' },
-                    h('p', { className: 'text-sm font-bold mb-2' }, 'Observações das Ofertas'),
-                    h('p', { className: 'text-sm' }, showDetails.obsOferta)
-                  )
-                ),
-                h('button', { onClick: () => setShowDetails(null), className: 'w-full bg-gray-300 py-3 rounded mt-6' }, 'Fechar')
-              )
-            );
-          }
-
-          return h('div', { className: 'p-8 text-center' },
-            h('h1', { className: 'text-2xl font-bold' }, 'Sistema Master Óleo'),
-            h('button', { onClick: () => setView('dash'), className: 'bg-blue-600 text-white px-6 py-3 rounded mt-4' }, 'Ir ao Dashboard')
-          );
         }
 
-        ReactDOM.render(React.createElement(App), document.getElementById('root'));
+        // Componente Card Aguardando
+        function CardAguardando({ order, position, onIniciar, onCancelar }) {
+            const getServicos = () => {
+                const servicos = [];
+                if (order.oleoMotor) servicos.push(`Óleo Motor (${order.oleoTipo || 'N/A'})`);
+                if (order.filtroOleo) servicos.push(`Filtro Óleo (${order.filtroTipo || 'N/A'})`);
+                if (order.arMotor) servicos.push('Filtro Ar Motor');
+                if (order.arCondicionado) servicos.push('Filtro Ar Condicionado');
+                if (order.filtroCombustivel) servicos.push('Filtro Combustível');
+                if (order.cambioManual) servicos.push('Câmbio Manual');
+                if (order.cambioAutomatico) servicos.push('Câmbio Automático');
+                if (order.palhetas) servicos.push('Palhetas');
+                if (order.militec) servicos.push('Militec/Nano');
+                if (order.aditivo) servicos.push('Aditivo');
+                if (order.flush) servicos.push('Flush');
+                return servicos;
+            };
+
+            const servicos = getServicos();
+
+            return (
+                <div className="card card-aguardando">
+                    <div className="card-header">
+                        <span className="order-number">#{order.numeroOrdem}</span>
+                        <span className="queue-position">Posição {position}</span>
+                        <button className="close-btn" onClick={onCancelar} style={{ color: '#f56565' }}>✕</button>
+                    </div>
+                    <div className="card-title">{order.placa}</div>
+                    <div className="card-info">
+                        <div className="info-row">
+                            <span className="info-label">Cliente:</span>
+                            <span>{order.cliente}</span>
+                        </div>
+                        <div className="info-row">
+                            <span className="info-label">Veículo:</span>
+                            <span>{order.marca} {order.modelo}</span>
+                        </div>
+                        <div className="info-row">
+                            <span className="info-label">Motor:</span>
+                            <span>{order.motor || 'N/A'}</span>
+                        </div>
+                        <div className="info-row">
+                            <span className="info-label">Vendedor:</span>
+                            <span>{order.vendedor}</span>
+                        </div>
+                        <div className="info-row">
+                            <span className="info-label">Registro:</span>
+                            <span>{order.dataHora ? new Date(order.dataHora).toLocaleString('pt-BR') : 'N/A'}</span>
+                        </div>
+                    </div>
+                    {servicos.length > 0 && (
+                        <div className="services-list">
+                            <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#2d3748' }}>Serviços:</div>
+                            {servicos.map((s, i) => (
+                                <div key={i} className="service-item">• {s}</div>
+                            ))}
+                        </div>
+                    )}
+                    <div className="card-actions">
+                        <button className="btn btn-success" onClick={onIniciar} style={{ flex: 1 }}>
+                            ▶️ Iniciar
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        // Componente Card Concluído
+        function CardConcluido({ order, onVer }) {
+            return (
+                <div className="card card-concluido">
+                    <div className="card-header">
+                        <span className="order-number">#{order.numeroOrdem}</span>
+                        {order.fezUpsell && (
+                            <span className="badge badge-upsell">💰 Upsell +R$ {order.valorUpsell?.toFixed(2)}</span>
+                        )}
+                        {order.voltouComProblema && (
+                            <span className="badge badge-problem">⚠️ Retornou</span>
+                        )}
+                    </div>
+                    <div className="card-title">{order.placa}</div>
+                    <div className="card-info">
+                        <div className="info-row">
+                            <span className="info-label">Cliente:</span>
+                            <span>{order.cliente}</span>
+                        </div>
+                        <div className="info-row">
+                            <span className="info-label">Veículo:</span>
+                            <span>{order.marca} {order.modelo}</span>
+                        </div>
+                        <div className="info-row">
+                            <span className="info-label">Motor:</span>
+                            <span>{order.motor || 'N/A'}</span>
+                        </div>
+                        <div className="info-row">
+                            <span className="info-label">Lubrificador:</span>
+                            <span>{order.lubrificador}</span>
+                        </div>
+                        <div className="info-row">
+                            <span className="info-label">Registro:</span>
+                            <span>{order.dataHora ? new Date(order.dataHora).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'N/A'}</span>
+                        </div>
+                        <div className="info-row">
+                            <span className="info-label">Início:</span>
+                            <span>{order.inicio || 'N/A'}</span>
+                        </div>
+                        <div className="info-row">
+                            <span className="info-label">Fim:</span>
+                            <span>{order.fim || 'N/A'}</span>
+                        </div>
+                        <div className="info-row">
+                            <span className="info-label">Valor Inicial:</span>
+                            <span>R$ {parseFloat(order.valorInicial || 0).toFixed(2)}</span>
+                        </div>
+                        <div className="info-row">
+                            <span className="info-label">Valor Total:</span>
+                            <span style={{ fontWeight: 'bold', color: '#667eea' }}>R$ {parseFloat(order.valorTotal || 0).toFixed(2)}</span>
+                        </div>
+                    </div>
+                    <div className="card-actions">
+                        <button className="btn btn-primary" onClick={onVer} style={{ flex: 1 }}>
+                            👁️ Ver Detalhes
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        // Modal Nova Ordem
+        function NovaOrdemModal({ onClose, onSuccess, nextOrderNumber }) {
+            const [step, setStep] = useState(1);
+            const [formData, setFormData] = useState({
+                numeroOrdem: nextOrderNumber,
+                status: 'aguardando',
+                vendedor: '',
+                cliente: '',
+                tel: '',
+                cpf: '',
+                dataNascimento: '',
+                placa: '',
+                marca: '',
+                modelo: '',
+                motor: '',
+                ano: '',
+                cambio: '',
+                combustivel: '',
+                dataHora: formatDateTimeForInput(),
+                
+                oleoMotor: false,
+                oleoMarca: '',
+                oleoQuantidade: '',
+                filtroOleo: false,
+                filtroOleoTipo: '',
+                arMotor: false,
+                arMotorCodigo: '',
+                arCondicionado: false,
+                arCondicionadoCodigo: '',
+                filtroCombustivel: false,
+                filtroCombustivelCodigo: '',
+                cambioManual: false,
+                cambioManualMarca: '',
+                cambioManualQuantidade: '',
+                cambioAutomatico: false,
+                cambioAutomaticoMarca: '',
+                cambioAutomaticoQuantidade: '',
+                cambioAutomaticoTemFiltro: false,
+                cambioAutomaticoFiltroCodigo: '',
+                palhetas: false,
+                palhetasCodigo: '',
+                militec: false,
+                aditivo: false,
+                aditivoQual: '',
+                flush: false,
+                flushDescricao: '',
+                
+                apto: 'sim',
+                motivoNaoApto: '',
+                valorInicial: ''
+            });
+
+            const handleChange = (e) => {
+                const { name, value, type, checked } = e.target;
+                setFormData(prev => ({
+                    ...prev,
+                    [name]: type === 'checkbox' ? checked : value
+                }));
+            };
+
+            const validateStep1 = () => {
+                if (!formData.vendedor || !formData.cliente || !formData.placa) {
+                    alert('Preencha os campos obrigatórios: Vendedor, Cliente e Placa');
+                    return false;
+                }
+                
+                const placaRegex = /^[A-Z]{3}-?\d{4}$|^[A-Z]{3}\d[A-Z]\d{2}$/;
+                if (!placaRegex.test(formData.placa.toUpperCase())) {
+                    alert('Placa inválida. Use formato AAA-1234 ou AAA1A23');
+                    return false;
+                }
+                
+                if (formData.tel && formData.tel.length < 10) {
+                    alert('Telefone inválido');
+                    return false;
+                }
+                
+                return true;
+            };
+
+            const validateStep2 = () => {
+                const hasService = formData.oleoMotor || formData.filtroOleo || formData.arMotor || 
+                                  formData.arCondicionado || formData.filtroCombustivel || 
+                                  formData.cambioManual || formData.cambioAutomatico || 
+                                  formData.palhetas || formData.militec || formData.aditivo || formData.flush;
+                
+                if (!hasService) {
+                    alert('Selecione pelo menos um serviço');
+                    return false;
+                }
+                
+                return true;
+            };
+
+            const validateStep3 = () => {
+                if (!formData.valorInicial || parseFloat(formData.valorInicial) <= 0) {
+                    alert('Preencha o valor inicial da venda');
+                    return false;
+                }
+                
+                if (formData.apto === 'nao' && !formData.motivoNaoApto) {
+                    alert('Informe o motivo do cliente não ser apto para ofertas');
+                    return false;
+                }
+                
+                return true;
+            };
+
+            const handleNext = () => {
+                if (step === 1 && !validateStep1()) return;
+                if (step === 2 && !validateStep2()) return;
+                if (step < 3) setStep(step + 1);
+            };
+
+            const handleSubmit = async () => {
+                if (!validateStep3()) return;
+                
+                try {
+                    const orderData = {
+                        ...formData,
+                        dataHora: new Date(formData.dataHora).toISOString(),
+                        placa: formData.placa.toUpperCase(),
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    
+                    await db.collection('orders').add(orderData);
+                    alert('Ordem criada com sucesso!');
+                    onSuccess();
+                } catch (error) {
+                    console.error('Erro ao criar ordem:', error);
+                    alert('Erro ao criar ordem. Tente novamente.');
+                }
+            };
+
+            return (
+                <div className="modal">
+                    <div className="modal-content">
+                        <div className="modal-header">
+                            <div className="modal-title">Nova Ordem #{nextOrderNumber}</div>
+                            <button className="close-btn" onClick={onClose}>✕</button>
+                        </div>
+                        
+                        <div className="modal-body">
+                            <div className="step-indicator">
+                                <div className={`step ${step >= 1 ? 'active' : ''} ${step > 1 ? 'completed' : ''}`}>
+                                    <div className="step-number">1</div>
+                                    <div className="step-label">Cliente</div>
+                                </div>
+                                <div className={`step ${step >= 2 ? 'active' : ''} ${step > 2 ? 'completed' : ''}`}>
+                                    <div className="step-number">2</div>
+                                    <div className="step-label">Serviços</div>
+                                </div>
+                                <div className={`step ${step >= 3 ? 'active' : ''}`}>
+                                    <div className="step-number">3</div>
+                                    <div className="step-label">Finalização</div>
+                                </div>
+                            </div>
+
+                            {step === 1 && (
+                                <div>
+                                    <div className="form-group">
+                                        <label className="form-label">Vendedor *</label>
+                                        <select name="vendedor" value={formData.vendedor} onChange={handleChange} className="form-select" required>
+                                            <option value="">Selecione...</option>
+                                            <option value="Caio">Caio</option>
+                                            <option value="Carlos">Carlos</option>
+                                            <option value="Faust">Faust</option>
+                                            <option value="Luis">Luis</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Nome do Cliente *</label>
+                                            <input type="text" name="cliente" value={formData.cliente} onChange={handleChange} className="form-input" required />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Data/Hora</label>
+                                            <input type="datetime-local" name="dataHora" value={formData.dataHora} onChange={handleChange} className="form-input" />
+                                        </div>
+                                    </div>
+
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Telefone</label>
+                                            <input type="tel" name="tel" value={formData.tel} onChange={handleChange} className="form-input" placeholder="(00) 00000-0000" />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">CPF/CNPJ</label>
+                                            <input type="text" name="cpf" value={formData.cpf} onChange={handleChange} className="form-input" placeholder="000.000.000-00" />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Data de Nascimento</label>
+                                            <input type="date" name="dataNascimento" value={formData.dataNascimento} onChange={handleChange} className="form-input" />
+                                        </div>
+                                    </div>
+
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Placa *</label>
+                                            <input type="text" name="placa" value={formData.placa} onChange={handleChange} className="form-input" placeholder="ABC-1234 ou ABC1D23" maxLength="8" required />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Marca</label>
+                                            <input type="text" name="marca" value={formData.marca} onChange={handleChange} className="form-input" />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Modelo</label>
+                                            <input type="text" name="modelo" value={formData.modelo} onChange={handleChange} className="form-input" />
+                                        </div>
+                                    </div>
+
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Motor</label>
+                                            <input type="text" name="motor" value={formData.motor} onChange={handleChange} className="form-input" placeholder="Ex: 1.0, 1.6, 2.0" />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Ano</label>
+                                            <input type="number" name="ano" value={formData.ano} onChange={handleChange} className="form-input" placeholder="2024" />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Câmbio</label>
+                                            <select name="cambio" value={formData.cambio} onChange={handleChange} className="form-select">
+                                                <option value="">Selecione...</option>
+                                                <option value="Manual">Manual</option>
+                                                <option value="Automático">Automático</option>
+                                            </select>
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Combustível</label>
+                                            <select name="combustivel" value={formData.combustivel} onChange={handleChange} className="form-select">
+                                                <option value="">Selecione...</option>
+                                                <option value="Gasolina">Gasolina</option>
+                                                <option value="Diesel">Diesel</option>
+                                                <option value="Flex">Flex</option>
+                                                <option value="GNV">GNV</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {step === 2 && (
+                                <div>
+                                    <div className="section-title">Selecione os Serviços</div>
+                                    
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="oleoMotor" name="oleoMotor" checked={formData.oleoMotor} onChange={handleChange} />
+                                        <label htmlFor="oleoMotor">Óleo de Motor</label>
+                                    </div>
+                                    {formData.oleoMotor && (
+                                        <div className="form-row" style={{ marginLeft: '30px', marginBottom: '15px' }}>
+                                            <div className="form-group">
+                                                <label className="form-label">Marca do Óleo</label>
+                                                <input type="text" name="oleoMarca" value={formData.oleoMarca} onChange={handleChange} className="form-input" placeholder="Ex: Mobil" />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Quantidade (L)</label>
+                                                <input type="number" step="0.01" name="oleoQuantidade" value={formData.oleoQuantidade} onChange={handleChange} className="form-input" placeholder="Ex: 4.5" />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="filtroOleo" name="filtroOleo" checked={formData.filtroOleo} onChange={handleChange} />
+                                        <label htmlFor="filtroOleo">Filtro de Óleo</label>
+                                    </div>
+                                    {formData.filtroOleo && (
+                                        <div style={{ marginLeft: '30px', marginBottom: '15px' }}>
+                                            <div className="form-group">
+                                                <label className="form-label">Tipo do Filtro</label>
+                                                <input type="text" name="filtroOleoTipo" value={formData.filtroOleoTipo} onChange={handleChange} className="form-input" placeholder="Ex: Tecfil PSL140" />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="arMotor" name="arMotor" checked={formData.arMotor} onChange={handleChange} />
+                                        <label htmlFor="arMotor">Filtro Ar Motor</label>
+                                    </div>
+                                    {formData.arMotor && (
+                                        <div style={{ marginLeft: '30px', marginBottom: '15px' }}>
+                                            <div className="form-group">
+                                                <label className="form-label">Código do Filtro</label>
+                                                <input type="text" name="arMotorCodigo" value={formData.arMotorCodigo} onChange={handleChange} className="form-input" placeholder="Ex: ARS9123" />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="arCondicionado" name="arCondicionado" checked={formData.arCondicionado} onChange={handleChange} />
+                                        <label htmlFor="arCondicionado">Filtro Ar Condicionado</label>
+                                    </div>
+                                    {formData.arCondicionado && (
+                                        <div style={{ marginLeft: '30px', marginBottom: '15px' }}>
+                                            <div className="form-group">
+                                                <label className="form-label">Código do Filtro</label>
+                                                <input type="text" name="arCondicionadoCodigo" value={formData.arCondicionadoCodigo} onChange={handleChange} className="form-input" placeholder="Ex: ARC8765" />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="filtroCombustivel" name="filtroCombustivel" checked={formData.filtroCombustivel} onChange={handleChange} />
+                                        <label htmlFor="filtroCombustivel">Filtro de Combustível</label>
+                                    </div>
+                                    {formData.filtroCombustivel && (
+                                        <div style={{ marginLeft: '30px', marginBottom: '15px' }}>
+                                            <div className="form-group">
+                                                <label className="form-label">Código do Filtro</label>
+                                                <input type="text" name="filtroCombustivelCodigo" value={formData.filtroCombustivelCodigo} onChange={handleChange} className="form-input" placeholder="Ex: FC9432" />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="cambioManual" name="cambioManual" checked={formData.cambioManual} onChange={handleChange} />
+                                        <label htmlFor="cambioManual">Troca Câmbio Manual</label>
+                                    </div>
+                                    {formData.cambioManual && (
+                                        <div className="form-row" style={{ marginLeft: '30px', marginBottom: '15px' }}>
+                                            <div className="form-group">
+                                                <label className="form-label">Marca do Óleo</label>
+                                                <input type="text" name="cambioManualMarca" value={formData.cambioManualMarca} onChange={handleChange} className="form-input" placeholder="Ex: Motul" />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Quantidade (L)</label>
+                                                <input type="number" step="0.01" name="cambioManualQuantidade" value={formData.cambioManualQuantidade} onChange={handleChange} className="form-input" placeholder="Ex: 2.0" />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="cambioAutomatico" name="cambioAutomatico" checked={formData.cambioAutomatico} onChange={handleChange} />
+                                        <label htmlFor="cambioAutomatico">Troca Câmbio Automático</label>
+                                    </div>
+                                    {formData.cambioAutomatico && (
+                                        <div style={{ marginLeft: '30px', marginBottom: '15px' }}>
+                                            <div className="form-row">
+                                                <div className="form-group">
+                                                    <label className="form-label">Marca do Óleo</label>
+                                                    <input type="text" name="cambioAutomaticoMarca" value={formData.cambioAutomaticoMarca} onChange={handleChange} className="form-input" placeholder="Ex: Shell" />
+                                                </div>
+                                                <div className="form-group">
+                                                    <label className="form-label">Quantidade (L)</label>
+                                                    <input type="number" step="0.01" name="cambioAutomaticoQuantidade" value={formData.cambioAutomaticoQuantidade} onChange={handleChange} className="form-input" placeholder="Ex: 4.0" />
+                                                </div>
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Tem filtro?</label>
+                                                <select name="cambioAutomaticoTemFiltro" value={formData.cambioAutomaticoTemFiltro} onChange={handleChange} className="form-select">
+                                                    <option value={false}>Não</option>
+                                                    <option value={true}>Sim</option>
+                                                </select>
+                                            </div>
+                                            {formData.cambioAutomaticoTemFiltro === 'true' && (
+                                                <div className="form-group">
+                                                    <label className="form-label">Código do Filtro</label>
+                                                    <input type="text" name="cambioAutomaticoFiltroCodigo" value={formData.cambioAutomaticoFiltroCodigo} onChange={handleChange} className="form-input" placeholder="Ex: CAF5678" />
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="palhetas" name="palhetas" checked={formData.palhetas} onChange={handleChange} />
+                                        <label htmlFor="palhetas">Troca de Palhetas</label>
+                                    </div>
+                                    {formData.palhetas && (
+                                        <div style={{ marginLeft: '30px', marginBottom: '15px' }}>
+                                            <div className="form-group">
+                                                <label className="form-label">Código</label>
+                                                <input type="text" name="palhetasCodigo" value={formData.palhetasCodigo} onChange={handleChange} className="form-input" placeholder="Ex: PAL2226" />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="militec" name="militec" checked={formData.militec} onChange={handleChange} />
+                                        <label htmlFor="militec">Militec/Nano</label>
+                                    </div>
+
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="aditivo" name="aditivo" checked={formData.aditivo} onChange={handleChange} />
+                                        <label htmlFor="aditivo">Aditivo</label>
+                                    </div>
+                                    {formData.aditivo && (
+                                        <div style={{ marginLeft: '30px', marginBottom: '15px' }}>
+                                            <div className="form-group">
+                                                <label className="form-label">Qual Aditivo?</label>
+                                                <input type="text" name="aditivoQual" value={formData.aditivoQual} onChange={handleChange} className="form-input" placeholder="Ex: STP" />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="flush" name="flush" checked={formData.flush} onChange={handleChange} />
+                                        <label htmlFor="flush">Flush</label>
+                                    </div>
+                                    {formData.flush && (
+                                        <div style={{ marginLeft: '30px', marginBottom: '15px' }}>
+                                            <div className="form-group">
+                                                <label className="form-label">Descrição</label>
+                                                <textarea name="flushDescricao" value={formData.flushDescricao} onChange={handleChange} className="form-textarea" placeholder="Descreva o serviço de flush" rows="3"></textarea>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {step === 3 && (
+                                <div>
+                                    <div className="form-group">
+                                        <label className="form-label">Cliente está apto para receber ofertas? *</label>
+                                        <select name="apto" value={formData.apto} onChange={handleChange} className="form-select" required>
+                                            <option value="sim">Sim</option>
+                                            <option value="nao">Não</option>
+                                        </select>
+                                    </div>
+
+                                    {formData.apto === 'nao' && (
+                                        <div className="form-group">
+                                            <label className="form-label">Motivo *</label>
+                                            <textarea name="motivoNaoApto" value={formData.motivoNaoApto} onChange={handleChange} className="form-textarea" placeholder="Por que o cliente não está apto?" required></textarea>
+                                        </div>
+                                    )}
+
+                                    <div className="form-group">
+                                        <label className="form-label">Valor da Venda Inicial (R$) *</label>
+                                        <input type="number" step="0.01" name="valorInicial" value={formData.valorInicial} onChange={handleChange} className="form-input" placeholder="0.00" required />
+                                    </div>
+
+                                    <div className="alert alert-info">
+                                        <strong>Resumo da Ordem</strong>
+                                        <div style={{ marginTop: '10px' }}>
+                                            <div><strong>Cliente:</strong> {formData.cliente}</div>
+                                            <div><strong>Placa:</strong> {formData.placa}</div>
+                                            <div><strong>Veículo:</strong> {formData.marca} {formData.modelo}</div>
+                                            <div><strong>Vendedor:</strong> {formData.vendedor}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: '15px', marginTop: '30px', justifyContent: 'space-between' }}>
+                                {step > 1 && (
+                                    <button className="btn btn-secondary" onClick={() => setStep(step - 1)}>
+                                        ← Voltar
+                                    </button>
+                                )}
+                                {step < 3 ? (
+                                    <button className="btn btn-primary" onClick={handleNext} style={{ marginLeft: 'auto' }}>
+                                        Próximo →
+                                    </button>
+                                ) : (
+                                    <button className="btn btn-success" onClick={handleSubmit} style={{ marginLeft: 'auto' }}>
+                                        ✓ Criar Ordem
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Modal Executar Serviço
+        function ExecutarServicoModal({ order, onClose, onSuccess }) {
+            const [step, setStep] = useState(1);
+            const [formData, setFormData] = useState({
+                lubrificador: '',
+                inicio: getBrasilDateTime(),
+                km: '',
+                fotos: [],
+                upsells: {},
+                obsCarro: '',
+                obsOferta: '',
+                valorAdd: '0'
+            });
+
+            const handleChange = (e) => {
+                const { name, value } = e.target;
+                setFormData(prev => ({
+                    ...prev,
+                    [name]: value
+                }));
+            };
+
+            const handleUpsellChange = (servico, field, value) => {
+                setFormData(prev => ({
+                    ...prev,
+                    upsells: {
+                        ...prev.upsells,
+                        [servico]: {
+                            ...prev.upsells[servico],
+                            [field]: value
+                        }
+                    }
+                }));
+            };
+
+            const calcularValorUpsell = () => {
+                let total = 0;
+                Object.values(formData.upsells).forEach(upsell => {
+                    if (upsell.oferecido && upsell.aceito === 'sim' && upsell.valor) {
+                        total += parseFloat(upsell.valor) || 0;
+                    }
+                });
+                return total;
+            };
+
+            const handleFinalizar = async () => {
+                if (!formData.lubrificador) {
+                    alert('Selecione o lubrificador');
+                    return;
+                }
+
+                if (!formData.km) {
+                    alert('Informe a quilometragem do veículo');
+                    return;
+                }
+
+                try {
+                    const fim = getBrasilDateTime();
+                    const valorUpsell = calcularValorUpsell();
+                    const valorTotal = parseFloat(order.valorInicial || 0) + valorUpsell;
+                    const quantidadeItensUpsell = Object.values(formData.upsells).filter(u => u.oferecido && u.aceito === 'sim').length;
+
+                    const updateData = {
+                        ...formData,
+                        status: 'concluido',
+                        fim,
+                        valorUpsell,
+                        valorTotal,
+                        fezUpsell: quantidadeItensUpsell > 0,
+                        quantidadeItensUpsell,
+                        tempoEspera: order.dataHora && formData.inicio ? calcularDiferencaTempo(
+                            new Date(order.dataHora).toLocaleString('pt-BR'),
+                            formData.inicio
+                        ) : 'N/A',
+                        tempoServico: calcularDiferencaTempo(formData.inicio, fim)
+                    };
+
+                    await db.collection('orders').doc(order.id).update(updateData);
+                    alert('Serviço finalizado com sucesso!');
+                    onSuccess();
+                } catch (error) {
+                    console.error('Erro ao finalizar serviço:', error);
+                    alert('Erro ao finalizar serviço.');
+                }
+            };
+
+            // Serviços disponíveis para upsell
+            const servicosDisponiveis = [];
+            if (!order.oleoMotor) servicosDisponiveis.push({ key: 'oleoMotor', label: 'Óleo de Motor' });
+            if (!order.filtroOleo) servicosDisponiveis.push({ key: 'filtroOleo', label: 'Filtro de Óleo' });
+            if (!order.arMotor) servicosDisponiveis.push({ key: 'arMotor', label: 'Filtro Ar Motor' });
+            if (!order.arCondicionado) servicosDisponiveis.push({ key: 'arCondicionado', label: 'Filtro Ar Condicionado' });
+            if (!order.filtroCombustivel) servicosDisponiveis.push({ key: 'filtroCombustivel', label: 'Filtro Combustível' });
+
+            return (
+                <div className="modal">
+                    <div className="modal-content">
+                        <div className="modal-header">
+                            <div className="modal-title">Executar Serviço - Ordem #{order.numeroOrdem}</div>
+                            <button className="close-btn" onClick={onClose}>✕</button>
+                        </div>
+                        
+                        <div className="modal-body">
+                            {step === 1 && (
+                                <div>
+                                    <div className="alert alert-info">
+                                        <div><strong>Placa:</strong> {order.placa}</div>
+                                        <div><strong>Veículo:</strong> {order.marca} {order.modelo} {order.motor}</div>
+                                        <div><strong>Ano:</strong> {order.ano}</div>
+                                        <div><strong>Cliente:</strong> {order.cliente}</div>
+                                        <div><strong>Vendedor:</strong> {order.vendedor}</div>
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label className="form-label">Lubrificador *</label>
+                                        <select name="lubrificador" value={formData.lubrificador} onChange={handleChange} className="form-select" required>
+                                            <option value="">Selecione...</option>
+                                            <option value="Caio">Caio</option>
+                                            <option value="Luis">Luis</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label className="form-label">Quilometragem (KM) *</label>
+                                        <input type="number" name="km" value={formData.km} onChange={handleChange} className="form-input" placeholder="Ex: 45000" required />
+                                    </div>
+
+                                    <div className="section-title">Serviços a Realizar</div>
+                                    <div className="services-list">
+                                        {order.oleoMotor && <div className="service-item">✓ Óleo Motor ({order.oleoMarca} - {order.oleoQuantidade}L)</div>}
+                                        {order.filtroOleo && <div className="service-item">✓ Filtro Óleo ({order.filtroOleoTipo})</div>}
+                                        {order.arMotor && <div className="service-item">✓ Filtro Ar Motor ({order.arMotorCodigo})</div>}
+                                        {order.arCondicionado && <div className="service-item">✓ Filtro Ar Condicionado ({order.arCondicionadoCodigo})</div>}
+                                        {order.filtroCombustivel && <div className="service-item">✓ Filtro Combustível ({order.filtroCombustivelCodigo})</div>}
+                                        {order.cambioManual && <div className="service-item">✓ Câmbio Manual ({order.cambioManualMarca} - {order.cambioManualQuantidade}L)</div>}
+                                        {order.cambioAutomatico && <div className="service-item">✓ Câmbio Automático ({order.cambioAutomaticoMarca} - {order.cambioAutomaticoQuantidade}L)</div>}
+                                        {order.palhetas && <div className="service-item">✓ Palhetas ({order.palhetasCodigo})</div>}
+                                        {order.militec && <div className="service-item">✓ Militec/Nano</div>}
+                                        {order.aditivo && <div className="service-item">✓ Aditivo ({order.aditivoQual})</div>}
+                                        {order.flush && <div className="service-item">✓ Flush</div>}
+                                    </div>
+
+                                    {order.apto === 'sim' ? (
+                                        <div className="alert alert-success">
+                                            <strong>✅ CLIENTE ACEITA OFERTAS!</strong>
+                                            <div>Ofereça serviços adicionais na próxima etapa</div>
+                                        </div>
+                                    ) : (
+                                        <div className="alert alert-danger">
+                                            <strong>❌ NÃO OFERECER SERVIÇOS EXTRAS</strong>
+                                            <div>Motivo: {order.motivoNaoApto}</div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {step === 2 && order.apto === 'sim' && (
+                                <div>
+                                    <div className="section-title">Ofertas Adicionais (Upsell)</div>
+                                    
+                                    {servicosDisponiveis.length === 0 ? (
+                                        <div className="alert alert-info">
+                                            Todos os serviços já foram vendidos pelo vendedor.
+                                        </div>
+                                    ) : (
+                                        servicosDisponiveis.map(({ key, label }) => (
+                                            <div key={key} style={{ marginBottom: '20px', padding: '15px', background: '#f7fafc', borderRadius: '8px' }}>
+                                                <div className="checkbox-group">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={formData.upsells[key]?.oferecido || false}
+                                                        onChange={(e) => handleUpsellChange(key, 'oferecido', e.target.checked)}
+                                                    />
+                                                    <label style={{ fontWeight: 'bold' }}>{label}</label>
+                                                </div>
+                                                
+                                                {formData.upsells[key]?.oferecido && (
+                                                    <div style={{ marginTop: '10px', marginLeft: '30px' }}>
+                                                        {['arMotor', 'arCondicionado', 'filtroCombustivel'].includes(key) && (
+                                                            <div className="form-group">
+                                                                <label className="form-label">URL da Foto</label>
+                                                                <input 
+                                                                    type="url" 
+                                                                    className="form-input"
+                                                                    placeholder="Cole a URL da foto aqui"
+                                                                    value={formData.upsells[key]?.foto || ''}
+                                                                    onChange={(e) => handleUpsellChange(key, 'foto', e.target.value)}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                        
+                                                        <div className="form-group">
+                                                            <label className="form-label">Cliente aceitou?</label>
+                                                            <select 
+                                                                className="form-select"
+                                                                value={formData.upsells[key]?.aceito || ''}
+                                                                onChange={(e) => handleUpsellChange(key, 'aceito', e.target.value)}
+                                                            >
+                                                                <option value="">Selecione...</option>
+                                                                <option value="sim">Sim</option>
+                                                                <option value="nao">Não</option>
+                                                            </select>
+                                                        </div>
+
+                                                        {formData.upsells[key]?.aceito === 'sim' && (
+                                                            <div className="form-group">
+                                                                <label className="form-label">Valor (R$)</label>
+                                                                <input 
+                                                                    type="number" 
+                                                                    step="0.01"
+                                                                    className="form-input"
+                                                                    placeholder="0.00"
+                                                                    value={formData.upsells[key]?.valor || ''}
+                                                                    onChange={(e) => handleUpsellChange(key, 'valor', e.target.value)}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+
+                            {(step === 3 || (step === 2 && order.apto !== 'sim')) && (
+                                <div>
+                                    <div className="form-group">
+                                        <label className="form-label">Observações sobre o Carro</label>
+                                        <textarea 
+                                            name="obsCarro" 
+                                            value={formData.obsCarro} 
+                                            onChange={handleChange} 
+                                            className="form-textarea" 
+                                            placeholder="Ex: Vazamento de óleo, pneus gastos..."
+                                            rows="3"
+                                        ></textarea>
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label className="form-label">Observações sobre Ofertas</label>
+                                        <textarea 
+                                            name="obsOferta" 
+                                            value={formData.obsOferta} 
+                                            onChange={handleChange} 
+                                            className="form-textarea" 
+                                            placeholder="Ex: Não tinha filtro em estoque, cliente recusou serviço..."
+                                            rows="3"
+                                        ></textarea>
+                                    </div>
+
+                                    <div className="value-display">
+                                        <div className="value-row">
+                                            <span className="value-label">Valor Inicial:</span>
+                                            <span className="value-amount">R$ {parseFloat(order.valorInicial || 0).toFixed(2)}</span>
+                                        </div>
+                                        {calcularValorUpsell() > 0 && (
+                                            <div className="value-row">
+                                                <span className="value-label">Valor Adicional (Upsell):</span>
+                                                <span className="value-amount">+ R$ {calcularValorUpsell().toFixed(2)}</span>
+                                            </div>
+                                        )}
+                                        <div className="value-row value-total">
+                                            <span className="value-label">TOTAL:</span>
+                                            <span className="value-amount">R$ {(parseFloat(order.valorInicial || 0) + calcularValorUpsell()).toFixed(2)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: '15px', marginTop: '30px', justifyContent: 'space-between' }}>
+                                {step > 1 && (
+                                    <button className="btn btn-secondary" onClick={() => setStep(step - 1)}>
+                                        ← Voltar
+                                    </button>
+                                )}
+                                {(step === 1 || (step === 2 && order.apto === 'sim' && servicosDisponiveis.length > 0)) ? (
+                                    <button className="btn btn-primary" onClick={() => setStep(step + 1)} style={{ marginLeft: 'auto' }}>
+                                        Próximo →
+                                    </button>
+                                ) : (
+                                    <button className="btn btn-success" onClick={handleFinalizar} style={{ marginLeft: 'auto' }}>
+                                        ✓ Finalizar Serviço
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Modal Detalhes
+        function DetalhesModal({ order, onClose, onUpdate }) {
+            const [editMode, setEditMode] = useState(false);
+            const [formData, setFormData] = useState({
+                valorInicial: order.valorInicial || '',
+                valorUpsell: order.valorUpsell || 0,
+                obsCarro: order.obsCarro || '',
+                obsOferta: order.obsOferta || '',
+                voltouComProblema: order.voltouComProblema || false
+            });
+
+            const handleChange = (e) => {
+                const { name, value, type, checked } = e.target;
+                setFormData(prev => ({
+                    ...prev,
+                    [name]: type === 'checkbox' ? checked : value
+                }));
+            };
+
+            const handleSave = async () => {
+                try {
+                    const valorTotal = parseFloat(formData.valorInicial || 0) + parseFloat(formData.valorUpsell || 0);
+                    await db.collection('orders').doc(order.id).update({
+                        ...formData,
+                        valorTotal
+                    });
+                    alert('Alterações salvas com sucesso!');
+                    setEditMode(false);
+                    onUpdate();
+                } catch (error) {
+                    console.error('Erro ao salvar:', error);
+                    alert('Erro ao salvar alterações.');
+                }
+            };
+
+            return (
+                <div className="modal">
+                    <div className="modal-content">
+                        <div className="modal-header">
+                            <div className="modal-title">Detalhes - Ordem #{order.numeroOrdem}</div>
+                            <button className="close-btn" onClick={onClose}>✕</button>
+                        </div>
+                        
+                        <div className="modal-body">
+                            <div className="section-title">Informações Gerais</div>
+                            <div className="info-row">
+                                <span className="info-label">Status:</span>
+                                <span style={{ 
+                                    color: order.status === 'aguardando' ? '#f6ad55' : '#48bb78',
+                                    fontWeight: 'bold'
+                                }}>
+                                    {order.status === 'aguardando' ? '🟡 Aguardando' : '🟢 Concluído'}
+                                </span>
+                            </div>
+                            <div className="info-row">
+                                <span className="info-label">Placa:</span>
+                                <span>{order.placa}</span>
+                            </div>
+                            <div className="info-row">
+                                <span className="info-label">Cliente:</span>
+                                <span>{order.cliente}</span>
+                            </div>
+                            <div className="info-row">
+                                <span className="info-label">Veículo:</span>
+                                <span>{order.marca} {order.modelo} {order.motor} ({order.ano})</span>
+                            </div>
+                            <div className="info-row">
+                                <span className="info-label">Combustível:</span>
+                                <span>{order.combustivel}</span>
+                            </div>
+                            <div className="info-row">
+                                <span className="info-label">Vendedor:</span>
+                                <span>{order.vendedor}</span>
+                            </div>
+                            {order.lubrificador && (
+                                <div className="info-row">
+                                    <span className="info-label">Lubrificador:</span>
+                                    <span>{order.lubrificador}</span>
+                                </div>
+                            )}
+
+                            <div className="section-title">Tempos</div>
+                            <div className="info-row">
+                                <span className="info-label">Registro:</span>
+                                <span>{order.dataHora ? new Date(order.dataHora).toLocaleString('pt-BR') : 'N/A'}</span>
+                            </div>
+                            {order.inicio && (
+                                <>
+                                    <div className="info-row">
+                                        <span className="info-label">Início do Serviço:</span>
+                                        <span>{order.inicio}</span>
+                                    </div>
+                                    <div className="info-row">
+                                        <span className="info-label">Fim do Serviço:</span>
+                                        <span>{order.fim || 'N/A'}</span>
+                                    </div>
+                                    {order.tempoEspera && (
+                                        <div className="info-row">
+                                            <span className="info-label">Tempo de Espera:</span>
+                                            <span style={{ fontWeight: 'bold', color: '#f6ad55' }}>{order.tempoEspera}</span>
+                                        </div>
+                                    )}
+                                    {order.tempoServico && (
+                                        <div className="info-row">
+                                            <span className="info-label">Tempo de Serviço:</span>
+                                            <span style={{ fontWeight: 'bold', color: '#48bb78' }}>{order.tempoServico}</span>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+
+                            <div className="section-title">Valores</div>
+                            <div className="value-display">
+                                <div className="value-row">
+                                    <span className="value-label">Valor Inicial:</span>
+                                    {editMode ? (
+                                        <input 
+                                            type="number" 
+                                            step="0.01"
+                                            name="valorInicial"
+                                            value={formData.valorInicial}
+                                            onChange={handleChange}
+                                            className="form-input"
+                                            style={{ width: '150px' }}
+                                        />
+                                    ) : (
+                                        <span className="value-amount">R$ {parseFloat(order.valorInicial || 0).toFixed(2)}</span>
+                                    )}
+                                </div>
+                                {order.valorUpsell > 0 && (
+                                    <div className="value-row">
+                                        <span className="value-label">Valor Adicional (Upsell):</span>
+                                        <span className="value-amount">+ R$ {parseFloat(order.valorUpsell || 0).toFixed(2)}</span>
+                                    </div>
+                                )}
+                                <div className="value-row value-total">
+                                    <span className="value-label">TOTAL:</span>
+                                    <span className="value-amount">R$ {parseFloat(order.valorTotal || order.valorInicial || 0).toFixed(2)}</span>
+                                </div>
+                            </div>
+
+                            {order.obsCarro && (
+                                <>
+                                    <div className="section-title">Observações do Carro</div>
+                                    {editMode ? (
+                                        <textarea 
+                                            name="obsCarro"
+                                            value={formData.obsCarro}
+                                            onChange={handleChange}
+                                            className="form-textarea"
+                                            rows="3"
+                                        ></textarea>
+                                    ) : (
+                                        <div style={{ padding: '15px', background: '#f7fafc', borderRadius: '8px' }}>
+                                            {order.obsCarro}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+
+                            {order.obsOferta && (
+                                <>
+                                    <div className="section-title">Observações sobre Ofertas</div>
+                                    {editMode ? (
+                                        <textarea 
+                                            name="obsOferta"
+                                            value={formData.obsOferta}
+                                            onChange={handleChange}
+                                            className="form-textarea"
+                                            rows="3"
+                                        ></textarea>
+                                    ) : (
+                                        <div style={{ padding: '15px', background: '#f7fafc', borderRadius: '8px' }}>
+                                            {order.obsOferta}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+
+                            {order.status === 'concluido' && (
+                                <div className="form-group" style={{ marginTop: '20px' }}>
+                                    <div className="checkbox-group">
+                                        <input 
+                                            type="checkbox"
+                                            id="voltouComProblema"
+                                            name="voltouComProblema"
+                                            checked={formData.voltouComProblema}
+                                            onChange={handleChange}
+                                            disabled={!editMode}
+                                        />
+                                        <label htmlFor="voltouComProblema" style={{ color: '#f56565', fontWeight: 'bold' }}>
+                                            ⚠️ Cliente voltou com problema
+                                        </label>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: '15px', marginTop: '30px' }}>
+                                {editMode ? (
+                                    <>
+                                        <button className="btn btn-secondary" onClick={() => setEditMode(false)}>
+                                            Cancelar
+                                        </button>
+                                        <button className="btn btn-success" onClick={handleSave}>
+                                            💾 Salvar
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <button className="btn btn-secondary" onClick={onClose}>
+                                            Fechar
+                                        </button>
+                                        <button className="btn btn-primary" onClick={() => setEditMode(true)}>
+                                            ✏️ Editar
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Renderizar aplicação
+        ReactDOM.render(<App />, document.getElementById('root'));
     </script>
 </body>
 </html>
