@@ -1,56 +1,768 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Master Óleo – Sistema de Ordens</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23004aad'/><text x='50' y='60' font-size='52' text-anchor='middle' fill='white' font-family='Arial'>MO</text></svg>'>
-  <!-- Tailwind CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            aguardando: '#fbbf24',
-            concluido: '#22c55e',
-            acao: '#3b82f6',
-            cancelar: '#ef4444',
-            alerta: '#fb923c',
-            brandBlue: '#004aad',
-            brandRed: '#d80909'
-          }
-        }
-      }
-    }
-  </script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/11.0.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore-compat.js"></script>
-  <style>
-    html, body, #root { height: 100%; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Master Óleo Curitiba</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-slate-50 text-slate-900 min-h-screen">
-  <div id="root" class="h-full"></div>
-  <script type="text/babel">
-    const firebaseConfig = {
-      apiKey: "AIzaSyDGKmHDcq4ErMxiovaZJl7W2aASQ_WqgGY",
-      authDomain: "masteroleo-1ed99.firebaseapp.com",
-      projectId: "masteroleo-1ed99",
-      storageBucket: "masteroleo-1ed99.firebasestorage.app",
-      messagingSenderId: "242752297319",
-      appId: "1:242752297319:web:e6384e400ba2abc2aa37c2",
-      measurementId: "G-QL78TZBW3V"
-    };
+<body>
+    <div id="root"></div>
+    
+    <script>
+        const { useState, useEffect, createElement: h } = React;
 
-    if (!firebase.apps.length) {
-      firebase.initializeApp(firebaseConfig);
-    }
-    const db = firebase.firestore();
-  </script>
+        const FIREBASE = {
+          apiKey: "AIzaSyDGKmHDcq4ErMxiovaZJl7W2aASQ_WqgGY",
+          projectId: "masteroleo-1ed99"
+        };
+
+        const firebaseAPI = {
+          async save(order) {
+            const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE.projectId}/databases/(default)/documents/orders?documentId=${order.id}&key=${FIREBASE.apiKey}`;
+            const res = await fetch(url, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fields: {
+                  data: { stringValue: JSON.stringify(order) },
+                  ts: { timestampValue: new Date().toISOString() }
+                }
+              })
+            });
+            return res.ok;
+          },
+
+          async getAll() {
+            const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE.projectId}/databases/(default)/documents/orders?key=${FIREBASE.apiKey}`;
+            const res = await fetch(url);
+            if (!res.ok) return [];
+            const data = await res.json();
+            if (!data.documents) return [];
+            return data.documents.map(doc => JSON.parse(doc.fields.data.stringValue));
+          },
+
+          async delete(id) {
+            const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE.projectId}/databases/(default)/documents/orders/${id}?key=${FIREBASE.apiKey}`;
+            const res = await fetch(url, { method: 'DELETE' });
+            return res.ok;
+          }
+        };
+
+        const getBRTime = () => new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+        const getBRDate = () => new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).split('/').reverse().join('-');
+
+        function App() {
+          const [view, setView] = useState('dash');
+          const [orders, setOrders] = useState([]);
+          const [current, setCurrent] = useState(null);
+          const [step, setStep] = useState(1);
+          const [loading, setLoading] = useState(false);
+          const [filtro, setFiltro] = useState('hoje');
+          const [showDetails, setShowDetails] = useState(null);
+
+          const [form, setForm] = useState({
+            vendedor: '', placa: '', marca: '', modelo: '', motor: '', ano: '', cambio: '', combustivel: '',
+            cliente: '', tel: '', cpf: '', dataNasc: '', km: '', valorInicial: '', apto: '', motivo: '',
+            dataHora: new Date().toISOString().slice(0, 16),
+            oleoMotor: false, oleoMarca: '', oleoQtd: '',
+            filtroOleo: false, filtroTipo: '',
+            arMotor: false, arMotorCod: '',
+            arCond: false, arCondCod: '',
+            combust: false, combustCod: '',
+            cambioM: false, cambioMMarca: '', cambioMQtd: '',
+            cambioA: false, cambioAMarca: '', cambioAQtd: '', cambioAFiltro: false, cambioAFiltroCod: '',
+            palhetas: false, palhetasCod: '',
+            militec: false,
+            aditivo: false, aditivoQual: '',
+            flush: false, flushDesc: ''
+          });
+
+          const [svc, setSvc] = useState({
+            lubrif: '', km: '', obsCarro: '', obsOferta: '', fotos: [], upsells: []
+          });
+
+          const vendedores = ['Caio', 'Carlos', 'Faust', 'Luis'];
+          const lubris = ['Caio', 'Luis'];
+
+          useEffect(() => {
+            load();
+            const i = setInterval(load, 30000);
+            return () => clearInterval(i);
+          }, []);
+
+          const load = async () => {
+            try {
+              setLoading(true);
+              const data = await firebaseAPI.getAll();
+              setOrders(data.sort((a, b) => new Date(b.dataHora) - new Date(a.dataHora)));
+            } catch (e) {
+              console.error(e);
+            } finally {
+              setLoading(false);
+            }
+          };
+
+          const save = async (order) => {
+            try {
+              setLoading(true);
+              const ok = await firebaseAPI.save(order);
+              if (ok) {
+                await load();
+                return true;
+              }
+              return false;
+            } catch (e) {
+              alert('Erro ao salvar');
+              return false;
+            } finally {
+              setLoading(false);
+            }
+          };
+
+          const del = async (id) => {
+            if (!confirm('Cancelar?')) return;
+            try {
+              await firebaseAPI.delete(id);
+              await load();
+              alert('Cancelada');
+            } catch (e) {
+              alert('Erro');
+            }
+          };
+
+          const newOrder = () => {
+            setForm({
+              vendedor: '', placa: '', marca: '', modelo: '', motor: '', ano: '', cambio: '', combustivel: '',
+              cliente: '', tel: '', cpf: '', dataNasc: '', km: '', valorInicial: '', apto: '', motivo: '',
+              dataHora: new Date().toISOString().slice(0, 16),
+              oleoMotor: false, oleoMarca: '', oleoQtd: '',
+              filtroOleo: false, filtroTipo: '',
+              arMotor: false, arMotorCod: '',
+              arCond: false, arCondCod: '',
+              combust: false, combustCod: '',
+              cambioM: false, cambioMMarca: '', cambioMQtd: '',
+              cambioA: false, cambioAMarca: '', cambioAQtd: '', cambioAFiltro: false, cambioAFiltroCod: '',
+              palhetas: false, palhetasCod: '',
+              militec: false,
+              aditivo: false, aditivoQual: '',
+              flush: false, flushDesc: ''
+            });
+            setView('new');
+            setStep(1);
+          };
+
+          const submitOrder = async () => {
+            if (!form.vendedor || !form.placa || !form.cliente) {
+              alert('Preencha vendedor, placa e cliente');
+              return;
+            }
+
+            const order = {
+              id: Date.now().toString(),
+              num: orders.length + 1,
+              ...form,
+              status: 'aguardando',
+              lubrif: null,
+              inicio: null,
+              fim: null,
+              fezUpsell: false,
+              qtdUpsell: 0,
+              valUpsell: 0,
+              valTotal: parseFloat(form.valorInicial) || 0,
+              problema: false
+            };
+
+            const ok = await save(order);
+            if (ok) {
+              setView('dash');
+              alert('Criada!');
+            }
+          };
+
+          const startSvc = (o) => {
+            setCurrent(o);
+            setSvc({ lubrif: '', km: o.km || '', obsCarro: '', obsOferta: '', fotos: [], upsells: [] });
+            setView('svc');
+            setStep(1);
+          };
+
+          const finishSvc = async () => {
+            if (!svc.lubrif) {
+              alert('Selecione lubrificador');
+              return;
+            }
+
+            const valUpsell = svc.upsells.reduce((sum, u) => sum + u.val, 0);
+
+            const updated = {
+              ...current,
+              status: 'concluido',
+              lubrif: svc.lubrif,
+              km: svc.km,
+              obsCarro: svc.obsCarro,
+              obsOferta: svc.obsOferta,
+              fotos: svc.fotos,
+              inicio: getBRTime(),
+              fim: getBRTime(),
+              fezUpsell: svc.upsells.length > 0,
+              qtdUpsell: svc.upsells.length,
+              valUpsell: valUpsell,
+              upsellsDet: svc.upsells,
+              valTotal: (parseFloat(current.valorInicial) || 0) + valUpsell
+            };
+
+            const ok = await save(updated);
+            if (ok) {
+              setView('dash');
+              setCurrent(null);
+              alert('Finalizado!');
+            }
+          };
+
+          const addUpsell = (nome, val) => {
+            const v = parseFloat(val) || 0;
+            setSvc(s => ({ ...s, upsells: [...s.upsells, { nome, val: v }] }));
+          };
+
+          const getResumo = (o) => {
+            const s = [];
+            if (o.oleoMotor) s.push(`Oleo ${o.oleoMarca} ${o.oleoQtd}L`);
+            if (o.filtroOleo) s.push(`Filtro ${o.filtroTipo}`);
+            if (o.arMotor) s.push(`Ar Motor ${o.arMotorCod}`);
+            if (o.arCond) s.push(`Ar Cond ${o.arCondCod}`);
+            if (o.combust) s.push(`Combust ${o.combustCod}`);
+            if (o.cambioM) s.push(`Cambio M ${o.cambioMMarca}`);
+            if (o.cambioA) s.push(`Cambio A ${o.cambioAMarca}`);
+            if (o.palhetas) s.push(`Palhetas ${o.palhetasCod}`);
+            if (o.militec) s.push('Militec');
+            if (o.aditivo) s.push(`Aditivo ${o.aditivoQual}`);
+            if (o.flush) s.push('Flush');
+            return s.join(', ') || 'Nenhum';
+          };
+
+          const filtrar = () => {
+            let f = orders.filter(o => o.status === 'concluido');
+            if (filtro === 'hoje') {
+              const hoje = getBRDate();
+              f = f.filter(o => o.dataHora.slice(0, 10) === hoje);
+            } else if (filtro === 'semana') {
+              const sem = new Date();
+              sem.setDate(sem.getDate() - 7);
+              f = f.filter(o => new Date(o.dataHora) >= sem);
+            } else if (filtro === 'mes') {
+              const mes = new Date();
+              mes.setMonth(mes.getMonth() - 1);
+              f = f.filter(o => new Date(o.dataHora) >= mes);
+            }
+            return f;
+          };
+
+          const aguard = orders.filter(o => o.status === 'aguardando');
+          const concl = filtrar();
+
+          if (loading) {
+            return h('div', { className: 'min-h-screen bg-blue-50 flex items-center justify-center' },
+              h('div', { className: 'text-center' },
+                h('div', { className: 'animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4' }),
+                h('p', { className: 'text-lg font-bold' }, 'Carregando...')
+              )
+            );
+          }
+
+          if (view === 'dash') {
+            return h('div', { className: 'min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 p-4' },
+              h('div', { className: 'max-w-7xl mx-auto' },
+                h('div', { className: 'bg-white rounded-lg shadow-lg p-6 mb-6' },
+                  h('div', { className: 'flex justify-between items-center' },
+                    h('div', null,
+                      h('h1', { className: 'text-3xl font-bold text-blue-900' }, 'Master Óleo Curitiba'),
+                      h('p', { className: 'text-gray-600' }, 'Sistema Completo v2.0')
+                    ),
+                    h('div', { className: 'flex gap-2' },
+                      h('button', { onClick: load, className: 'bg-blue-500 text-white px-4 py-3 rounded-lg' }, 'Atualizar'),
+                      h('button', { onClick: newOrder, className: 'bg-blue-600 text-white px-6 py-3 rounded-lg' }, '+ Nova')
+                    )
+                  )
+                ),
+
+                h('div', { className: 'grid grid-cols-3 gap-4 mb-6' },
+                  h('div', { className: 'bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4' },
+                    h('h3', { className: 'font-bold' }, 'Aguardando'),
+                    h('p', { className: 'text-3xl font-bold text-yellow-600' }, aguard.length)
+                  ),
+                  h('div', { className: 'bg-green-50 border-2 border-green-300 rounded-lg p-4' },
+                    h('h3', { className: 'font-bold' }, 'Concluídos'),
+                    h('p', { className: 'text-3xl font-bold text-green-600' }, concl.length)
+                  ),
+                  h('div', { className: 'bg-blue-50 border-2 border-blue-300 rounded-lg p-4' },
+                    h('h3', { className: 'font-bold' }, 'Total'),
+                    h('p', { className: 'text-3xl font-bold text-blue-600' }, orders.length)
+                  )
+                ),
+
+                h('div', { className: 'bg-white rounded-lg shadow-lg p-6' },
+                  aguard.length > 0 && h('div', { className: 'mb-6' },
+                    h('h3', { className: 'font-bold mb-3 text-lg' }, 'Fila de Espera'),
+                    h('div', { className: 'space-y-2' },
+                      aguard.map((o, i) =>
+                        h('div', { key: o.id, className: 'bg-yellow-50 border rounded-lg p-4' },
+                          h('div', { className: 'flex justify-between' },
+                            h('div', { className: 'flex-1' },
+                              h('div', { className: 'flex items-center gap-2 mb-2' },
+                                h('span', { className: 'bg-yellow-600 text-white px-3 py-1 rounded font-bold' }, `#${i + 1}`),
+                                h('span', { className: 'bg-blue-600 text-white px-2 py-1 rounded text-xs' }, `Ordem ${o.num}`),
+                                h('p', { className: 'font-bold' }, `${o.placa} - ${o.marca} ${o.modelo}`),
+                                h('span', { className: 'text-sm text-gray-600' }, `Motor ${o.motor}`)
+                              ),
+                              h('p', { className: 'text-sm' }, `Cliente: ${o.cliente}`),
+                              h('p', { className: 'text-sm' }, `Vendedor: ${o.vendedor}`),
+                              h('p', { className: 'text-xs text-gray-600 mb-2' }, new Date(o.dataHora).toLocaleString('pt-BR')),
+                              h('div', { className: 'bg-white p-2 rounded border' },
+                                h('p', { className: 'text-xs font-bold' }, 'Serviços:'),
+                                h('p', { className: 'text-xs' }, getResumo(o))
+                              )
+                            ),
+                            h('div', { className: 'flex flex-col gap-2' },
+                              h('button', { onClick: () => startSvc(o), className: 'bg-blue-600 text-white px-4 py-2 rounded' }, 'Iniciar'),
+                              h('button', { onClick: () => del(o.id), className: 'bg-red-500 text-white px-4 py-2 rounded' }, 'Cancelar')
+                            )
+                          )
+                        )
+                      )
+                    )
+                  ),
+
+                  h('div', null,
+                    h('div', { className: 'flex justify-between items-center mb-3' },
+                      h('h3', { className: 'font-bold text-lg' }, 'Concluídos'),
+                      h('div', { className: 'flex gap-2' },
+                        h('button', { onClick: () => setFiltro('hoje'), className: `px-3 py-1 rounded ${filtro === 'hoje' ? 'bg-blue-600 text-white' : 'bg-gray-200'}` }, 'Hoje'),
+                        h('button', { onClick: () => setFiltro('semana'), className: `px-3 py-1 rounded ${filtro === 'semana' ? 'bg-blue-600 text-white' : 'bg-gray-200'}` }, 'Semana'),
+                        h('button', { onClick: () => setFiltro('mes'), className: `px-3 py-1 rounded ${filtro === 'mes' ? 'bg-blue-600 text-white' : 'bg-gray-200'}` }, 'Mês')
+                      )
+                    ),
+
+                    concl.length > 0 ? h('div', { className: 'space-y-2' },
+                      concl.map(o =>
+                        h('div', { key: o.id, className: 'bg-green-50 border rounded-lg p-4' },
+                          h('div', { className: 'flex justify-between' },
+                            h('div', { className: 'flex-1' },
+                              h('div', { className: 'flex items-center gap-2 mb-2' },
+                                h('span', { className: 'bg-green-600 text-white px-2 py-1 rounded text-xs font-bold' }, `#${o.num}`),
+                                h('p', { className: 'font-bold' }, `${o.placa} - ${o.marca} ${o.modelo}`),
+                                h('span', { className: 'text-sm text-gray-600' }, `Motor ${o.motor}`),
+                                o.fezUpsell && h('span', { className: 'bg-purple-600 text-white text-xs px-2 py-1 rounded' }, `💰 +R$${o.valUpsell.toFixed(2)}`)
+                              ),
+                              h('p', { className: 'text-sm' }, `Cliente: ${o.cliente}`),
+                              h('p', { className: 'text-sm' }, `Lubrificador: ${o.lubrif}`)
+                            ),
+                            h('div', { className: 'text-right' },
+                              h('p', { className: 'text-xs text-gray-600' }, 'Inicial'),
+                              h('p', { className: 'text-sm font-semibold' }, `R$ ${parseFloat(o.valorInicial || 0).toFixed(2)}`),
+                              h('p', { className: 'text-xs text-gray-600 mt-1' }, 'Final'),
+                              h('p', { className: 'text-lg font-bold text-green-700' }, `R$ ${o.valTotal.toFixed(2)}`),
+                              h('button', { onClick: () => setShowDetails(o), className: 'bg-blue-600 text-white px-3 py-1 rounded text-sm mt-2' }, 'Ver')
+                            )
+                          )
+                        )
+                      )
+                    ) : h('p', { className: 'text-gray-500 text-center py-4' }, 'Nenhuma ordem')
+                  )
+                )
+              )
+            );
+          }
+
+          if (view === 'new' && step === 1) {
+            return h('div', { className: 'min-h-screen bg-blue-50 p-4' },
+              h('div', { className: 'max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-6 max-h-screen overflow-y-auto' },
+                h('h2', { className: 'text-2xl font-bold mb-6' }, 'Dados do Cliente'),
+                h('div', { className: 'space-y-4' },
+                  h('div', { className: 'grid grid-cols-2 gap-4' },
+                    h('div', null,
+                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Vendedor'),
+                      h('select', { value: form.vendedor, onChange: (e) => setForm({ ...form, vendedor: e.target.value }), className: 'w-full p-3 border rounded' },
+                        h('option', { value: '' }, 'Selecione'),
+                        ...vendedores.map(v => h('option', { key: v, value: v }, v))
+                      )
+                    ),
+                    h('div', null,
+                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Data/Hora'),
+                      h('input', { type: 'datetime-local', value: form.dataHora, onChange: (e) => setForm({ ...form, dataHora: e.target.value }), className: 'w-full p-3 border rounded' })
+                    )
+                  ),
+                  h('div', null,
+                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Cliente'),
+                    h('input', { value: form.cliente, onChange: (e) => setForm({ ...form, cliente: e.target.value }), className: 'w-full p-3 border rounded' })
+                  ),
+                  h('div', { className: 'grid grid-cols-2 gap-4' },
+                    h('div', null,
+                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Telefone'),
+                      h('input', { value: form.tel, onChange: (e) => setForm({ ...form, tel: e.target.value }), className: 'w-full p-3 border rounded' })
+                    ),
+                    h('div', null,
+                      h('label', { className: 'block text-sm font-bold mb-2' }, 'CPF'),
+                      h('input', { value: form.cpf, onChange: (e) => setForm({ ...form, cpf: e.target.value }), className: 'w-full p-3 border rounded' })
+                    )
+                  ),
+                  h('div', null,
+                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Data Nascimento'),
+                    h('input', { type: 'date', value: form.dataNasc, onChange: (e) => setForm({ ...form, dataNasc: e.target.value }), className: 'w-full p-3 border rounded' })
+                  ),
+                  h('div', null,
+                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Placa'),
+                    h('input', { value: form.placa, onChange: (e) => setForm({ ...form, placa: e.target.value.toUpperCase() }), className: 'w-full p-3 border rounded uppercase' })
+                  ),
+                  h('div', { className: 'grid grid-cols-3 gap-4' },
+                    h('div', null,
+                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Marca'),
+                      h('input', { value: form.marca, onChange: (e) => setForm({ ...form, marca: e.target.value }), className: 'w-full p-3 border rounded' })
+                    ),
+                    h('div', null,
+                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Modelo'),
+                      h('input', { value: form.modelo, onChange: (e) => setForm({ ...form, modelo: e.target.value }), className: 'w-full p-3 border rounded' })
+                    ),
+                    h('div', null,
+                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Ano'),
+                      h('input', { type: 'number', value: form.ano, onChange: (e) => setForm({ ...form, ano: e.target.value }), className: 'w-full p-3 border rounded' })
+                    )
+                  ),
+                  h('div', { className: 'grid grid-cols-3 gap-4' },
+                    h('div', null,
+                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Motor'),
+                      h('input', { value: form.motor, onChange: (e) => setForm({ ...form, motor: e.target.value }), className: 'w-full p-3 border rounded' })
+                    ),
+                    h('div', null,
+                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Câmbio'),
+                      h('select', { value: form.cambio, onChange: (e) => setForm({ ...form, cambio: e.target.value }), className: 'w-full p-3 border rounded' },
+                        h('option', { value: '' }, 'Selecione'),
+                        h('option', null, 'Manual'),
+                        h('option', null, 'Automatico')
+                      )
+                    ),
+                    h('div', null,
+                      h('label', { className: 'block text-sm font-bold mb-2' }, 'Combustível'),
+                      h('select', { value: form.combustivel, onChange: (e) => setForm({ ...form, combustivel: e.target.value }), className: 'w-full p-3 border rounded' },
+                        h('option', { value: '' }, 'Selecione'),
+                        h('option', null, 'Gasolina'),
+                        h('option', null, 'Diesel'),
+                        h('option', null, 'Flex'),
+                        h('option', null, 'GNV')
+                      )
+                    )
+                  )
+                ),
+                h('div', { className: 'flex gap-4 mt-6' },
+                  h('button', { onClick: () => setView('dash'), className: 'flex-1 bg-gray-300 py-3 rounded' }, 'Cancelar'),
+                  h('button', { onClick: () => setStep(2), className: 'flex-1 bg-blue-600 text-white py-3 rounded' }, 'Próximo')
+                )
+              )
+            );
+          }
+
+          if (view === 'new' && step === 2) {
+            return h('div', { className: 'min-h-screen bg-blue-50 p-4' },
+              h('div', { className: 'max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-6 max-h-screen overflow-y-auto' },
+                h('h2', { className: 'text-2xl font-bold mb-6' }, 'Serviços'),
+                h('div', { className: 'space-y-4' },
+                  h('div', { className: 'border rounded p-4' },
+                    h('label', { className: 'flex items-center gap-2 mb-2' },
+                      h('input', { type: 'checkbox', checked: form.oleoMotor, onChange: (e) => setForm({ ...form, oleoMotor: e.target.checked }), className: 'w-5 h-5' }),
+                      h('span', { className: 'font-bold' }, 'Óleo Motor')
+                    ),
+                    form.oleoMotor && h('div', { className: 'space-y-2 mt-2' },
+                      h('input', { placeholder: 'Marca', value: form.oleoMarca, onChange: (e) => setForm({ ...form, oleoMarca: e.target.value }), className: 'w-full p-2 border rounded' }),
+                      h('input', { type: 'number', step: '0.01', placeholder: 'Quantidade (L)', value: form.oleoQtd, onChange: (e) => setForm({ ...form, oleoQtd: e.target.value }), className: 'w-full p-2 border rounded' })
+                    )
+                  ),
+                  h('div', { className: 'border rounded p-4' },
+                    h('label', { className: 'flex items-center gap-2 mb-2' },
+                      h('input', { type: 'checkbox', checked: form.filtroOleo, onChange: (e) => setForm({ ...form, filtroOleo: e.target.checked }), className: 'w-5 h-5' }),
+                      h('span', { className: 'font-bold' }, 'Filtro Óleo')
+                    ),
+                    form.filtroOleo && h('input', { placeholder: 'Qual filtro?', value: form.filtroTipo, onChange: (e) => setForm({ ...form, filtroTipo: e.target.value }), className: 'w-full p-2 border rounded mt-2' })
+                  ),
+                  h('div', { className: 'border rounded p-4' },
+                    h('label', { className: 'flex items-center gap-2 mb-2' },
+                      h('input', { type: 'checkbox', checked: form.arMotor, onChange: (e) => setForm({ ...form, arMotor: e.target.checked }), className: 'w-5 h-5' }),
+                      h('span', { className: 'font-bold' }, 'Ar Motor')
+                    ),
+                    form.arMotor && h('input', { placeholder: 'Código', value: form.arMotorCod, onChange: (e) => setForm({ ...form, arMotorCod: e.target.value }), className: 'w-full p-2 border rounded mt-2' })
+                  ),
+                  h('div', { className: 'border rounded p-4' },
+                    h('label', { className: 'flex items-center gap-2 mb-2' },
+                      h('input', { type: 'checkbox', checked: form.arCond, onChange: (e) => setForm({ ...form, arCond: e.target.checked }), className: 'w-5 h-5' }),
+                      h('span', { className: 'font-bold' }, 'Ar Condicionado')
+                    ),
+                    form.arCond && h('input', { placeholder: 'Código', value: form.arCondCod, onChange: (e) => setForm({ ...form, arCondCod: e.target.value }), className: 'w-full p-2 border rounded mt-2' })
+                  ),
+                  h('div', { className: 'border rounded p-4' },
+                    h('label', { className: 'flex items-center gap-2 mb-2' },
+                      h('input', { type: 'checkbox', checked: form.cambioM, onChange: (e) => setForm({ ...form, cambioM: e.target.checked }), className: 'w-5 h-5' }),
+                      h('span', { className: 'font-bold' }, 'Câmbio Manual')
+                    ),
+                    form.cambioM && h('div', { className: 'space-y-2 mt-2' },
+                      h('input', { placeholder: 'Marca', value: form.cambioMMarca, onChange: (e) => setForm({ ...form, cambioMMarca: e.target.value }), className: 'w-full p-2 border rounded' }),
+                      h('input', { type: 'number', step: '0.01', placeholder: 'Quantidade (L)', value: form.cambioMQtd, onChange: (e) => setForm({ ...form, cambioMQtd: e.target.value }), className: 'w-full p-2 border rounded' })
+                    )
+                  ),
+                  h('div', { className: 'border rounded p-4' },
+                    h('label', { className: 'flex items-center gap-2 mb-2' },
+                      h('input', { type: 'checkbox', checked: form.cambioA, onChange: (e) => setForm({ ...form, cambioA: e.target.checked }), className: 'w-5 h-5' }),
+                      h('span', { className: 'font-bold' }, 'Câmbio Automático')
+                    ),
+                    form.cambioA && h('div', { className: 'space-y-2 mt-2' },
+                      h('input', { placeholder: 'Marca', value: form.cambioAMarca, onChange: (e) => setForm({ ...form, cambioAMarca: e.target.value }), className: 'w-full p-2 border rounded' }),
+                      h('input', { type: 'number', step: '0.01', placeholder: 'Quantidade (L)', value: form.cambioAQtd, onChange: (e) => setForm({ ...form, cambioAQtd: e.target.value }), className: 'w-full p-2 border rounded' }),
+                      h('label', { className: 'flex items-center gap-2 mt-2' },
+                        h('input', { type: 'checkbox', checked: form.cambioAFiltro, onChange: (e) => setForm({ ...form, cambioAFiltro: e.target.checked }), className: 'w-4 h-4' }),
+                        h('span', null, 'Tem filtro?')
+                      ),
+                      form.cambioAFiltro && h('input', { placeholder: 'Código do filtro', value: form.cambioAFiltroCod, onChange: (e) => setForm({ ...form, cambioAFiltroCod: e.target.value }), className: 'w-full p-2 border rounded mt-2' })
+                    )
+                  ),
+                  h('div', { className: 'border rounded p-4' },
+                    h('label', { className: 'flex items-center gap-2 mb-2' },
+                      h('input', { type: 'checkbox', checked: form.palhetas, onChange: (e) => setForm({ ...form, palhetas: e.target.checked }), className: 'w-5 h-5' }),
+                      h('span', { className: 'font-bold' }, 'Palhetas')
+                    ),
+                    form.palhetas && h('input', { placeholder: 'Código', value: form.palhetasCod, onChange: (e) => setForm({ ...form, palhetasCod: e.target.value }), className: 'w-full p-2 border rounded mt-2' })
+                  ),
+                  h('div', { className: 'border rounded p-4' },
+                    h('label', { className: 'flex items-center gap-2' },
+                      h('input', { type: 'checkbox', checked: form.militec, onChange: (e) => setForm({ ...form, militec: e.target.checked }), className: 'w-5 h-5' }),
+                      h('span', { className: 'font-bold' }, 'Militec/Nano')
+                    )
+                  ),
+                  h('div', { className: 'border rounded p-4' },
+                    h('label', { className: 'flex items-center gap-2 mb-2' },
+                      h('input', { type: 'checkbox', checked: form.aditivo, onChange: (e) => setForm({ ...form, aditivo: e.target.checked }), className: 'w-5 h-5' }),
+                      h('span', { className: 'font-bold' }, 'Aditivo')
+                    ),
+                    form.aditivo && h('input', { placeholder: 'Qual?', value: form.aditivoQual, onChange: (e) => setForm({ ...form, aditivoQual: e.target.value }), className: 'w-full p-2 border rounded mt-2' })
+                  ),
+                  h('div', { className: 'border rounded p-4' },
+                    h('label', { className: 'flex items-center gap-2 mb-2' },
+                      h('input', { type: 'checkbox', checked: form.flush, onChange: (e) => setForm({ ...form, flush: e.target.checked }), className: 'w-5 h-5' }),
+                      h('span', { className: 'font-bold' }, 'Flush')
+                    ),
+                    form.flush && h('textarea', { placeholder: 'Descrição', value: form.flushDesc, onChange: (e) => setForm({ ...form, flushDesc: e.target.value }), className: 'w-full p-2 border rounded mt-2', rows: 2 })
+                  )
+                ),
+                h('div', { className: 'flex gap-4 mt-6' },
+                  h('button', { onClick: () => setStep(1), className: 'flex-1 bg-gray-300 py-3 rounded' }, 'Voltar'),
+                  h('button', { onClick: () => setStep(3), className: 'flex-1 bg-blue-600 text-white py-3 rounded' }, 'Próximo')
+                )
+              )
+            );
+          }
+
+          if (view === 'new' && step === 3) {
+            return h('div', { className: 'min-h-screen bg-blue-50 p-4' },
+              h('div', { className: 'max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-6' },
+                h('h2', { className: 'text-2xl font-bold mb-6' }, 'Finalização'),
+                h('div', { className: 'space-y-4' },
+                  h('div', null,
+                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Apto para ofertas?'),
+                    h('select', { value: form.apto, onChange: (e) => setForm({ ...form, apto: e.target.value }), className: 'w-full p-3 border rounded' },
+                      h('option', { value: '' }, 'Selecione'),
+                      h('option', null, 'sim'),
+                      h('option', null, 'nao')
+                    )
+                  ),
+                  form.apto === 'nao' && h('div', null,
+                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Motivo'),
+                    h('textarea', { value: form.motivo, onChange: (e) => setForm({ ...form, motivo: e.target.value }), className: 'w-full p-3 border rounded', rows: 3 })
+                  ),
+                  h('div', null,
+                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Valor Inicial'),
+                    h('input', { type: 'number', step: '0.01', value: form.valorInicial, onChange: (e) => setForm({ ...form, valorInicial: e.target.value }), className: 'w-full p-3 border rounded' })
+                  )
+                ),
+                h('div', { className: 'flex gap-4 mt-6' },
+                  h('button', { onClick: () => setStep(2), className: 'flex-1 bg-gray-300 py-3 rounded' }, 'Voltar'),
+                  h('button', { onClick: submitOrder, className: 'flex-1 bg-green-600 text-white py-3 rounded' }, 'Criar Ordem')
+                )
+              )
+            );
+          }
+
+          if (view === 'svc' && step === 1) {
+            return h('div', { className: 'min-h-screen bg-blue-50 p-4' },
+              h('div', { className: 'max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-6' },
+                h('h2', { className: 'text-2xl font-bold mb-6' }, 'Executar Serviço'),
+                h('div', { className: 'bg-blue-50 border rounded p-4 mb-6' },
+                  h('p', { className: 'font-bold text-lg mb-2' }, `${current.placa} - ${current.marca} ${current.modelo} ${current.ano}`),
+                  h('p', { className: 'text-sm' }, `Motor: ${current.motor} | Cliente: ${current.cliente}`),
+                  current.apto === 'sim' ? h('p', { className: 'text-green-600 font-bold mt-2' }, '✅ CLIENTE ACEITA OFERTAS!') : h('p', { className: 'text-red-600 font-bold mt-2' }, '❌ Não oferecer serviços extras')
+                ),
+                h('div', { className: 'space-y-4' },
+                  h('div', null,
+                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Lubrificador'),
+                    h('select', { value: svc.lubrif, onChange: (e) => setSvc({ ...svc, lubrif: e.target.value }), className: 'w-full p-3 border rounded' },
+                      h('option', { value: '' }, 'Selecione'),
+                      ...lubris.map(l => h('option', { key: l, value: l }, l))
+                    )
+                  ),
+                  h('div', null,
+                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Quilometragem'),
+                    h('input', { type: 'number', value: svc.km, onChange: (e) => setSvc({ ...svc, km: e.target.value }), className: 'w-full p-3 border rounded' })
+                  ),
+                  h('div', { className: 'bg-gray-50 border rounded p-4' },
+                    h('h4', { className: 'font-bold mb-2' }, 'Serviços a Realizar:'),
+                    h('p', { className: 'text-sm' }, getResumo(current))
+                  )
+                ),
+                h('div', { className: 'flex gap-4 mt-6' },
+                  h('button', { onClick: () => setView('dash'), className: 'flex-1 bg-gray-300 py-3 rounded' }, 'Cancelar'),
+                  h('button', { onClick: () => setStep(2), className: 'flex-1 bg-blue-600 text-white py-3 rounded' }, 'Continuar')
+                )
+              )
+            );
+          }
+
+          if (view === 'svc' && step === 2 && current.apto === 'sim') {
+            return h('div', { className: 'min-h-screen bg-blue-50 p-4' },
+              h('div', { className: 'max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-6 max-h-screen overflow-y-auto' },
+                h('h2', { className: 'text-2xl font-bold mb-6' }, 'Ofertas Adicionais (Upsell)'),
+                h('div', { className: 'bg-green-100 border-2 border-green-400 rounded p-4 mb-4' },
+                  h('p', { className: 'font-bold text-green-800' }, '✅ Cliente APTO para ofertas! Ofereça os serviços abaixo:')
+                ),
+                h('div', { className: 'space-y-4' },
+                  !current.arMotor && h('div', { className: 'border rounded p-4' },
+                    h('p', { className: 'font-bold mb-2' }, 'Filtro Ar Motor'),
+                    h('input', { placeholder: 'Valor R, type: 'number', step: '0.01', id: 'arMotorVal', className: 'w-full p-2 border rounded mb-2' }),
+                    h('button', { onClick: () => { const v = document.getElementById('arMotorVal').value; if (v) addUpsell('Filtro Ar Motor', v); }, className: 'bg-green-600 text-white px-4 py-2 rounded w-full' }, 'Adicionar')
+                  ),
+                  !current.arCond && h('div', { className: 'border rounded p-4' },
+                    h('p', { className: 'font-bold mb-2' }, 'Filtro Ar Condicionado'),
+                    h('input', { placeholder: 'Valor R, type: 'number', step: '0.01', id: 'arCondVal', className: 'w-full p-2 border rounded mb-2' }),
+                    h('button', { onClick: () => { const v = document.getElementById('arCondVal').value; if (v) addUpsell('Filtro Ar Cond', v); }, className: 'bg-green-600 text-white px-4 py-2 rounded w-full' }, 'Adicionar')
+                  ),
+                  !current.palhetas && h('div', { className: 'border rounded p-4' },
+                    h('p', { className: 'font-bold mb-2' }, 'Palhetas'),
+                    h('input', { placeholder: 'Valor R, type: 'number', step: '0.01', id: 'palhetasVal', className: 'w-full p-2 border rounded mb-2' }),
+                    h('button', { onClick: () => { const v = document.getElementById('palhetasVal').value; if (v) addUpsell('Palhetas', v); }, className: 'bg-green-600 text-white px-4 py-2 rounded w-full' }, 'Adicionar')
+                  ),
+                  svc.upsells.length > 0 && h('div', { className: 'bg-purple-50 border-2 border-purple-300 rounded p-4' },
+                    h('h4', { className: 'font-bold mb-2' }, 'Itens Vendidos:'),
+                    svc.upsells.map((u, i) =>
+                      h('div', { key: i, className: 'flex justify-between items-center bg-white p-2 rounded mb-2' },
+                        h('span', null, u.nome),
+                        h('span', { className: 'font-bold' }, `R$ ${u.val.toFixed(2)}`),
+                        h('button', { onClick: () => setSvc({ ...svc, upsells: svc.upsells.filter((_, idx) => idx !== i) }), className: 'text-red-600' }, '✕')
+                      )
+                    ),
+                    h('p', { className: 'font-bold text-lg mt-2' }, `Total Upsell: R$ ${svc.upsells.reduce((s, u) => s + u.val, 0).toFixed(2)}`)
+                  )
+                ),
+                h('div', { className: 'flex gap-4 mt-6' },
+                  h('button', { onClick: () => setStep(1), className: 'flex-1 bg-gray-300 py-3 rounded' }, 'Voltar'),
+                  h('button', { onClick: () => setStep(3), className: 'flex-1 bg-blue-600 text-white py-3 rounded' }, 'Próximo')
+                )
+              )
+            );
+          }
+
+          const finalStep = current && current.apto === 'sim' ? 3 : 2;
+          if (view === 'svc' && step === finalStep) {
+            const valTotal = (parseFloat(current.valorInicial) || 0) + svc.upsells.reduce((s, u) => s + u.val, 0);
+            return h('div', { className: 'min-h-screen bg-blue-50 p-4' },
+              h('div', { className: 'max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-6' },
+                h('h2', { className: 'text-2xl font-bold mb-6' }, 'Finalizar Serviço'),
+                h('div', { className: 'space-y-4' },
+                  h('div', null,
+                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Observações sobre o carro'),
+                    h('textarea', { value: svc.obsCarro, onChange: (e) => setSvc({ ...svc, obsCarro: e.target.value }), className: 'w-full p-3 border rounded', rows: 3, placeholder: 'Vazamentos, problemas...' })
+                  ),
+                  h('div', null,
+                    h('label', { className: 'block text-sm font-bold mb-2' }, 'Observações sobre ofertas'),
+                    h('textarea', { value: svc.obsOferta, onChange: (e) => setSvc({ ...svc, obsOferta: e.target.value }), className: 'w-full p-3 border rounded', rows: 3, placeholder: 'Não tinha filtro...' })
+                  ),
+                  svc.upsells.length > 0 && h('div', { className: 'bg-purple-50 border rounded p-4' },
+                    h('h4', { className: 'font-bold mb-2' }, '💰 Itens Vendidos (Upsell):'),
+                    svc.upsells.map((u, i) =>
+                      h('p', { key: i, className: 'text-sm' }, `• ${u.nome}: R$ ${u.val.toFixed(2)}`)
+                    )
+                  ),
+                  h('div', { className: 'bg-gray-50 border rounded p-4' },
+                    h('p', { className: 'text-sm' }, `Valor Inicial: R$ ${parseFloat(current.valorInicial || 0).toFixed(2)}`),
+                    h('p', { className: 'text-sm' }, `Valor Upsell: R$ ${svc.upsells.reduce((s, u) => s + u.val, 0).toFixed(2)}`),
+                    h('p', { className: 'text-lg font-bold mt-2' }, `TOTAL: R$ ${valTotal.toFixed(2)}`)
+                  )
+                ),
+                h('div', { className: 'flex gap-4 mt-6' },
+                  h('button', { onClick: () => setStep(current.apto === 'sim' ? 2 : 1), className: 'flex-1 bg-gray-300 py-3 rounded' }, 'Voltar'),
+                  h('button', { onClick: finishSvc, className: 'flex-1 bg-green-600 text-white py-3 rounded' }, 'Finalizar Serviço')
+                )
+              )
+            );
+          }
+
+          if (showDetails) {
+            return h('div', { className: 'min-h-screen bg-blue-50 p-4' },
+              h('div', { className: 'max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-6 max-h-screen overflow-y-auto' },
+                h('div', { className: 'flex justify-between items-center mb-6' },
+                  h('h2', { className: 'text-2xl font-bold' }, `Detalhes Ordem #${showDetails.num}`),
+                  h('button', { onClick: () => setShowDetails(null), className: 'text-gray-500 text-2xl' }, '✕')
+                ),
+                h('div', { className: 'space-y-4' },
+                  h('div', { className: 'grid grid-cols-2 gap-4 bg-blue-50 p-4 rounded' },
+                    h('div', null, h('p', { className: 'text-sm font-bold' }, 'Status'), h('p', { className: showDetails.status === 'concluido' ? 'text-green-600' : 'text-yellow-600' }, showDetails.status)),
+                    h('div', null, h('p', { className: 'text-sm font-bold' }, 'Placa'), h('p', null, showDetails.placa)),
+                    h('div', null, h('p', { className: 'text-sm font-bold' }, 'Cliente'), h('p', null, showDetails.cliente)),
+                    h('div', null, h('p', { className: 'text-sm font-bold' }, 'Veículo'), h('p', null, `${showDetails.marca} ${showDetails.modelo} ${showDetails.ano}`)),
+                    h('div', null, h('p', { className: 'text-sm font-bold' }, 'Motor'), h('p', null, showDetails.motor)),
+                    h('div', null, h('p', { className: 'text-sm font-bold' }, 'Vendedor'), h('p', null, showDetails.vendedor)),
+                    h('div', null, h('p', { className: 'text-sm font-bold' }, 'Lubrificador'), h('p', null, showDetails.lubrif || 'N/A')),
+                    h('div', null, h('p', { className: 'text-sm font-bold' }, 'KM'), h('p', null, showDetails.km || 'N/A'))
+                  ),
+                  h('div', { className: 'border-t pt-4' },
+                    h('h3', { className: 'font-bold mb-2' }, 'Serviços Realizados'),
+                    h('div', { className: 'bg-gray-50 p-4 rounded' },
+                      h('p', { className: 'text-sm' }, getResumo(showDetails))
+                    )
+                  ),
+                  h('div', { className: 'grid grid-cols-2 gap-4' },
+                    h('div', { className: 'border rounded p-4' },
+                      h('p', { className: 'text-sm font-bold mb-2' }, 'Valor Inicial'),
+                      h('p', { className: 'text-lg font-bold text-blue-600' }, `R$ ${parseFloat(showDetails.valorInicial || 0).toFixed(2)}`)
+                    ),
+                    h('div', { className: 'border rounded p-4 bg-green-50' },
+                      h('p', { className: 'text-sm font-bold mb-2' }, 'Valor Total'),
+                      h('p', { className: 'text-2xl font-bold text-green-700' }, `R$ ${showDetails.valTotal.toFixed(2)}`)
+                    )
+                  ),
+                  showDetails.fezUpsell && h('div', { className: 'bg-purple-50 border-2 border-purple-300 rounded p-4' },
+                    h('h4', { className: 'font-bold mb-2' }, `💰 Upsell: ${showDetails.qtdUpsell} itens - R$ ${showDetails.valUpsell.toFixed(2)}`),
+                    showDetails.upsellsDet && showDetails.upsellsDet.map((u, i) =>
+                      h('p', { key: i, className: 'text-sm' }, `• ${u.nome}: R$ ${u.val.toFixed(2)}`)
+                    )
+                  ),
+                  showDetails.obsCarro && h('div', { className: 'border rounded p-4' },
+                    h('p', { className: 'text-sm font-bold mb-2' }, 'Observações do Carro'),
+                    h('p', { className: 'text-sm' }, showDetails.obsCarro)
+                  ),
+                  showDetails.obsOferta && h('div', { className: 'border rounded p-4' },
+                    h('p', { className: 'text-sm font-bold mb-2' }, 'Observações das Ofertas'),
+                    h('p', { className: 'text-sm' }, showDetails.obsOferta)
+                  )
+                ),
+                h('button', { onClick: () => setShowDetails(null), className: 'w-full bg-gray-300 py-3 rounded mt-6' }, 'Fechar')
+              )
+            );
+          }
+
+          return h('div', { className: 'p-8 text-center' },
+            h('h1', { className: 'text-2xl font-bold' }, 'Sistema Master Óleo'),
+            h('button', { onClick: () => setView('dash'), className: 'bg-blue-600 text-white px-6 py-3 rounded mt-4' }, 'Ir ao Dashboard')
+          );
+        }
+
+        ReactDOM.render(React.createElement(App), document.getElementById('root'));
+    </script>
 </body>
 </html>
