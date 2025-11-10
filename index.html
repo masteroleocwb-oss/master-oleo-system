@@ -1045,6 +1045,102 @@
         // Modal Nova Ordem
         function NovaOrdemModal({ onClose, onSuccess, nextOrderNumber }) {
             const [step, setStep] = useState(1);
+            
+            // Carregar dados salvos do localStorage
+            const [customMarcas, setCustomMarcas] = useState(() => {
+                const saved = localStorage.getItem('customMarcas');
+                return saved ? JSON.parse(saved) : [];
+            });
+            const [customModelos, setCustomModelos] = useState(() => {
+                const saved = localStorage.getItem('customModelos');
+                return saved ? JSON.parse(saved) : {};
+            });
+            const [customMotores, setCustomMotores] = useState(() => {
+                const saved = localStorage.getItem('customMotores');
+                return saved ? JSON.parse(saved) : [];
+            });
+
+            // Marcas principais
+            const marcasPrincipais = [
+                'Chevrolet', 'Volkswagen', 'Fiat', 'Ford', 'Toyota', 'Honda', 'Hyundai',
+                'Nissan', 'Renault', 'Jeep', 'Peugeot', 'Citroën', 'BMW', 'Mercedes-Benz',
+                'Audi', 'Volvo', 'Mitsubishi', 'Kia', 'Chery', 'JAC'
+            ];
+
+            // Modelos por marca (principais)
+            const modelosPorMarca = {
+                'Chevrolet': ['Onix', 'Prisma', 'Cruze', 'Tracker', 'S10', 'Montana', 'Spin', 'Cobalt'],
+                'Volkswagen': ['Gol', 'Voyage', 'Polo', 'Virtus', 'T-Cross', 'Nivus', 'Tiguan', 'Amarok'],
+                'Fiat': ['Uno', 'Argo', 'Mobi', 'Toro', 'Strada', 'Cronos', 'Pulse', 'Fastback'],
+                'Ford': ['Ka', 'Fiesta', 'EcoSport', 'Ranger', 'Focus', 'Fusion'],
+                'Toyota': ['Corolla', 'Hilux', 'Etios', 'Yaris', 'SW4', 'RAV4'],
+                'Honda': ['Civic', 'City', 'HR-V', 'CR-V', 'Fit', 'WR-V'],
+                'Hyundai': ['HB20', 'Creta', 'Tucson', 'ix35', 'Elantra', 'Santa Fe'],
+                'Nissan': ['Kicks', 'Versa', 'Frontier', 'Sentra', 'March'],
+                'Renault': ['Kwid', 'Sandero', 'Logan', 'Duster', 'Captur', 'Oroch'],
+                'Jeep': ['Renegade', 'Compass', 'Commander', 'Wrangler']
+            };
+
+            // Motores principais
+            const motoresPrincipais = [
+                '1.0', '1.0 Turbo', '1.2', '1.3', '1.4', '1.5', '1.6', '1.8', '2.0',
+                '2.0 Turbo', '2.2', '2.4', '2.5', '3.0', '3.6', '4.0', '5.0'
+            ];
+
+            // Combinar listas (principais + customizadas)
+            const todasMarcas = [...new Set([...marcasPrincipais, ...customMarcas])].sort();
+            const todosMotores = [...new Set([...motoresPrincipais, ...customMotores])].sort();
+            
+            const getModelosPorMarca = (marca) => {
+                const principais = modelosPorMarca[marca] || [];
+                const customizados = customModelos[marca] || [];
+                return [...new Set([...principais, ...customizados])].sort();
+            };
+
+            // Estados para adicionar novos itens
+            const [showAddMarca, setShowAddMarca] = useState(false);
+            const [showAddModelo, setShowAddModelo] = useState(false);
+            const [showAddMotor, setShowAddMotor] = useState(false);
+            const [novaMarca, setNovaMarca] = useState('');
+            const [novoModelo, setNovoModelo] = useState('');
+            const [novoMotor, setNovoMotor] = useState('');
+
+            const adicionarMarca = () => {
+                if (novaMarca.trim() && !todasMarcas.includes(novaMarca.trim())) {
+                    const updated = [...customMarcas, novaMarca.trim()];
+                    setCustomMarcas(updated);
+                    localStorage.setItem('customMarcas', JSON.stringify(updated));
+                    setFormData(prev => ({ ...prev, marca: novaMarca.trim() }));
+                    setNovaMarca('');
+                    setShowAddMarca(false);
+                }
+            };
+
+            const adicionarModelo = () => {
+                if (novoModelo.trim() && formData.marca) {
+                    const updated = {
+                        ...customModelos,
+                        [formData.marca]: [...(customModelos[formData.marca] || []), novoModelo.trim()]
+                    };
+                    setCustomModelos(updated);
+                    localStorage.setItem('customModelos', JSON.stringify(updated));
+                    setFormData(prev => ({ ...prev, modelo: novoModelo.trim() }));
+                    setNovoModelo('');
+                    setShowAddModelo(false);
+                }
+            };
+
+            const adicionarMotor = () => {
+                if (novoMotor.trim() && !todosMotores.includes(novoMotor.trim())) {
+                    const updated = [...customMotores, novoMotor.trim()];
+                    setCustomMotores(updated);
+                    localStorage.setItem('customMotores', JSON.stringify(updated));
+                    setFormData(prev => ({ ...prev, motor: novoMotor.trim() }));
+                    setNovoMotor('');
+                    setShowAddMotor(false);
+                }
+            };
+
             const [formData, setFormData] = useState({
                 numeroOrdem: nextOrderNumber,
                 status: 'aguardando',
@@ -1245,21 +1341,6 @@
                                             <input type="text" name="placa" value={formData.placa} onChange={handleChange} className="form-input" placeholder="ABC-1234 ou ABC1D23" maxLength="8" required />
                                         </div>
                                         <div className="form-group">
-                                            <label className="form-label">Marca</label>
-                                            <input type="text" name="marca" value={formData.marca} onChange={handleChange} className="form-input" />
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="form-label">Modelo</label>
-                                            <input type="text" name="modelo" value={formData.modelo} onChange={handleChange} className="form-input" />
-                                        </div>
-                                    </div>
-
-                                    <div className="form-row">
-                                        <div className="form-group">
-                                            <label className="form-label">Motor</label>
-                                            <input type="text" name="motor" value={formData.motor} onChange={handleChange} className="form-input" placeholder="Ex: 1.0, 1.6, 2.0" />
-                                        </div>
-                                        <div className="form-group">
                                             <label className="form-label">Ano</label>
                                             <input type="number" name="ano" value={formData.ano} onChange={handleChange} className="form-input" placeholder="2024" />
                                         </div>
@@ -1280,6 +1361,189 @@
                                                 <option value="Flex">Flex</option>
                                                 <option value="GNV">GNV</option>
                                             </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Marca</label>
+                                            {!showAddMarca ? (
+                                                <div style={{ display: 'flex', gap: '10px' }}>
+                                                    <select 
+                                                        name="marca" 
+                                                        value={formData.marca} 
+                                                        onChange={(e) => {
+                                                            handleChange(e);
+                                                            // Limpar modelo quando trocar marca
+                                                            setFormData(prev => ({ ...prev, modelo: '' }));
+                                                        }} 
+                                                        className="form-select"
+                                                        style={{ flex: 1 }}
+                                                    >
+                                                        <option value="">Selecione...</option>
+                                                        {todasMarcas.map(m => (
+                                                            <option key={m} value={m}>{m}</option>
+                                                        ))}
+                                                    </select>
+                                                    <button 
+                                                        type="button"
+                                                        className="btn btn-secondary" 
+                                                        onClick={() => setShowAddMarca(true)}
+                                                        style={{ padding: '8px 16px' }}
+                                                    >
+                                                        +
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div style={{ display: 'flex', gap: '10px' }}>
+                                                    <input 
+                                                        type="text"
+                                                        className="form-input"
+                                                        placeholder="Nova marca..."
+                                                        value={novaMarca}
+                                                        onChange={(e) => setNovaMarca(e.target.value)}
+                                                        style={{ flex: 1 }}
+                                                    />
+                                                    <button 
+                                                        type="button"
+                                                        className="btn btn-success" 
+                                                        onClick={adicionarMarca}
+                                                        style={{ padding: '8px 16px' }}
+                                                    >
+                                                        ✓
+                                                    </button>
+                                                    <button 
+                                                        type="button"
+                                                        className="btn btn-danger" 
+                                                        onClick={() => {
+                                                            setShowAddMarca(false);
+                                                            setNovaMarca('');
+                                                        }}
+                                                        style={{ padding: '8px 16px' }}
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Modelo</label>
+                                            {!showAddModelo ? (
+                                                <div style={{ display: 'flex', gap: '10px' }}>
+                                                    <select 
+                                                        name="modelo" 
+                                                        value={formData.modelo} 
+                                                        onChange={handleChange} 
+                                                        className="form-select"
+                                                        style={{ flex: 1 }}
+                                                        disabled={!formData.marca}
+                                                    >
+                                                        <option value="">Selecione...</option>
+                                                        {formData.marca && getModelosPorMarca(formData.marca).map(m => (
+                                                            <option key={m} value={m}>{m}</option>
+                                                        ))}
+                                                    </select>
+                                                    <button 
+                                                        type="button"
+                                                        className="btn btn-secondary" 
+                                                        onClick={() => setShowAddModelo(true)}
+                                                        disabled={!formData.marca}
+                                                        style={{ padding: '8px 16px' }}
+                                                    >
+                                                        +
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div style={{ display: 'flex', gap: '10px' }}>
+                                                    <input 
+                                                        type="text"
+                                                        className="form-input"
+                                                        placeholder="Novo modelo..."
+                                                        value={novoModelo}
+                                                        onChange={(e) => setNovoModelo(e.target.value)}
+                                                        style={{ flex: 1 }}
+                                                    />
+                                                    <button 
+                                                        type="button"
+                                                        className="btn btn-success" 
+                                                        onClick={adicionarModelo}
+                                                        style={{ padding: '8px 16px' }}
+                                                    >
+                                                        ✓
+                                                    </button>
+                                                    <button 
+                                                        type="button"
+                                                        className="btn btn-danger" 
+                                                        onClick={() => {
+                                                            setShowAddModelo(false);
+                                                            setNovoModelo('');
+                                                        }}
+                                                        style={{ padding: '8px 16px' }}
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Motor</label>
+                                            {!showAddMotor ? (
+                                                <div style={{ display: 'flex', gap: '10px' }}>
+                                                    <select 
+                                                        name="motor" 
+                                                        value={formData.motor} 
+                                                        onChange={handleChange} 
+                                                        className="form-select"
+                                                        style={{ flex: 1 }}
+                                                    >
+                                                        <option value="">Selecione...</option>
+                                                        {todosMotores.map(m => (
+                                                            <option key={m} value={m}>{m}</option>
+                                                        ))}
+                                                    </select>
+                                                    <button 
+                                                        type="button"
+                                                        className="btn btn-secondary" 
+                                                        onClick={() => setShowAddMotor(true)}
+                                                        style={{ padding: '8px 16px' }}
+                                                    >
+                                                        +
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div style={{ display: 'flex', gap: '10px' }}>
+                                                    <input 
+                                                        type="text"
+                                                        className="form-input"
+                                                        placeholder="Ex: 1.6, 2.0..."
+                                                        value={novoMotor}
+                                                        onChange={(e) => setNovoMotor(e.target.value)}
+                                                        style={{ flex: 1 }}
+                                                    />
+                                                    <button 
+                                                        type="button"
+                                                        className="btn btn-success" 
+                                                        onClick={adicionarMotor}
+                                                        style={{ padding: '8px 16px' }}
+                                                    >
+                                                        ✓
+                                                    </button>
+                                                    <button 
+                                                        type="button"
+                                                        className="btn btn-danger" 
+                                                        onClick={() => {
+                                                            setShowAddMotor(false);
+                                                            setNovoMotor('');
+                                                        }}
+                                                        style={{ padding: '8px 16px' }}
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -1595,13 +1859,20 @@
                 }
             };
 
-            // Serviços disponíveis para upsell
-            const servicosDisponiveis = [];
-            if (!order.oleoMotor) servicosDisponiveis.push({ key: 'oleoMotor', label: 'Óleo de Motor' });
-            if (!order.filtroOleo) servicosDisponiveis.push({ key: 'filtroOleo', label: 'Filtro de Óleo' });
-            if (!order.arMotor) servicosDisponiveis.push({ key: 'arMotor', label: 'Filtro Ar Motor' });
-            if (!order.arCondicionado) servicosDisponiveis.push({ key: 'arCondicionado', label: 'Filtro Ar Condicionado' });
-            if (!order.filtroCombustivel) servicosDisponiveis.push({ key: 'filtroCombustivel', label: 'Filtro Combustível' });
+            // TODOS os serviços disponíveis para upsell (não só os não vendidos)
+            const servicosDisponiveis = [
+                { key: 'oleoMotor', label: 'Óleo de Motor', vendido: order.oleoMotor },
+                { key: 'filtroOleo', label: 'Filtro de Óleo', vendido: order.filtroOleo },
+                { key: 'arMotor', label: 'Filtro Ar Motor', vendido: order.arMotor, temFoto: true },
+                { key: 'arCondicionado', label: 'Filtro Ar Condicionado', vendido: order.arCondicionado, temFoto: true },
+                { key: 'filtroCombustivel', label: 'Filtro Combustível', vendido: order.filtroCombustivel, temFoto: true },
+                { key: 'cambioManual', label: 'Câmbio Manual', vendido: order.cambioManual },
+                { key: 'cambioAutomatico', label: 'Câmbio Automático', vendido: order.cambioAutomatico },
+                { key: 'palhetas', label: 'Palhetas', vendido: order.palhetas },
+                { key: 'militec', label: 'Militec/Nano', vendido: order.militec },
+                { key: 'aditivo', label: 'Aditivo', vendido: order.aditivo },
+                { key: 'flush', label: 'Flush', vendido: order.flush }
+            ];
 
             return (
                 <div className="modal">
@@ -1674,29 +1945,50 @@
                                             Todos os serviços já foram vendidos pelo vendedor.
                                         </div>
                                     ) : (
-                                        servicosDisponiveis.map(({ key, label }) => (
-                                            <div key={key} style={{ marginBottom: '20px', padding: '15px', background: '#f7fafc', borderRadius: '8px' }}>
+                                        servicosDisponiveis.map(({ key, label, vendido, temFoto }) => (
+                                            <div key={key} style={{ marginBottom: '20px', padding: '15px', background: vendido ? '#e6ffed' : '#f7fafc', borderRadius: '8px', borderLeft: vendido ? '4px solid #48bb78' : 'none' }}>
                                                 <div className="checkbox-group">
                                                     <input 
                                                         type="checkbox" 
                                                         checked={formData.upsells[key]?.oferecido || false}
                                                         onChange={(e) => handleUpsellChange(key, 'oferecido', e.target.checked)}
+                                                        disabled={vendido}
                                                     />
-                                                    <label style={{ fontWeight: 'bold' }}>{label}</label>
+                                                    <label style={{ fontWeight: 'bold', flex: 1 }}>
+                                                        {label}
+                                                        {vendido && <span style={{ color: '#48bb78', fontSize: '12px', marginLeft: '10px' }}>✓ Já vendido pelo vendedor</span>}
+                                                    </label>
                                                 </div>
                                                 
                                                 {formData.upsells[key]?.oferecido && (
                                                     <div style={{ marginTop: '10px', marginLeft: '30px' }}>
                                                         {['arMotor', 'arCondicionado', 'filtroCombustivel'].includes(key) && (
                                                             <div className="form-group">
-                                                                <label className="form-label">URL da Foto</label>
+                                                                <label className="form-label">📸 Foto do Filtro</label>
                                                                 <input 
-                                                                    type="url" 
+                                                                    type="file" 
+                                                                    accept="image/*"
+                                                                    capture="environment"
                                                                     className="form-input"
-                                                                    placeholder="Cole a URL da foto aqui"
-                                                                    value={formData.upsells[key]?.foto || ''}
-                                                                    onChange={(e) => handleUpsellChange(key, 'foto', e.target.value)}
+                                                                    onChange={(e) => {
+                                                                        const file = e.target.files[0];
+                                                                        if (file) {
+                                                                            const reader = new FileReader();
+                                                                            reader.onloadend = () => {
+                                                                                handleUpsellChange(key, 'foto', reader.result);
+                                                                            };
+                                                                            reader.readAsDataURL(file);
+                                                                        }
+                                                                    }}
                                                                 />
+                                                                {formData.upsells[key]?.foto && (
+                                                                    <img 
+                                                                        src={formData.upsells[key].foto} 
+                                                                        alt="Preview" 
+                                                                        className="photo-preview"
+                                                                        style={{ marginTop: '10px' }}
+                                                                    />
+                                                                )}
                                                             </div>
                                                         )}
                                                         
