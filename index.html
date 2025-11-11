@@ -1801,7 +1801,7 @@
                     upsells: {
                         ...prev.upsells,
                         [servico]: {
-                            ...prev.upsells[servico],
+                            ...(prev.upsells[servico] || {}),
                             [field]: value
                         }
                     }
@@ -1810,11 +1810,21 @@
 
             const calcularValorUpsell = () => {
                 let total = 0;
-                Object.values(formData.upsells).forEach(upsell => {
-                    if (upsell.oferecido && upsell.aceito === 'sim' && upsell.valor) {
-                        total += parseFloat(upsell.valor) || 0;
+                try {
+                    if (formData.upsells && typeof formData.upsells === 'object') {
+                        Object.values(formData.upsells).forEach(upsell => {
+                            if (upsell && upsell.oferecido && upsell.aceito === 'sim' && upsell.valor) {
+                                const valor = parseFloat(upsell.valor);
+                                if (!isNaN(valor)) {
+                                    total += valor;
+                                }
+                            }
+                        });
                     }
-                });
+                } catch (error) {
+                    console.error('Erro ao calcular valor upsell:', error);
+                    return 0;
+                }
                 return total;
             };
 
@@ -1833,10 +1843,44 @@
                     const fim = getBrasilDateTime();
                     const valorUpsell = calcularValorUpsell();
                     const valorTotal = parseFloat(order.valorInicial || 0) + valorUpsell;
-                    const quantidadeItensUpsell = Object.values(formData.upsells).filter(u => u.oferecido && u.aceito === 'sim').length;
+                    
+                    // Limpar objeto upsells - remover campos vazios/incompletos
+                    const upsellsLimpo = {};
+                    Object.keys(formData.upsells || {}).forEach(key => {
+                        const upsell = formData.upsells[key];
+                        // Só incluir se realmente foi oferecido E tem resposta do cliente
+                        if (upsell && upsell.oferecido && upsell.aceito) {
+                            upsellsLimpo[key] = {
+                                oferecido: true,
+                                aceito: upsell.aceito,
+                                valor: upsell.valor || '0'
+                            };
+                            
+                            // Adicionar foto apenas se existir e não for muito grande
+                            if (upsell.foto) {
+                                // Verificar tamanho (base64 ~1.37x o tamanho real)
+                                const fotoSize = (upsell.foto.length * 0.75) / 1024; // KB
+                                if (fotoSize < 500) { // Limite de 500KB por foto
+                                    upsellsLimpo[key].foto = upsell.foto;
+                                } else {
+                                    console.warn(`Foto do ${key} muito grande (${fotoSize.toFixed(0)}KB), não será salva`);
+                                    alert(`⚠️ Foto do filtro muito grande. Será salva sem a foto.`);
+                                }
+                            }
+                        }
+                    });
+                    
+                    const quantidadeItensUpsell = Object.keys(upsellsLimpo).filter(
+                        key => upsellsLimpo[key].aceito === 'sim'
+                    ).length;
 
                     const updateData = {
-                        ...formData,
+                        lubrificador: formData.lubrificador,
+                        inicio: formData.inicio,
+                        km: formData.km,
+                        obsCarro: formData.obsCarro || '',
+                        obsOferta: formData.obsOferta || '',
+                        upsells: upsellsLimpo,
                         status: 'concluido',
                         fim,
                         valorUpsell,
@@ -1850,12 +1894,15 @@
                         tempoServico: calcularDiferencaTempo(formData.inicio, fim)
                     };
 
+                    console.log('Dados a serem salvos:', updateData);
+                    
                     await db.collection('orders').doc(order.id).update(updateData);
                     alert('Serviço finalizado com sucesso!');
                     onSuccess();
                 } catch (error) {
-                    console.error('Erro ao finalizar serviço:', error);
-                    alert('Erro ao finalizar serviço.');
+                    console.error('Erro detalhado ao finalizar serviço:', error);
+                    console.error('Dados que tentou salvar:', formData);
+                    alert('Erro ao finalizar serviço. Verifique o console (F12) para detalhes.');
                 }
             };
 
