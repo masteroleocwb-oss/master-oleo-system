@@ -671,6 +671,7 @@
             const [showNewOrderModal, setShowNewOrderModal] = useState(false);
             const [showExecuteModal, setShowExecuteModal] = useState(false);
             const [showDetailsModal, setShowDetailsModal] = useState(false);
+            const [showEditModal, setShowEditModal] = useState(false);
             const [selectedOrder, setSelectedOrder] = useState(null);
             const [filterDate, setFilterDate] = useState('today');
             const [customDateStart, setCustomDateStart] = useState('');
@@ -735,6 +736,7 @@
 
             const filteredOrders = getFilteredOrders();
             const aguardando = filteredOrders.filter(o => o.status === 'aguardando');
+            const emAndamento = filteredOrders.filter(o => o.status === 'andamento');
             const concluidos = filteredOrders.filter(o => o.status === 'concluido');
 
             // Calcular próximo número de ordem
@@ -758,6 +760,21 @@
                 }
             };
 
+            // Função para iniciar atendimento (muda status para andamento)
+            const handleIniciarAtendimento = async (order) => {
+                try {
+                    await db.collection('orders').doc(order.id).update({
+                        status: 'andamento',
+                        inicio: getBrasilDateTime()
+                    });
+                    alert('Atendimento iniciado! Carro movido para "Em Andamento".');
+                    loadOrders();
+                } catch (error) {
+                    console.error('Erro ao iniciar atendimento:', error);
+                    alert('Erro ao iniciar atendimento.');
+                }
+            };
+
             return (
                 <div className="container">
                     <div className="header">
@@ -768,6 +785,10 @@
                             <div className="stat">
                                 <div className="stat-number">{aguardando.length}</div>
                                 <div className="stat-label">Aguardando</div>
+                            </div>
+                            <div className="stat">
+                                <div className="stat-number">{emAndamento.length}</div>
+                                <div className="stat-label">Em Andamento</div>
                             </div>
                             <div className="stat">
                                 <div className="stat-number">{concluidos.length}</div>
@@ -833,11 +854,44 @@
                                                 key={order.id} 
                                                 order={order} 
                                                 position={index + 1}
-                                                onIniciar={() => {
+                                                onIniciar={() => handleIniciarAtendimento(order)}
+                                                onCancelar={() => cancelarOrdem(order.id)}
+                                                onVerDados={() => {
+                                                    setSelectedOrder(order);
+                                                    setShowDetailsModal(true);
+                                                }}
+                                                onEditar={() => {
+                                                    setSelectedOrder(order);
+                                                    setShowEditModal(true);
+                                                }}
+                                            />
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+
+                            {emAndamento.length > 0 && (
+                                <>
+                                    <h2 style={{ color: 'white', marginBottom: '15px', marginTop: '30px', fontSize: '22px' }}>
+                                        🔵 Em Andamento ({emAndamento.length})
+                                    </h2>
+                                    <div className="cards-container">
+                                        {emAndamento.map(order => (
+                                            <CardEmAndamento 
+                                                key={order.id} 
+                                                order={order}
+                                                onVerDados={() => {
+                                                    setSelectedOrder(order);
+                                                    setShowDetailsModal(true);
+                                                }}
+                                                onEditar={() => {
+                                                    setSelectedOrder(order);
+                                                    setShowEditModal(true);
+                                                }}
+                                                onFinalizar={() => {
                                                     setSelectedOrder(order);
                                                     setShowExecuteModal(true);
                                                 }}
-                                                onCancelar={() => cancelarOrdem(order.id)}
                                             />
                                         ))}
                                     </div>
@@ -910,24 +964,35 @@
                             onUpdate={loadOrders}
                         />
                     )}
+
+                    {showEditModal && selectedOrder && (
+                        <EditarOrdemModal 
+                            order={selectedOrder}
+                            onClose={() => {
+                                setShowEditModal(false);
+                                setSelectedOrder(null);
+                            }}
+                            onUpdate={loadOrders}
+                        />
+                    )}
                 </div>
             );
         }
 
         // Componente Card Aguardando
-        function CardAguardando({ order, position, onIniciar, onCancelar }) {
+        function CardAguardando({ order, position, onIniciar, onCancelar, onVerDados, onEditar }) {
             const getServicos = () => {
                 const servicos = [];
-                if (order.oleoMotor) servicos.push(`Óleo Motor (${order.oleoTipo || 'N/A'})`);
-                if (order.filtroOleo) servicos.push(`Filtro Óleo (${order.filtroTipo || 'N/A'})`);
-                if (order.arMotor) servicos.push('Filtro Ar Motor');
-                if (order.arCondicionado) servicos.push('Filtro Ar Condicionado');
-                if (order.filtroCombustivel) servicos.push('Filtro Combustível');
-                if (order.cambioManual) servicos.push('Câmbio Manual');
-                if (order.cambioAutomatico) servicos.push('Câmbio Automático');
-                if (order.palhetas) servicos.push('Palhetas');
+                if (order.oleoMotor) servicos.push(`Óleo Motor (${order.oleoMarca || 'N/A'} - ${order.oleoQuantidade || 'N/A'}L)`);
+                if (order.filtroOleo) servicos.push(`Filtro Óleo (${order.filtroOleoTipo || 'N/A'})`);
+                if (order.arMotor) servicos.push(`Filtro Ar Motor (${order.arMotorCodigo || 'N/A'})`);
+                if (order.arCondicionado) servicos.push(`Filtro Ar Condicionado (${order.arCondicionadoCodigo || 'N/A'})`);
+                if (order.filtroCombustivel) servicos.push(`Filtro Combustível (${order.filtroCombustivelCodigo || 'N/A'})`);
+                if (order.cambioManual) servicos.push(`Câmbio Manual (${order.cambioManualMarca || 'N/A'} - ${order.cambioManualQuantidade || 'N/A'}L)`);
+                if (order.cambioAutomatico) servicos.push(`Câmbio Automático (${order.cambioAutomaticoMarca || 'N/A'} - ${order.cambioAutomaticoQuantidade || 'N/A'}L)`);
+                if (order.palhetas) servicos.push(`Palhetas (${order.palhetasCodigo || 'N/A'})`);
                 if (order.militec) servicos.push('Militec/Nano');
-                if (order.aditivo) servicos.push('Aditivo');
+                if (order.aditivo) servicos.push(`Aditivo (${order.aditivoQual || 'N/A'})`);
                 if (order.flush) servicos.push('Flush');
                 return servicos;
             };
@@ -973,8 +1038,86 @@
                         </div>
                     )}
                     <div className="card-actions">
+                        <button className="btn btn-secondary" onClick={onVerDados} style={{ flex: 1 }}>
+                            📋 Ver Dados
+                        </button>
+                        <button className="btn btn-secondary" onClick={onEditar} style={{ flex: 1 }}>
+                            ✏️ Editar
+                        </button>
                         <button className="btn btn-success" onClick={onIniciar} style={{ flex: 1 }}>
                             ▶️ Iniciar
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        // Componente Card Em Andamento
+        function CardEmAndamento({ order, onVerDados, onEditar, onFinalizar }) {
+            const getServicos = () => {
+                const servicos = [];
+                if (order.oleoMotor) servicos.push(`Óleo Motor (${order.oleoMarca || 'N/A'} - ${order.oleoQuantidade || 'N/A'}L)`);
+                if (order.filtroOleo) servicos.push(`Filtro Óleo (${order.filtroOleoTipo || 'N/A'})`);
+                if (order.arMotor) servicos.push(`Filtro Ar Motor (${order.arMotorCodigo || 'N/A'})`);
+                if (order.arCondicionado) servicos.push(`Filtro Ar Condicionado (${order.arCondicionadoCodigo || 'N/A'})`);
+                if (order.filtroCombustivel) servicos.push(`Filtro Combustível (${order.filtroCombustivelCodigo || 'N/A'})`);
+                if (order.cambioManual) servicos.push(`Câmbio Manual (${order.cambioManualMarca || 'N/A'} - ${order.cambioManualQuantidade || 'N/A'}L)`);
+                if (order.cambioAutomatico) servicos.push(`Câmbio Automático (${order.cambioAutomaticoMarca || 'N/A'} - ${order.cambioAutomaticoQuantidade || 'N/A'}L)`);
+                if (order.palhetas) servicos.push(`Palhetas (${order.palhetasCodigo || 'N/A'})`);
+                if (order.militec) servicos.push('Militec/Nano');
+                if (order.aditivo) servicos.push(`Aditivo (${order.aditivoQual || 'N/A'})`);
+                if (order.flush) servicos.push('Flush');
+                return servicos;
+            };
+
+            const servicos = getServicos();
+
+            return (
+                <div className="card" style={{ borderLeft: '5px solid #4299e1', background: 'linear-gradient(135deg, #e6f2ff 0%, #ffffff 100%)' }}>
+                    <div className="card-header">
+                        <span className="order-number">#{order.numeroOrdem}</span>
+                        <span className="badge" style={{ background: '#4299e1', color: 'white' }}>🔵 Em Atendimento</span>
+                    </div>
+                    <div className="card-title">{order.placa}</div>
+                    <div className="card-info">
+                        <div className="info-row">
+                            <span className="info-label">Cliente:</span>
+                            <span>{order.cliente}</span>
+                        </div>
+                        <div className="info-row">
+                            <span className="info-label">Veículo:</span>
+                            <span>{order.marca} {order.modelo}</span>
+                        </div>
+                        <div className="info-row">
+                            <span className="info-label">Motor:</span>
+                            <span>{order.motor || 'N/A'}</span>
+                        </div>
+                        <div className="info-row">
+                            <span className="info-label">Lubrificador:</span>
+                            <span style={{ fontWeight: 'bold', color: '#4299e1' }}>{order.lubrificador}</span>
+                        </div>
+                        <div className="info-row">
+                            <span className="info-label">Início:</span>
+                            <span>{order.inicio || 'N/A'}</span>
+                        </div>
+                    </div>
+                    {servicos.length > 0 && (
+                        <div className="services-list">
+                            <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#2d3748' }}>Serviços:</div>
+                            {servicos.map((s, i) => (
+                                <div key={i} className="service-item">• {s}</div>
+                            ))}
+                        </div>
+                    )}
+                    <div className="card-actions">
+                        <button className="btn btn-secondary" onClick={onVerDados} style={{ flex: 1 }}>
+                            📋 Ver Dados
+                        </button>
+                        <button className="btn btn-secondary" onClick={onEditar} style={{ flex: 1 }}>
+                            ✏️ Editar
+                        </button>
+                        <button className="btn btn-success" onClick={onFinalizar} style={{ flex: 1 }}>
+                            ✅ Finalizar
                         </button>
                     </div>
                 </div>
@@ -1177,6 +1320,7 @@
                 cambioAutomaticoQuantidade: '',
                 cambioAutomaticoTemFiltro: false,
                 cambioAutomaticoFiltroCodigo: '',
+                cambioAutomaticoFluidoCarter: '',
                 palhetas: false,
                 palhetasCodigo: '',
                 militec: false,
@@ -1656,6 +1800,10 @@
                                                 </div>
                                             </div>
                                             <div className="form-group">
+                                                <label className="form-label">Quantidade de Fluído no Carter (L)</label>
+                                                <input type="number" step="0.01" name="cambioAutomaticoFluidoCarter" value={formData.cambioAutomaticoFluidoCarter || ''} onChange={handleChange} className="form-input" placeholder="Ex: 2.50" />
+                                            </div>
+                                            <div className="form-group">
                                                 <label className="form-label">Tem filtro?</label>
                                                 <select name="cambioAutomaticoTemFiltro" value={formData.cambioAutomaticoTemFiltro} onChange={handleChange} className="form-select">
                                                     <option value={false}>Não</option>
@@ -1942,11 +2090,40 @@
 
                                     <div className="form-group">
                                         <label className="form-label">Lubrificador *</label>
-                                        <select name="lubrificador" value={formData.lubrificador} onChange={handleChange} className="form-select" required>
-                                            <option value="">Selecione...</option>
-                                            <option value="Caio">Caio</option>
-                                            <option value="Luis">Luis</option>
-                                        </select>
+                                        <div style={{ display: 'flex', gap: '10px' }}>
+                                            <select name="lubrificador" value={formData.lubrificador} onChange={handleChange} className="form-select" style={{ flex: 1 }} required>
+                                                <option value="">Selecione...</option>
+                                                <option value="Caio">Caio</option>
+                                                <option value="Luis">Luis</option>
+                                                {(() => {
+                                                    const customLubs = JSON.parse(localStorage.getItem('customLubrificadores') || '[]');
+                                                    return customLubs.map(lub => (
+                                                        <option key={lub} value={lub}>{lub}</option>
+                                                    ));
+                                                })()}
+                                            </select>
+                                            <button 
+                                                type="button"
+                                                className="btn btn-secondary" 
+                                                style={{ padding: '8px 15px', minWidth: '40px' }}
+                                                onClick={() => {
+                                                    const novoLub = prompt('Digite o nome do novo lubrificador:');
+                                                    if (novoLub && novoLub.trim()) {
+                                                        const customLubs = JSON.parse(localStorage.getItem('customLubrificadores') || '[]');
+                                                        if (!customLubs.includes(novoLub.trim())) {
+                                                            customLubs.push(novoLub.trim());
+                                                            localStorage.setItem('customLubrificadores', JSON.stringify(customLubs));
+                                                            setFormData(prev => ({ ...prev, lubrificador: novoLub.trim() }));
+                                                            alert('Lubrificador adicionado com sucesso!');
+                                                        } else {
+                                                            alert('Este lubrificador já existe!');
+                                                        }
+                                                    }
+                                                }}
+                                            >
+                                                +
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div className="form-group">
@@ -2357,6 +2534,202 @@
                                         </button>
                                     </>
                                 )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Modal Editar Ordem (para ordens aguardando ou em andamento)
+        function EditarOrdemModal({ order, onClose, onUpdate }) {
+            const [formData, setFormData] = useState({
+                placa: order.placa || '',
+                cliente: order.cliente || '',
+                tel: order.tel || '',
+                marca: order.marca || '',
+                modelo: order.modelo || '',
+                motor: order.motor || '',
+                ano: order.ano || '',
+                km: order.km || '',
+                oleoMarca: order.oleoMarca || '',
+                oleoQuantidade: order.oleoQuantidade || '',
+                filtroOleoTipo: order.filtroOleoTipo || '',
+                arMotorCodigo: order.arMotorCodigo || '',
+                arCondicionadoCodigo: order.arCondicionadoCodigo || '',
+                filtroCombustivelCodigo: order.filtroCombustivelCodigo || '',
+                cambioManualMarca: order.cambioManualMarca || '',
+                cambioManualQuantidade: order.cambioManualQuantidade || '',
+                cambioAutomaticoMarca: order.cambioAutomaticoMarca || '',
+                cambioAutomaticoQuantidade: order.cambioAutomaticoQuantidade || '',
+                cambioAutomaticoFluidoCarter: order.cambioAutomaticoFluidoCarter || '',
+                palhetasCodigo: order.palhetasCodigo || '',
+                aditivoQual: order.aditivoQual || '',
+                lubrificador: order.lubrificador || '',
+                valorInicial: order.valorInicial || ''
+            });
+
+            const handleChange = (e) => {
+                const { name, value } = e.target;
+                setFormData(prev => ({ ...prev, [name]: value }));
+            };
+
+            const handleSave = async () => {
+                if (!formData.placa || !formData.cliente) {
+                    alert('Placa e Cliente são obrigatórios!');
+                    return;
+                }
+
+                try {
+                    await db.collection('orders').doc(order.id).update(formData);
+                    alert('Ordem atualizada com sucesso!');
+                    onUpdate();
+                    onClose();
+                } catch (error) {
+                    console.error('Erro ao atualizar ordem:', error);
+                    alert('Erro ao atualizar ordem.');
+                }
+            };
+
+            return (
+                <div className="modal">
+                    <div className="modal-content">
+                        <div className="modal-header">
+                            <div className="modal-title">✏️ Editar Ordem #{order.numeroOrdem}</div>
+                            <button className="close-btn" onClick={onClose}>✕</button>
+                        </div>
+                        
+                        <div className="modal-body">
+                            <div className="alert alert-info">
+                                <strong>Status:</strong> {order.status === 'aguardando' ? '🟡 Aguardando' : '🔵 Em Andamento'}
+                            </div>
+
+                            <div className="section-title">Dados do Cliente</div>
+                            <div className="form-group">
+                                <label className="form-label">Cliente *</label>
+                                <input type="text" name="cliente" value={formData.cliente} onChange={handleChange} className="form-input" required />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Telefone</label>
+                                <input type="tel" name="tel" value={formData.tel} onChange={handleChange} className="form-input" />
+                            </div>
+
+                            <div className="section-title">Dados do Veículo</div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Placa *</label>
+                                    <input type="text" name="placa" value={formData.placa} onChange={handleChange} className="form-input" required />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Ano</label>
+                                    <input type="text" name="ano" value={formData.ano} onChange={handleChange} className="form-input" />
+                                </div>
+                            </div>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label className="form-label">Marca</label>
+                                    <input type="text" name="marca" value={formData.marca} onChange={handleChange} className="form-input" />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Modelo</label>
+                                    <input type="text" name="modelo" value={formData.modelo} onChange={handleChange} className="form-input" />
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Motor</label>
+                                <input type="text" name="motor" value={formData.motor} onChange={handleChange} className="form-input" />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Quilometragem (KM)</label>
+                                <input type="number" name="km" value={formData.km} onChange={handleChange} className="form-input" />
+                            </div>
+
+                            <div className="section-title">Óleo e Filtros</div>
+                            {order.oleoMotor && (
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Marca do Óleo</label>
+                                        <input type="text" name="oleoMarca" value={formData.oleoMarca} onChange={handleChange} className="form-input" />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Quantidade (L)</label>
+                                        <input type="number" step="0.01" name="oleoQuantidade" value={formData.oleoQuantidade} onChange={handleChange} className="form-input" />
+                                    </div>
+                                </div>
+                            )}
+                            {order.filtroOleo && (
+                                <div className="form-group">
+                                    <label className="form-label">Filtro de Óleo</label>
+                                    <input type="text" name="filtroOleoTipo" value={formData.filtroOleoTipo} onChange={handleChange} className="form-input" />
+                                </div>
+                            )}
+                            {order.arMotor && (
+                                <div className="form-group">
+                                    <label className="form-label">Código Filtro Ar Motor</label>
+                                    <input type="text" name="arMotorCodigo" value={formData.arMotorCodigo} onChange={handleChange} className="form-input" />
+                                </div>
+                            )}
+                            {order.arCondicionado && (
+                                <div className="form-group">
+                                    <label className="form-label">Código Filtro Ar Condicionado</label>
+                                    <input type="text" name="arCondicionadoCodigo" value={formData.arCondicionadoCodigo} onChange={handleChange} className="form-input" />
+                                </div>
+                            )}
+                            {order.filtroCombustivel && (
+                                <div className="form-group">
+                                    <label className="form-label">Código Filtro Combustível</label>
+                                    <input type="text" name="filtroCombustivelCodigo" value={formData.filtroCombustivelCodigo} onChange={handleChange} className="form-input" />
+                                </div>
+                            )}
+                            {order.cambioAutomatico && (
+                                <>
+                                    <div className="form-row">
+                                        <div className="form-group">
+                                            <label className="form-label">Marca Câmbio Automático</label>
+                                            <input type="text" name="cambioAutomaticoMarca" value={formData.cambioAutomaticoMarca} onChange={handleChange} className="form-input" />
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label">Quantidade (L)</label>
+                                            <input type="number" step="0.01" name="cambioAutomaticoQuantidade" value={formData.cambioAutomaticoQuantidade} onChange={handleChange} className="form-input" />
+                                        </div>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Fluído no Carter (L)</label>
+                                        <input type="number" step="0.01" name="cambioAutomaticoFluidoCarter" value={formData.cambioAutomaticoFluidoCarter} onChange={handleChange} className="form-input" />
+                                    </div>
+                                </>
+                            )}
+                            {order.palhetas && (
+                                <div className="form-group">
+                                    <label className="form-label">Código Palhetas</label>
+                                    <input type="text" name="palhetasCodigo" value={formData.palhetasCodigo} onChange={handleChange} className="form-input" />
+                                </div>
+                            )}
+
+                            {order.status === 'andamento' && (
+                                <>
+                                    <div className="section-title">Dados do Atendimento</div>
+                                    <div className="form-group">
+                                        <label className="form-label">Lubrificador</label>
+                                        <input type="text" name="lubrificador" value={formData.lubrificador} onChange={handleChange} className="form-input" />
+                                    </div>
+                                </>
+                            )}
+
+                            {order.valorInicial && (
+                                <div className="form-group">
+                                    <label className="form-label">Valor Inicial (R$)</label>
+                                    <input type="number" step="0.01" name="valorInicial" value={formData.valorInicial} onChange={handleChange} className="form-input" />
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: '15px', marginTop: '30px' }}>
+                                <button className="btn btn-secondary" onClick={onClose}>
+                                    Cancelar
+                                </button>
+                                <button className="btn btn-success" onClick={handleSave}>
+                                    💾 Salvar Alterações
+                                </button>
                             </div>
                         </div>
                     </div>
