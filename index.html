@@ -653,15 +653,50 @@
             return `${year}-${month}-${day}T${hours}:${minutes}`;
         };
 
-        // Função para calcular diferença de tempo
+        // Função para calcular diferença de tempo (CORRIGIDA)
         const calcularDiferencaTempo = (inicio, fim) => {
-            const dataInicio = new Date(inicio.replace(/(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})/, '$3-$2-$1T$4:$5:$6'));
-            const dataFim = new Date(fim.replace(/(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})/, '$3-$2-$1T$4:$5:$6'));
-            const diffMs = dataFim - dataInicio;
-            const diffMinutes = Math.floor(diffMs / 60000);
-            const hours = Math.floor(diffMinutes / 60);
-            const minutes = diffMinutes % 60;
-            return `${hours}h ${minutes}min`;
+            try {
+                if (!inicio || !fim) return 'N/A';
+                
+                // Função auxiliar para converter string BR para Date
+                const parseDataBR = (str) => {
+                    // Formato esperado: "DD/MM/YYYY HH:mm:ss" ou "DD/MM/YYYY, HH:mm:ss"
+                    const cleaned = str.replace(',', '').trim();
+                    const match = cleaned.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
+                    if (!match) {
+                        // Tentar parse direto se for ISO
+                        return new Date(str);
+                    }
+                    const [_, dia, mes, ano, hora, min, seg] = match;
+                    return new Date(`${ano}-${mes}-${dia}T${hora}:${min}:${seg}`);
+                };
+                
+                const dataInicio = parseDataBR(inicio);
+                const dataFim = parseDataBR(fim);
+                
+                // Validar datas
+                if (isNaN(dataInicio.getTime()) || isNaN(dataFim.getTime())) {
+                    console.warn('Datas inválidas:', { inicio, fim });
+                    return 'N/A';
+                }
+                
+                const diffMs = dataFim - dataInicio;
+                
+                // Validar diferença
+                if (diffMs < 0) {
+                    console.warn('Fim antes de início:', { inicio, fim });
+                    return 'N/A';
+                }
+                
+                const diffMinutes = Math.floor(diffMs / 60000);
+                const hours = Math.floor(diffMinutes / 60);
+                const minutes = diffMinutes % 60;
+                
+                return `${hours}h ${minutes}min`;
+            } catch (error) {
+                console.error('Erro ao calcular tempo:', error, { inicio, fim });
+                return 'N/A';
+            }
         };
 
         // Componente principal
@@ -1925,15 +1960,39 @@
         function ExecutarServicoModal({ order, onClose, onSuccess }) {
             const [step, setStep] = useState(1);
             const [formData, setFormData] = useState({
-                lubrificador: '',
-                inicio: getBrasilDateTime(),
-                km: '',
+                lubrificador: order.lubrificador || '',
+                inicio: order.inicio || getBrasilDateTime(),
+                km: order.km || '',
                 fotos: [],
-                upsells: {},
-                obsCarro: '',
-                obsOferta: '',
+                upsells: order.upsells || {},
+                obsCarro: order.obsCarro || '',
+                obsOferta: order.obsOferta || '',
                 valorAdd: '0'
             });
+
+            // Auto-save: Salvar progresso no Firebase a cada mudança
+            useEffect(() => {
+                const saveProgress = async () => {
+                    // Só salvar se já preencheu algo
+                    if (formData.lubrificador || formData.km) {
+                        try {
+                            await db.collection('orders').doc(order.id).update({
+                                lubrificador: formData.lubrificador,
+                                km: formData.km,
+                                obsCarro: formData.obsCarro,
+                                obsOferta: formData.obsOferta
+                            });
+                            console.log('Progresso salvo automaticamente');
+                        } catch (error) {
+                            console.error('Erro ao salvar progresso:', error);
+                        }
+                    }
+                };
+
+                // Debounce: Esperar 2 segundos após última mudança para salvar
+                const timeoutId = setTimeout(saveProgress, 2000);
+                return () => clearTimeout(timeoutId);
+            }, [formData.lubrificador, formData.km, formData.obsCarro, formData.obsOferta, order.id]);
 
             const handleChange = (e) => {
                 const { name, value } = e.target;
@@ -1994,15 +2053,24 @@
                     
                     // Limpar objeto upsells - remover campos vazios/incompletos
                     const upsellsLimpo = {};
+                    let totalOfertasFeitas = 0; // Contador de ofertas realizadas
+                    let ofertasAceitas = 0; // Contador de ofertas aceitas
+                    
                     Object.keys(formData.upsells || {}).forEach(key => {
                         const upsell = formData.upsells[key];
                         // Só incluir se realmente foi oferecido E tem resposta do cliente
                         if (upsell && upsell.oferecido && upsell.aceito) {
+                            totalOfertasFeitas++; // Incrementar contador de ofertas
+                            
                             upsellsLimpo[key] = {
                                 oferecido: true,
                                 aceito: upsell.aceito,
                                 valor: upsell.valor || '0'
                             };
+                            
+                            if (upsell.aceito === 'sim') {
+                                ofertasAceitas++;
+                            }
                             
                             // Adicionar foto apenas se existir e não for muito grande
                             if (upsell.foto) {
@@ -2021,6 +2089,10 @@
                     const quantidadeItensUpsell = Object.keys(upsellsLimpo).filter(
                         key => upsellsLimpo[key].aceito === 'sim'
                     ).length;
+                    
+                    // MÉTRICAS PARA SISTEMA DE METAS
+                    const clienteAptoRecebeuOferta = order.apto === 'sim' && totalOfertasFeitas > 0;
+                    const taxaConversaoOferta = totalOfertasFeitas > 0 ? (ofertasAceitas / totalOfertasFeitas) * 100 : 0;
 
                     const updateData = {
                         lubrificador: formData.lubrificador,
@@ -2035,6 +2107,10 @@
                         valorTotal,
                         fezUpsell: quantidadeItensUpsell > 0,
                         quantidadeItensUpsell,
+                        // NOVOS CAMPOS PARA METAS
+                        totalOfertasFeitas, // Quantas ofertas o técnico fez
+                        clienteAptoRecebeuOferta, // true/false se cliente apto recebeu oferta
+                        taxaConversaoOferta, // % de conversão das ofertas feitas
                         tempoEspera: order.dataHora && formData.inicio ? calcularDiferencaTempo(
                             new Date(order.dataHora).toLocaleString('pt-BR'),
                             formData.inicio
@@ -2068,6 +2144,46 @@
                 { key: 'aditivo', label: 'Aditivo', vendido: order.aditivo },
                 { key: 'flush', label: 'Flush', vendido: order.flush }
             ];
+            
+            // PITCHES DE VENDA INTELIGENTES
+            const pitchesVenda = {
+                arMotor: {
+                    pitch: "Sr(a). Cliente, percebi que o filtro de ar do motor está sujo. Trocar agora vai melhorar a performance e economizar combustível!",
+                    beneficios: ["Mais potência do motor", "Economia de até 10% de combustível", "Motor protegido contra impurezas"]
+                },
+                arCondicionado: {
+                    pitch: "O filtro do ar condicionado está com aparência de sujo. Trocar agora deixa o ar mais limpo e gelado!",
+                    beneficios: ["Ar mais gelado", "Elimina mau cheiro", "Protege contra alergias e bactérias"]
+                },
+                filtroCombustivel: {
+                    pitch: "Sr(a). Cliente, o filtro de combustível está vencido. Trocar previne problemas no bico injetor que saem bem mais caro!",
+                    beneficios: ["Previne entupimento do bico injetor", "Economia com manutenção futura", "Motor roda mais suave"]
+                },
+                cambioAutomatico: {
+                    pitch: "A troca de óleo do câmbio automático é essencial! Evita trocas travando e prolonga a vida útil.",
+                    beneficios: ["Trocas mais suaves", "Prolonga vida do câmbio", "Evita conserto de R$ 5.000+"]
+                },
+                cambioManual: {
+                    pitch: "O óleo do câmbio manual também precisa ser trocado! Protege as engrenagens e facilita as trocas.",
+                    beneficios: ["Trocas de marcha mais fáceis", "Protege engrenagens", "Aumenta durabilidade"]
+                },
+                palhetas: {
+                    pitch: "As palhetas estão gastas. Em época de chuva é perigoso! Trocar agora garante visibilidade total.",
+                    beneficios: ["Segurança em dias de chuva", "Visibilidade perfeita", "Evita riscar o para-brisa"]
+                },
+                militec: {
+                    pitch: "O Militec reduz o atrito do motor e pode economizar até 15% de combustível. Proteção extra que compensa!",
+                    beneficios: ["Economia de combustível", "Motor mais silencioso", "Proteção contra desgaste"]
+                },
+                aditivo: {
+                    pitch: "O aditivo de radiador protege contra superaquecimento. É barato e evita prejuízo grande!",
+                    beneficios: ["Previne superaquecimento", "Protege bomba d'água", "Custo-benefício excelente"]
+                },
+                flush: {
+                    pitch: "O flush limpa toda a sujeira interna do motor. Deixa o óleo novo trabalhar melhor e prolonga a vida do motor!",
+                    beneficios: ["Limpa sujeira acumulada", "Melhora eficiência do óleo", "Prolonga vida do motor"]
+                }
+            };
 
             return (
                 <div className="modal">
@@ -2186,9 +2302,35 @@
                                                 
                                                 {formData.upsells[key]?.oferecido && (
                                                     <div style={{ marginTop: '10px', marginLeft: '30px' }}>
+                                                        {/* PITCH DE VENDA */}
+                                                        {pitchesVenda[key] && (
+                                                            <div style={{ 
+                                                                background: '#fff3cd', 
+                                                                border: '2px solid #ffc107', 
+                                                                borderRadius: '8px', 
+                                                                padding: '15px', 
+                                                                marginBottom: '15px' 
+                                                            }}>
+                                                                <div style={{ fontWeight: 'bold', color: '#856404', marginBottom: '8px', fontSize: '14px' }}>
+                                                                    💬 PITCH DE VENDA:
+                                                                </div>
+                                                                <div style={{ fontSize: '13px', color: '#856404', marginBottom: '10px', fontStyle: 'italic' }}>
+                                                                    "{pitchesVenda[key].pitch}"
+                                                                </div>
+                                                                <div style={{ fontWeight: 'bold', color: '#856404', marginBottom: '5px', fontSize: '13px' }}>
+                                                                    ✅ BENEFÍCIOS:
+                                                                </div>
+                                                                <ul style={{ margin: '0', paddingLeft: '20px', fontSize: '12px', color: '#856404' }}>
+                                                                    {pitchesVenda[key].beneficios.map((beneficio, idx) => (
+                                                                        <li key={idx}>{beneficio}</li>
+                                                                    ))}
+                                                                </ul>
+                                                            </div>
+                                                        )}
+                                                        
                                                         {['arMotor', 'arCondicionado', 'filtroCombustivel'].includes(key) && (
                                                             <div className="form-group">
-                                                                <label className="form-label">📸 Foto do Filtro</label>
+                                                                <label className="form-label">📸 Foto do Filtro (opcional)</label>
                                                                 <input 
                                                                     type="file" 
                                                                     accept="image/*"
@@ -2217,15 +2359,16 @@
                                                         )}
                                                         
                                                         <div className="form-group">
-                                                            <label className="form-label">Cliente aceitou?</label>
+                                                            <label className="form-label">Cliente aceitou? *</label>
                                                             <select 
                                                                 className="form-select"
                                                                 value={formData.upsells[key]?.aceito || ''}
                                                                 onChange={(e) => handleUpsellChange(key, 'aceito', e.target.value)}
                                                             >
                                                                 <option value="">Selecione...</option>
-                                                                <option value="sim">Sim</option>
-                                                                <option value="nao">Não</option>
+                                                                <option value="sim">✅ Sim, aceitou!</option>
+                                                                <option value="nao">❌ Não aceitou</option>
+                                                                <option value="sem-estoque">📦 Não tinha em estoque</option>
                                                             </select>
                                                         </div>
 
