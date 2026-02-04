@@ -634,7 +634,7 @@
         // ============================================
         const SYSTEM_CONFIG = {
             // URL do webhook do Google Apps Script (PREENCHER DEPOIS DO DEPLOY)
-            SHEETS_WEBHOOK_URL: localStorage.getItem('sheetsWebhookUrl') || '',
+            SHEETS_WEBHOOK_URL: localStorage.getItem('sheetsWebhookUrl') || 'https://script.google.com/macros/s/AKfycbxhYQblbrch4KZ_fRAeKlHqV8-h4d1EzRRIWklQoHZIJ8iGg_0IKhgTN7HX35aCPIhx/exec',
             
             // Senha para acessar configurações
             ADMIN_PASSWORD: 'admin2026',
@@ -646,8 +646,28 @@
                 'Pedro': { ofertas: 90, upsell: 45 }
             })),
             
+            // MÊS VIGENTE PARA AVALIAÇÃO (NOVO!)
+            MES_VIGENTE: JSON.parse(localStorage.getItem('mesVigente') || JSON.stringify({
+                mes: new Date().getMonth() + 1, // 1-12
+                ano: new Date().getFullYear()
+            })),
+            
             // Alertas habilitados
             ALERTAS_ENABLED: localStorage.getItem('alertasEnabled') !== 'false'
+        };
+
+        // Helper: Salvar mês vigente
+        const salvarMesVigente = (mes, ano) => {
+            const mesVigente = { mes: parseInt(mes), ano: parseInt(ano) };
+            localStorage.setItem('mesVigente', JSON.stringify(mesVigente));
+            SYSTEM_CONFIG.MES_VIGENTE = mesVigente;
+        };
+
+        // Helper: Obter nome do mês
+        const getNomeMes = (mes) => {
+            const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                          'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+            return meses[mes - 1];
         };
 
         // ============================================
@@ -870,16 +890,24 @@
             const alertas = [];
             const tecnicos = Object.keys(SYSTEM_CONFIG.METAS);
             
-            // MELHORIA #4: Filtrar apenas ordens do mês atual
-            const hoje = new Date();
-            const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-            const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0, 23, 59, 59);
+            // USAR MÊS VIGENTE CONFIGURADO (não mais mês atual automático)
+            const mesVigente = SYSTEM_CONFIG.MES_VIGENTE.mes; // 1-12
+            const anoVigente = SYSTEM_CONFIG.MES_VIGENTE.ano;
+            
+            // Calcular primeiro e último dia do mês vigente
+            const inicioMes = new Date(anoVigente, mesVigente - 1, 1, 0, 0, 0);
+            const fimMes = new Date(anoVigente, mesVigente, 0, 23, 59, 59);
+            
+            console.log(`📊 Calculando alertas para: ${getNomeMes(mesVigente)}/${anoVigente}`);
+            console.log(`   Período: ${inicioMes.toLocaleDateString('pt-BR')} a ${fimMes.toLocaleDateString('pt-BR')}`);
             
             const ordensDoMes = orders.filter(o => {
                 if (!o.fim && !o.dataHora) return false;
                 const dataOrdem = new Date(o.fim || o.dataHora);
                 return dataOrdem >= inicioMes && dataOrdem <= fimMes;
             });
+            
+            console.log(`   Ordens no período: ${ordensDoMes.length}`);
             
             for (const tecnico of tecnicos) {
                 const ordensDoTecnico = ordensDoMes.filter(o => 
@@ -899,12 +927,15 @@
                 const taxaOfertas = clientesAptos > 0 ? (aptosRecebeuOferta / clientesAptos) * 100 : 0;
                 const taxaUpsell = (ordensComUpsell / totalOrdens) * 100;
                 
+                // Nome do mês para exibição
+                const nomeMes = getNomeMes(mesVigente);
+                
                 // Gerar alertas baseado nas metas
                 if (taxaOfertas < metas.ofertas) {
                     alertas.push({
                         tipo: 'warning',
                         tecnico: tecnico,
-                        mensagem: `Taxa de ofertas ${taxaOfertas.toFixed(1)}% (Meta: ${metas.ofertas}%) - Este Mês`,
+                        mensagem: `Taxa de ofertas ${taxaOfertas.toFixed(1)}% (Meta: ${metas.ofertas}%) - ${nomeMes}/${anoVigente}`,
                         detalhes: `${aptosRecebeuOferta}/${clientesAptos} clientes aptos receberam ofertas`
                     });
                 }
@@ -913,12 +944,12 @@
                     alertas.push({
                         tipo: 'warning',
                         tecnico: tecnico,
-                        mensagem: `Taxa de upsell ${taxaUpsell.toFixed(1)}% (Meta: ${metas.upsell}%) - Este Mês`,
+                        mensagem: `Taxa de upsell ${taxaUpsell.toFixed(1)}% (Meta: ${metas.upsell}%) - ${nomeMes}/${anoVigente}`,
                         detalhes: `${ordensComUpsell}/${totalOrdens} ordens com upsell`
                     });
                 }
                 
-                // Alerta crítico: sequência sem ofertas (últimas 10 do mês)
+                // Alerta crítico: sequência sem ofertas (últimas 10 do mês vigente)
                 const ultimas10 = ordensDoTecnico.slice(-10);
                 const aptosUltimas10 = ultimas10.filter(o => o.apto === 'sim');
                 const semOfertaUltimas10 = aptosUltimas10.filter(o => !o.clienteAptoRecebeuOferta);
@@ -928,7 +959,7 @@
                         tipo: 'critical',
                         tecnico: tecnico,
                         mensagem: `🚨 CRÍTICO: ${semOfertaUltimas10.length} clientes aptos sem oferta nas últimas 10 ordens!`,
-                        detalhes: `Ordens: ${semOfertaUltimas10.map(o => '#' + o.numeroOrdem).join(', ')}`
+                        detalhes: `Ordens: ${semOfertaUltimas10.map(o => '#' + o.numeroOrdem).join(', ')} (${nomeMes}/${anoVigente})`
                     });
                 }
                 
@@ -1125,7 +1156,12 @@
                             marginBottom: '20px'
                         }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                <h3 style={{ margin: 0, color: '#856404' }}>⚠️ ALERTAS DE PERFORMANCE</h3>
+                                <div>
+                                    <h3 style={{ margin: 0, color: '#856404' }}>⚠️ ALERTAS DE PERFORMANCE</h3>
+                                    <div style={{ fontSize: '12px', color: '#856404', marginTop: '4px' }}>
+                                        📅 Período de Avaliação: <strong>{getNomeMes(SYSTEM_CONFIG.MES_VIGENTE.mes)}/{SYSTEM_CONFIG.MES_VIGENTE.ano}</strong>
+                                    </div>
+                                </div>
                                 <button 
                                     onClick={() => setShowAlertas(false)}
                                     style={{
@@ -2583,56 +2619,6 @@
             };
 
             // TODOS os serviços disponíveis para upsell (não só os não vendidos)
-            // FUNÇÃO AUXILIAR: Obter detalhes do serviço vendido
-            const getDetalhesServicoVendido = (key) => {
-                const detalhes = [];
-                
-                if (key === 'oleoMotor' && order.oleoMotor) {
-                    if (order.oleoMarca) detalhes.push(`Marca: ${order.oleoMarca}`);
-                    if (order.oleoQuantidade) detalhes.push(`${order.oleoQuantidade}L`);
-                }
-                
-                if (key === 'filtroOleo' && order.filtroOleo) {
-                    if (order.filtroOleoTipo) detalhes.push(`Tipo: ${order.filtroOleoTipo}`);
-                }
-                
-                if (key === 'arMotor' && order.arMotor) {
-                    if (order.arMotorCodigo) detalhes.push(`Código: ${order.arMotorCodigo}`);
-                }
-                
-                if (key === 'arCondicionado' && order.arCondicionado) {
-                    if (order.arCondicionadoCodigo) detalhes.push(`Código: ${order.arCondicionadoCodigo}`);
-                }
-                
-                if (key === 'filtroCombustivel' && order.filtroCombustivel) {
-                    if (order.filtroCombustivelCodigo) detalhes.push(`Código: ${order.filtroCombustivelCodigo}`);
-                }
-                
-                if (key === 'cambioManual' && order.cambioManual) {
-                    if (order.cambioManualMarca) detalhes.push(`Marca: ${order.cambioManualMarca}`);
-                    if (order.cambioManualQuantidade) detalhes.push(`${order.cambioManualQuantidade}L`);
-                }
-                
-                if (key === 'cambioAutomatico' && order.cambioAutomatico) {
-                    if (order.cambioAutomaticoMarca) detalhes.push(`Marca: ${order.cambioAutomaticoMarca}`);
-                    if (order.cambioAutomaticoQuantidade) detalhes.push(`Óleo: ${order.cambioAutomaticoQuantidade}L`);
-                    if (order.cambioAutomaticoFluidoCarter) detalhes.push(`Carter: ${order.cambioAutomaticoFluidoCarter}L`);
-                    
-                    const qtdTotal = parseFloat(order.cambioAutomaticoQuantidade || 0) + parseFloat(order.cambioAutomaticoFluidoCarter || 0);
-                    if (qtdTotal > 0) detalhes.push(`Total: ${qtdTotal}L`);
-                }
-                
-                if (key === 'palhetas' && order.palhetas) {
-                    if (order.palhetasCodigo) detalhes.push(`Código: ${order.palhetasCodigo}`);
-                }
-                
-                if (key === 'aditivo' && order.aditivo) {
-                    if (order.aditivoQual) detalhes.push(`Tipo: ${order.aditivoQual}`);
-                }
-                
-                return detalhes.length > 0 ? ` (${detalhes.join(' | ')})` : '';
-            };
-
             const servicosDisponiveis = [
                 { key: 'oleoMotor', label: 'Óleo de Motor', vendido: order.oleoMotor },
                 { key: 'filtroOleo', label: 'Filtro de Óleo', vendido: order.filtroOleo },
@@ -2809,11 +2795,7 @@
                                                     />
                                                     <label style={{ fontWeight: 'bold', flex: 1 }}>
                                                         {label}
-                                                        {vendido && (
-                                                            <span style={{ color: '#48bb78', fontSize: '12px', marginLeft: '10px' }}>
-                                                                ✓ Vendido{getDetalhesServicoVendido(key)}
-                                                            </span>
-                                                        )}
+                                                        {vendido && <span style={{ color: '#48bb78', fontSize: '12px', marginLeft: '10px' }}>✓ Já vendido pelo vendedor</span>}
                                                     </label>
                                                 </div>
                                                 
@@ -3405,12 +3387,16 @@
         // MODAL: CONFIGURAÇÕES
         // ============================================
         function ConfiguracoesModal({ onClose, onSave }) {
-            const [tab, setTab] = useState('metas'); // 'metas', 'sheets', 'alertas'
+            const [tab, setTab] = useState('metas'); // 'metas', 'periodo', 'sheets', 'alertas'
             const [senha, setSenha] = useState('');
             const [autenticado, setAutenticado] = useState(false);
             const [metas, setMetas] = useState(SYSTEM_CONFIG.METAS);
             const [webhookUrl, setWebhookUrl] = useState(SYSTEM_CONFIG.SHEETS_WEBHOOK_URL);
             const [alertasEnabled, setAlertasEnabled] = useState(SYSTEM_CONFIG.ALERTAS_ENABLED);
+            
+            // NOVO: Estados para mês vigente
+            const [mesVigente, setMesVigente] = useState(SYSTEM_CONFIG.MES_VIGENTE.mes);
+            const [anoVigente, setAnoVigente] = useState(SYSTEM_CONFIG.MES_VIGENTE.ano);
 
             const handleLogin = () => {
                 if (senha === SYSTEM_CONFIG.ADMIN_PASSWORD) {
@@ -3424,6 +3410,9 @@
                 // Salvar metas
                 salvarMetas(metas);
                 
+                // Salvar mês vigente
+                salvarMesVigente(mesVigente, anoVigente);
+                
                 // Salvar webhook
                 if (webhookUrl) {
                     salvarWebhookUrl(webhookUrl);
@@ -3433,7 +3422,7 @@
                 localStorage.setItem('alertasEnabled', alertasEnabled);
                 SYSTEM_CONFIG.ALERTAS_ENABLED = alertasEnabled;
                 
-                alert('✅ Configurações salvas com sucesso!');
+                alert('✅ Configurações salvas com sucesso!\n\n📅 Período de avaliação: ' + getNomeMes(mesVigente) + '/' + anoVigente);
                 onSave();
             };
 
@@ -3506,6 +3495,20 @@
                                     }}
                                 >
                                     🎯 Metas
+                                </button>
+                                <button 
+                                    onClick={() => setTab('periodo')}
+                                    style={{
+                                        padding: '10px 20px',
+                                        background: tab === 'periodo' ? '#667eea' : 'transparent',
+                                        color: tab === 'periodo' ? 'white' : '#4a5568',
+                                        border: 'none',
+                                        borderBottom: tab === 'periodo' ? '3px solid #667eea' : 'none',
+                                        cursor: 'pointer',
+                                        fontWeight: 'bold'
+                                    }}
+                                >
+                                    📅 Período
                                 </button>
                                 <button 
                                     onClick={() => setTab('sheets')}
@@ -3596,6 +3599,109 @@
                                         marginTop: '20px'
                                     }}>
                                         <strong>💡 Dica:</strong> As metas são usadas para calcular alertas e rankings automaticamente. Ajuste conforme necessário.
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* TAB: PERÍODO DE AVALIAÇÃO */}
+                            {tab === 'periodo' && (
+                                <div>
+                                    <h3 style={{ marginBottom: '20px' }}>📅 Período de Avaliação</h3>
+                                    <p style={{ color: '#718096', marginBottom: '30px' }}>
+                                        Configure qual mês será usado para calcular as métricas e gerar os alertas de performance.
+                                    </p>
+
+                                    <div style={{
+                                        background: '#f7fafc',
+                                        padding: '25px',
+                                        borderRadius: '10px',
+                                        marginBottom: '20px'
+                                    }}>
+                                        <h4 style={{ marginBottom: '20px', color: '#2d3748' }}>📆 Mês Vigente</h4>
+                                        
+                                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px' }}>
+                                            <div>
+                                                <label className="form-label">Mês</label>
+                                                <select 
+                                                    value={mesVigente}
+                                                    onChange={(e) => setMesVigente(parseInt(e.target.value))}
+                                                    className="form-select"
+                                                    style={{ fontSize: '16px' }}
+                                                >
+                                                    <option value="1">Janeiro</option>
+                                                    <option value="2">Fevereiro</option>
+                                                    <option value="3">Março</option>
+                                                    <option value="4">Abril</option>
+                                                    <option value="5">Maio</option>
+                                                    <option value="6">Junho</option>
+                                                    <option value="7">Julho</option>
+                                                    <option value="8">Agosto</option>
+                                                    <option value="9">Setembro</option>
+                                                    <option value="10">Outubro</option>
+                                                    <option value="11">Novembro</option>
+                                                    <option value="12">Dezembro</option>
+                                                </select>
+                                            </div>
+                                            
+                                            <div>
+                                                <label className="form-label">Ano</label>
+                                                <select 
+                                                    value={anoVigente}
+                                                    onChange={(e) => setAnoVigente(parseInt(e.target.value))}
+                                                    className="form-select"
+                                                    style={{ fontSize: '16px' }}
+                                                >
+                                                    {[2024, 2025, 2026, 2027].map(ano => (
+                                                        <option key={ano} value={ano}>{ano}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div style={{
+                                            marginTop: '20px',
+                                            padding: '15px',
+                                            background: '#e6f2ff',
+                                            borderRadius: '8px',
+                                            border: '2px solid #3b82f6'
+                                        }}>
+                                            <div style={{ fontSize: '14px', color: '#1e40af', marginBottom: '8px' }}>
+                                                <strong>📊 Período Selecionado:</strong>
+                                            </div>
+                                            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e40af' }}>
+                                                {getNomeMes(mesVigente)}/{anoVigente}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div style={{
+                                        background: '#fef3c7',
+                                        border: '2px solid #f59e0b',
+                                        borderRadius: '8px',
+                                        padding: '15px',
+                                        marginBottom: '15px'
+                                    }}>
+                                        <strong>⚠️ Importante:</strong>
+                                        <ul style={{ marginTop: '10px', paddingLeft: '20px', marginBottom: 0 }}>
+                                            <li>Alertas serão calculados APENAS para este período</li>
+                                            <li>Ordens fora deste mês não aparecerão nos alertas</li>
+                                            <li>Altere para outro mês para ver o histórico</li>
+                                        </ul>
+                                    </div>
+
+                                    <div style={{
+                                        background: '#e6f2ff',
+                                        border: '2px solid #3b82f6',
+                                        borderRadius: '8px',
+                                        padding: '15px'
+                                    }}>
+                                        <strong>💡 Como usar:</strong>
+                                        <ol style={{ marginTop: '10px', paddingLeft: '20px', marginBottom: 0 }}>
+                                            <li>Selecione o mês e ano que deseja avaliar</li>
+                                            <li>Clique em "Salvar Configurações"</li>
+                                            <li>Sistema recalcula automaticamente os alertas</li>
+                                            <li>Banner mostrará: "Período de Avaliação: [Mês]/[Ano]"</li>
+                                        </ol>
                                     </div>
                                 </div>
                             )}
