@@ -640,6 +640,7 @@
             ADMIN_PASSWORD: 'admin2026',
             
             // Metas por técnico (salvas em localStorage)
+            // Leo não tem meta, por isso não está na lista
             METAS: JSON.parse(localStorage.getItem('metasTecnicos') || JSON.stringify({
                 'Caio': { ofertas: 90, upsell: 45 },
                 'Luis': { ofertas: 90, upsell: 45 },
@@ -1973,10 +1974,10 @@
                                         <label className="form-label">Vendedor *</label>
                                         <select name="vendedor" value={formData.vendedor} onChange={handleChange} className="form-select" required>
                                             <option value="">Selecione...</option>
-                                            <option value="Caio">Caio</option>
-                                            <option value="Carlos">Carlos</option>
+                                            <option value="Leo">Leo</option>
                                             <option value="Faust">Faust</option>
-                                            <option value="Luis">Luis</option>
+                                            <option value="Cadu">Cadu</option>
+                                            <option value="Danilo">Danilo</option>
                                         </select>
                                     </div>
 
@@ -2705,8 +2706,10 @@
                                         <div style={{ display: 'flex', gap: '10px' }}>
                                             <select name="lubrificador" value={formData.lubrificador} onChange={handleChange} className="form-select" style={{ flex: 1 }} required>
                                                 <option value="">Selecione...</option>
+                                                <option value="Leo">Leo</option>
                                                 <option value="Caio">Caio</option>
                                                 <option value="Luis">Luis</option>
+                                                <option value="Pedro">Pedro</option>
                                                 {(() => {
                                                     const customLubs = JSON.parse(localStorage.getItem('customLubrificadores') || '[]');
                                                     return customLubs.map(lub => (
@@ -3551,6 +3554,20 @@
                                     <p style={{ color: '#718096', marginBottom: '30px' }}>
                                         Configure as metas individuais de cada lubrificador. O sistema calcula automaticamente o desempenho e gera alertas.
                                     </p>
+
+                                    {/* LEO - SEM META */}
+                                    <div style={{
+                                        background: '#fef3c7',
+                                        border: '2px solid #f59e0b',
+                                        padding: '20px',
+                                        borderRadius: '10px',
+                                        marginBottom: '20px'
+                                    }}>
+                                        <h4 style={{ marginBottom: '10px', color: '#92400e' }}>👤 Leo (Proprietário)</h4>
+                                        <div style={{ fontSize: '14px', color: '#92400e' }}>
+                                            ℹ️ <strong>Leo não tem metas configuradas.</strong> Como proprietário, ele não é avaliado pelo sistema de alertas.
+                                        </div>
+                                    </div>
 
                                     {Object.keys(metas).map(tecnico => (
                                         <div key={tecnico} style={{
