@@ -800,20 +800,28 @@
             // MELHORIA #2: Câmbio automático com detalhes completos
             if (order.cambioAutomatico) {
                 const marca = order.cambioAutomaticoMarca || 'N/A';
-                const qtdOleo = parseFloat(order.cambioAutomaticoQuantidade || 0);
-                const qtdCarter = parseFloat(order.cambioAutomaticoFluidoCarter || 0);
-                const total = qtdOleo + qtdCarter;
+                const qtdOleo = order.cambioAutomaticoQuantidade || '';
+                const qtdCarter = order.cambioAutomaticoFluidoCarter || '';
+                const codigoFiltro = order.cambioAutomaticoFiltroCodigo || '';
                 
                 let texto = `Câmbio Automático (${marca}`;
                 
-                if (qtdCarter > 0) {
-                    texto += ` - Carter: ${qtdCarter}L`;
+                // Quantidade de óleo
+                if (qtdOleo) {
+                    texto += ` - ${qtdOleo}L`;
                 }
-                if (total > 0) {
-                    texto += ` - Total: ${total}L`;
-                }
-                texto += ')';
                 
+                // Quantidade no carter (separado, não soma)
+                if (qtdCarter) {
+                    texto += ` | Carter: ${qtdCarter}L`;
+                }
+                
+                // Código do filtro (se tiver)
+                if (codigoFiltro) {
+                    texto += ` | Filtro: ${codigoFiltro}`;
+                }
+                
+                texto += ')';
                 servicos.push(texto);
             }
             
@@ -1965,10 +1973,10 @@
                                         <label className="form-label">Vendedor *</label>
                                         <select name="vendedor" value={formData.vendedor} onChange={handleChange} className="form-select" required>
                                             <option value="">Selecione...</option>
-                                            <option value="Leo">Leo</option>
+                                            <option value="Caio">Caio</option>
                                             <option value="Carlos">Carlos</option>
                                             <option value="Faust">Faust</option>
-                                            <option value="Danilo">Danilo</option>
+                                            <option value="Luis">Luis</option>
                                         </select>
                                     </div>
 
@@ -2325,11 +2333,11 @@
                                             <div className="form-group">
                                                 <label className="form-label">Tem filtro?</label>
                                                 <select name="cambioAutomaticoTemFiltro" value={formData.cambioAutomaticoTemFiltro} onChange={handleChange} className="form-select">
-                                                    <option value={false}>Não</option>
-                                                    <option value={true}>Sim</option>
+                                                    <option value="false">Não</option>
+                                                    <option value="true">Sim</option>
                                                 </select>
                                             </div>
-                                            {formData.cambioAutomaticoTemFiltro === 'true' && (
+                                            {(formData.cambioAutomaticoTemFiltro === true || formData.cambioAutomaticoTemFiltro === 'true') && (
                                                 <div className="form-group">
                                                     <label className="form-label">Código do Filtro</label>
                                                     <input type="text" name="cambioAutomaticoFiltroCodigo" value={formData.cambioAutomaticoFiltroCodigo} onChange={handleChange} className="form-input" placeholder="Ex: CAF5678" />
@@ -2699,8 +2707,6 @@
                                                 <option value="">Selecione...</option>
                                                 <option value="Caio">Caio</option>
                                                 <option value="Luis">Luis</option>
-                                                <option value="Pedro">Pedro</option>
-                                                <option value="Leo">Leo</option>
                                                 {(() => {
                                                     const customLubs = JSON.parse(localStorage.getItem('customLubrificadores') || '[]');
                                                     return customLubs.map(lub => (
@@ -2749,10 +2755,8 @@
                                         {order.cambioAutomatico && (
                                             <div className="service-item">
                                                 ✓ Câmbio Automático ({order.cambioAutomaticoMarca} - {order.cambioAutomaticoQuantidade}L
-                                                {order.cambioAutomaticoFluidoCarter && ` + Carter: ${order.cambioAutomaticoFluidoCarter}L`}
-                                                {order.cambioAutomaticoQuantidade && order.cambioAutomaticoFluidoCarter && 
-                                                    ` = Total: ${(parseFloat(order.cambioAutomaticoQuantidade) + parseFloat(order.cambioAutomaticoFluidoCarter)).toFixed(1)}L`
-                                                })
+                                                {order.cambioAutomaticoFluidoCarter && ` | Carter: ${order.cambioAutomaticoFluidoCarter}L`}
+                                                {order.cambioAutomaticoFiltroCodigo && ` | Filtro: ${order.cambioAutomaticoFiltroCodigo}`})
                                             </div>
                                         )}
                                         {order.palhetas && <div className="service-item">✓ Palhetas ({order.palhetasCodigo})</div>}
