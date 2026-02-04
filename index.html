@@ -629,6 +629,71 @@
         }
         const db = firebase.firestore();
 
+        // ============================================
+        // CONFIGURAÇÕES GLOBAIS DO SISTEMA
+        // ============================================
+        const SYSTEM_CONFIG = {
+            // URL do webhook do Google Apps Script (PREENCHER DEPOIS DO DEPLOY)
+            SHEETS_WEBHOOK_URL: localStorage.getItem('sheetsWebhookUrl') || '',
+            
+            // Senha para acessar configurações
+            ADMIN_PASSWORD: 'admin2026',
+            
+            // Metas por técnico (salvas em localStorage)
+            METAS: JSON.parse(localStorage.getItem('metasTecnicos') || JSON.stringify({
+                'Caio': { ofertas: 90, upsell: 45 },
+                'Luis': { ofertas: 90, upsell: 45 },
+                'Pedro': { ofertas: 90, upsell: 45 }
+            })),
+            
+            // Alertas habilitados
+            ALERTAS_ENABLED: localStorage.getItem('alertasEnabled') !== 'false'
+        };
+
+        // ============================================
+        // FUNÇÕES DE INTEGRAÇÃO COM GOOGLE SHEETS
+        // ============================================
+        
+        // Sincronizar ordem com Google Sheets
+        const syncToSheets = async (action, order) => {
+            if (!SYSTEM_CONFIG.SHEETS_WEBHOOK_URL) {
+                console.log('⚠️ Webhook do Sheets não configurado');
+                return;
+            }
+            
+            try {
+                console.log(`📤 Enviando para Sheets: ${action}`, order);
+                
+                const response = await fetch(SYSTEM_CONFIG.SHEETS_WEBHOOK_URL, {
+                    method: 'POST',
+                    mode: 'no-cors', // Apps Script requer no-cors
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: action, // 'create', 'update', 'delete'
+                        order: order
+                    })
+                });
+                
+                console.log('✅ Sincronizado com Sheets');
+            } catch (error) {
+                console.error('❌ Erro ao sincronizar com Sheets:', error);
+            }
+        };
+
+        // Salvar metas no localStorage
+        const salvarMetas = (metas) => {
+            localStorage.setItem('metasTecnicos', JSON.stringify(metas));
+            SYSTEM_CONFIG.METAS = metas;
+        };
+
+        // Salvar URL do webhook
+        const salvarWebhookUrl = (url) => {
+            localStorage.setItem('sheetsWebhookUrl', url);
+            SYSTEM_CONFIG.SHEETS_WEBHOOK_URL = url;
+        };
+
         // Função para obter data/hora no horário de Brasília
         const getBrasilDateTime = () => {
             return new Date().toLocaleString('pt-BR', {
@@ -699,6 +764,136 @@
             }
         };
 
+        // ============================================
+        // FUNÇÕES AUXILIARES - BUSCA DE CLIENTES
+        // ============================================
+        
+        // Buscar histórico completo de um cliente
+        const buscarHistoricoCliente = async (termo) => {
+            try {
+                const snapshot = await db.collection('orders')
+                    .where('status', '==', 'concluido')
+                    .get();
+                
+                const ordens = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                // Filtrar por placa, nome ou telefone
+                const termoLower = termo.toLowerCase();
+                const resultado = ordens.filter(ordem => {
+                    const placa = (ordem.placa || '').toLowerCase();
+                    const cliente = (ordem.cliente || '').toLowerCase();
+                    const tel = (ordem.tel || '').toLowerCase();
+                    
+                    return placa.includes(termoLower) || 
+                           cliente.includes(termoLower) || 
+                           tel.includes(termoLower);
+                });
+                
+                // Agrupar por cliente/placa
+                const clientesMap = {};
+                resultado.forEach(ordem => {
+                    const key = ordem.placa || ordem.cliente;
+                    if (!clientesMap[key]) {
+                        clientesMap[key] = {
+                            placa: ordem.placa,
+                            cliente: ordem.cliente,
+                            tel: ordem.tel,
+                            marca: ordem.marca,
+                            modelo: ordem.modelo,
+                            motor: ordem.motor,
+                            ano: ordem.ano,
+                            visitas: [],
+                            totalGasto: 0,
+                            upsellsAceitos: 0
+                        };
+                    }
+                    
+                    clientesMap[key].visitas.push(ordem);
+                    clientesMap[key].totalGasto += parseFloat(ordem.valorTotal || 0);
+                    if (ordem.fezUpsell) clientesMap[key].upsellsAceitos++;
+                });
+                
+                return Object.values(clientesMap);
+            } catch (error) {
+                console.error('Erro ao buscar histórico:', error);
+                return [];
+            }
+        };
+
+        // ============================================
+        // FUNÇÕES AUXILIARES - SISTEMA DE ALERTAS
+        // ============================================
+        
+        // Calcular alertas para todos os técnicos
+        const calcularAlertas = async (orders) => {
+            const alertas = [];
+            const tecnicos = Object.keys(SYSTEM_CONFIG.METAS);
+            
+            for (const tecnico of tecnicos) {
+                const ordensDoTecnico = orders.filter(o => 
+                    o.lubrificador === tecnico && o.status === 'concluido'
+                );
+                
+                if (ordensDoTecnico.length === 0) continue;
+                
+                const metas = SYSTEM_CONFIG.METAS[tecnico];
+                
+                // Calcular métricas
+                const totalOrdens = ordensDoTecnico.length;
+                const clientesAptos = ordensDoTecnico.filter(o => o.apto === 'sim').length;
+                const aptosRecebeuOferta = ordensDoTecnico.filter(o => o.clienteAptoRecebeuOferta).length;
+                const ordensComUpsell = ordensDoTecnico.filter(o => o.fezUpsell).length;
+                
+                const taxaOfertas = clientesAptos > 0 ? (aptosRecebeuOferta / clientesAptos) * 100 : 0;
+                const taxaUpsell = (ordensComUpsell / totalOrdens) * 100;
+                
+                // Gerar alertas baseado nas metas
+                if (taxaOfertas < metas.ofertas) {
+                    alertas.push({
+                        tipo: 'warning',
+                        tecnico: tecnico,
+                        mensagem: `Taxa de ofertas ${taxaOfertas.toFixed(1)}% (Meta: ${metas.ofertas}%)`,
+                        detalhes: `${aptosRecebeuOferta}/${clientesAptos} clientes aptos receberam ofertas`
+                    });
+                }
+                
+                if (taxaUpsell < metas.upsell) {
+                    alertas.push({
+                        tipo: 'warning',
+                        tecnico: tecnico,
+                        mensagem: `Taxa de upsell ${taxaUpsell.toFixed(1)}% (Meta: ${metas.upsell}%)`,
+                        detalhes: `${ordensComUpsell}/${totalOrdens} ordens com upsell`
+                    });
+                }
+                
+                // Alerta crítico: sequência sem ofertas
+                const ultimas10 = ordensDoTecnico.slice(-10);
+                const aptosUltimas10 = ultimas10.filter(o => o.apto === 'sim');
+                const semOfertaUltimas10 = aptosUltimas10.filter(o => !o.clienteAptoRecebeuOferta);
+                
+                if (semOfertaUltimas10.length >= 3) {
+                    alertas.push({
+                        tipo: 'critical',
+                        tecnico: tecnico,
+                        mensagem: `🚨 CRÍTICO: ${semOfertaUltimas10.length} clientes aptos sem oferta nas últimas 10 ordens!`,
+                        detalhes: `Ordens: ${semOfertaUltimas10.map(o => '#' + o.numeroOrdem).join(', ')}`
+                    });
+                }
+                
+                // Alerta positivo
+                if (taxaOfertas >= metas.ofertas && taxaUpsell >= metas.upsell) {
+                    alertas.push({
+                        tipo: 'success',
+                        tecnico: tecnico,
+                        mensagem: `🎉 Parabéns! Todas as metas atingidas!`,
+                        detalhes: `Ofertas: ${taxaOfertas.toFixed(1)}% | Upsell: ${taxaUpsell.toFixed(1)}%`
+                    });
+                }
+            }
+            
+            return alertas;
+        };
+
         // Componente principal
         function App() {
             const [orders, setOrders] = useState([]);
@@ -711,6 +906,14 @@
             const [filterDate, setFilterDate] = useState('today');
             const [customDateStart, setCustomDateStart] = useState('');
             const [customDateEnd, setCustomDateEnd] = useState('');
+            
+            // NOVOS ESTADOS v3.0
+            const [showConfigModal, setShowConfigModal] = useState(false);
+            const [showSearchModal, setShowSearchModal] = useState(false);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [searchResults, setSearchResults] = useState([]);
+            const [alertas, setAlertas] = useState([]);
+            const [showAlertas, setShowAlertas] = useState(true);
 
             // Carregar ordens do Firebase
             const loadOrders = async () => {
@@ -722,6 +925,12 @@
                         ...doc.data()
                     }));
                     setOrders(ordersData);
+                    
+                    // Calcular alertas automaticamente
+                    if (SYSTEM_CONFIG.ALERTAS_ENABLED) {
+                        const alertasCalculados = await calcularAlertas(ordersData);
+                        setAlertas(alertasCalculados);
+                    }
                 } catch (error) {
                     console.error('Erro ao carregar ordens:', error);
                     alert('Erro ao carregar ordens. Verifique o console.');
@@ -802,6 +1011,10 @@
                         status: 'andamento',
                         inicio: getBrasilDateTime()
                     });
+                    
+                    // Sincronizar com Google Sheets
+                    await syncToSheets('update', { ...order, status: 'andamento', inicio: getBrasilDateTime() });
+                    
                     alert('Atendimento iniciado! Carro movido para "Em Andamento".');
                     loadOrders();
                 } catch (error) {
@@ -838,11 +1051,66 @@
                             <button className="btn btn-primary" onClick={() => setShowNewOrderModal(true)}>
                                 ➕ Nova Ordem
                             </button>
+                            <button className="btn btn-secondary" onClick={() => setShowSearchModal(true)}>
+                                🔍 Buscar Cliente
+                            </button>
+                            <button className="btn btn-secondary" onClick={() => setShowConfigModal(true)}>
+                                ⚙️ Configurações
+                            </button>
                             <button className="btn btn-secondary" onClick={loadOrders}>
                                 🔄 Atualizar
                             </button>
                         </div>
                     </div>
+                    
+                    {/* BANNER DE ALERTAS */}
+                    {SYSTEM_CONFIG.ALERTAS_ENABLED && alertas.length > 0 && showAlertas && (
+                        <div style={{
+                            background: '#fff3cd',
+                            border: '2px solid #ffc107',
+                            borderRadius: '10px',
+                            padding: '15px',
+                            marginBottom: '20px'
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                <h3 style={{ margin: 0, color: '#856404' }}>⚠️ ALERTAS DE PERFORMANCE</h3>
+                                <button 
+                                    onClick={() => setShowAlertas(false)}
+                                    style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        fontSize: '20px',
+                                        cursor: 'pointer',
+                                        color: '#856404'
+                                    }}
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                            {alertas.map((alerta, idx) => (
+                                <div 
+                                    key={idx}
+                                    style={{
+                                        padding: '10px',
+                                        marginBottom: '8px',
+                                        borderRadius: '5px',
+                                        background: alerta.tipo === 'critical' ? '#fee2e2' : 
+                                                   alerta.tipo === 'warning' ? '#fef3c7' : '#d1fae5',
+                                        color: alerta.tipo === 'critical' ? '#991b1b' : 
+                                               alerta.tipo === 'warning' ? '#92400e' : '#065f46'
+                                    }}
+                                >
+                                    <div style={{ fontWeight: 'bold' }}>
+                                        {alerta.tipo === 'critical' ? '🔴' : alerta.tipo === 'warning' ? '🟡' : '🟢'} 
+                                        {' '}{alerta.tecnico}: {alerta.mensagem}
+                                    </div>
+                                    <div style={{ fontSize: '12px', marginTop: '4px' }}>
+                                        {alerta.detalhes}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
 
                     <div className="filters">
                         <span style={{ fontWeight: 'bold', color: '#2d3748' }}>Filtrar por:</span>
@@ -1008,6 +1276,30 @@
                                 setSelectedOrder(null);
                             }}
                             onUpdate={loadOrders}
+                        />
+                    )}
+                    
+                    {/* MODAL BUSCA DE CLIENTES */}
+                    {showSearchModal && (
+                        <BuscarClienteModal 
+                            onClose={() => setShowSearchModal(false)}
+                            onSelectCliente={(cliente) => {
+                                // Preencher nova ordem com dados do cliente
+                                setShowSearchModal(false);
+                                setShowNewOrderModal(true);
+                                // TODO: Passar dados do cliente para NovaOrdemModal
+                            }}
+                        />
+                    )}
+                    
+                    {/* MODAL CONFIGURAÇÕES */}
+                    {showConfigModal && (
+                        <ConfiguracoesModal 
+                            onClose={() => setShowConfigModal(false)}
+                            onSave={() => {
+                                setShowConfigModal(false);
+                                loadOrders(); // Recarregar para recalcular alertas
+                            }}
                         />
                     )}
                 </div>
@@ -1442,7 +1734,11 @@
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     };
                     
-                    await db.collection('orders').add(orderData);
+                    const docRef = await db.collection('orders').add(orderData);
+                    
+                    // Sincronizar com Google Sheets
+                    await syncToSheets('create', { id: docRef.id, ...orderData });
+                    
                     alert('Ordem criada com sucesso!');
                     onSuccess();
                 } catch (error) {
@@ -2121,6 +2417,10 @@
                     console.log('Dados a serem salvos:', updateData);
                     
                     await db.collection('orders').doc(order.id).update(updateData);
+                    
+                    // Sincronizar com Google Sheets
+                    await syncToSheets('update', { id: order.id, ...order, ...updateData });
+                    
                     alert('Serviço finalizado com sucesso!');
                     onSuccess();
                 } catch (error) {
@@ -2725,6 +3025,10 @@
 
                 try {
                     await db.collection('orders').doc(order.id).update(formData);
+                    
+                    // Sincronizar com Google Sheets
+                    await syncToSheets('update', { id: order.id, ...order, ...formData });
+                    
                     alert('Ordem atualizada com sucesso!');
                     onUpdate();
                     onClose();
@@ -2874,6 +3178,515 @@
                                     💾 Salvar Alterações
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ============================================
+        // MODAL: CONFIGURAÇÕES
+        // ============================================
+        function ConfiguracoesModal({ onClose, onSave }) {
+            const [tab, setTab] = useState('metas'); // 'metas', 'sheets', 'alertas'
+            const [senha, setSenha] = useState('');
+            const [autenticado, setAutenticado] = useState(false);
+            const [metas, setMetas] = useState(SYSTEM_CONFIG.METAS);
+            const [webhookUrl, setWebhookUrl] = useState(SYSTEM_CONFIG.SHEETS_WEBHOOK_URL);
+            const [alertasEnabled, setAlertasEnabled] = useState(SYSTEM_CONFIG.ALERTAS_ENABLED);
+
+            const handleLogin = () => {
+                if (senha === SYSTEM_CONFIG.ADMIN_PASSWORD) {
+                    setAutenticado(true);
+                } else {
+                    alert('❌ Senha incorreta!');
+                }
+            };
+
+            const handleSalvar = () => {
+                // Salvar metas
+                salvarMetas(metas);
+                
+                // Salvar webhook
+                if (webhookUrl) {
+                    salvarWebhookUrl(webhookUrl);
+                }
+                
+                // Salvar alertas
+                localStorage.setItem('alertasEnabled', alertasEnabled);
+                SYSTEM_CONFIG.ALERTAS_ENABLED = alertasEnabled;
+                
+                alert('✅ Configurações salvas com sucesso!');
+                onSave();
+            };
+
+            const handleMetaChange = (tecnico, campo, valor) => {
+                setMetas(prev => ({
+                    ...prev,
+                    [tecnico]: {
+                        ...prev[tecnico],
+                        [campo]: parseFloat(valor)
+                    }
+                }));
+            };
+
+            if (!autenticado) {
+                return (
+                    <div className="modal-overlay">
+                        <div className="modal-container" style={{ maxWidth: '500px' }}>
+                            <div className="modal-header">
+                                <div className="modal-title">🔒 Acesso Restrito</div>
+                                <button className="close-btn" onClick={onClose}>✕</button>
+                            </div>
+                            <div className="modal-body">
+                                <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                                    <div style={{ fontSize: '60px', marginBottom: '20px' }}>⚙️</div>
+                                    <h3 style={{ marginBottom: '10px' }}>Configurações do Sistema</h3>
+                                    <p style={{ color: '#718096', marginBottom: '30px' }}>
+                                        Digite a senha de administrador para continuar
+                                    </p>
+                                    <input 
+                                        type="password"
+                                        value={senha}
+                                        onChange={(e) => setSenha(e.target.value)}
+                                        onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+                                        placeholder="Senha"
+                                        className="form-input"
+                                        style={{ marginBottom: '20px', textAlign: 'center', fontSize: '16px' }}
+                                        autoFocus
+                                    />
+                                    <button className="btn btn-primary" style={{ width: '100%' }} onClick={handleLogin}>
+                                        🔓 Acessar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="modal-overlay">
+                    <div className="modal-container" style={{ maxWidth: '800px' }}>
+                        <div className="modal-header">
+                            <div className="modal-title">⚙️ Configurações do Sistema</div>
+                            <button className="close-btn" onClick={onClose}>✕</button>
+                        </div>
+                        
+                        <div className="modal-body">
+                            {/* TABS */}
+                            <div style={{ display: 'flex', gap: '10px', marginBottom: '30px', borderBottom: '2px solid #e2e8f0' }}>
+                                <button 
+                                    onClick={() => setTab('metas')}
+                                    style={{
+                                        padding: '10px 20px',
+                                        background: tab === 'metas' ? '#667eea' : 'transparent',
+                                        color: tab === 'metas' ? 'white' : '#4a5568',
+                                        border: 'none',
+                                        borderBottom: tab === 'metas' ? '3px solid #667eea' : 'none',
+                                        cursor: 'pointer',
+                                        fontWeight: 'bold'
+                                    }}
+                                >
+                                    🎯 Metas
+                                </button>
+                                <button 
+                                    onClick={() => setTab('sheets')}
+                                    style={{
+                                        padding: '10px 20px',
+                                        background: tab === 'sheets' ? '#667eea' : 'transparent',
+                                        color: tab === 'sheets' ? 'white' : '#4a5568',
+                                        border: 'none',
+                                        borderBottom: tab === 'sheets' ? '3px solid #667eea' : 'none',
+                                        cursor: 'pointer',
+                                        fontWeight: 'bold'
+                                    }}
+                                >
+                                    📊 Google Sheets
+                                </button>
+                                <button 
+                                    onClick={() => setTab('alertas')}
+                                    style={{
+                                        padding: '10px 20px',
+                                        background: tab === 'alertas' ? '#667eea' : 'transparent',
+                                        color: tab === 'alertas' ? 'white' : '#4a5568',
+                                        border: 'none',
+                                        borderBottom: tab === 'alertas' ? '3px solid #667eea' : 'none',
+                                        cursor: 'pointer',
+                                        fontWeight: 'bold'
+                                    }}
+                                >
+                                    ⚠️ Alertas
+                                </button>
+                            </div>
+
+                            {/* TAB: METAS */}
+                            {tab === 'metas' && (
+                                <div>
+                                    <h3 style={{ marginBottom: '20px' }}>🎯 Definir Metas por Técnico</h3>
+                                    <p style={{ color: '#718096', marginBottom: '30px' }}>
+                                        Configure as metas individuais de cada lubrificador. O sistema calcula automaticamente o desempenho e gera alertas.
+                                    </p>
+
+                                    {Object.keys(metas).map(tecnico => (
+                                        <div key={tecnico} style={{
+                                            background: '#f7fafc',
+                                            padding: '20px',
+                                            borderRadius: '10px',
+                                            marginBottom: '20px'
+                                        }}>
+                                            <h4 style={{ marginBottom: '15px', color: '#2d3748' }}>👤 {tecnico}</h4>
+                                            
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                                                <div>
+                                                    <label className="form-label">Meta de Ofertas (%)</label>
+                                                    <input 
+                                                        type="number"
+                                                        min="0"
+                                                        max="100"
+                                                        value={metas[tecnico].ofertas}
+                                                        onChange={(e) => handleMetaChange(tecnico, 'ofertas', e.target.value)}
+                                                        className="form-input"
+                                                    />
+                                                    <div style={{ fontSize: '12px', color: '#718096', marginTop: '5px' }}>
+                                                        Clientes aptos devem receber ofertas
+                                                    </div>
+                                                </div>
+                                                
+                                                <div>
+                                                    <label className="form-label">Meta de Upsell (%)</label>
+                                                    <input 
+                                                        type="number"
+                                                        min="0"
+                                                        max="100"
+                                                        value={metas[tecnico].upsell}
+                                                        onChange={(e) => handleMetaChange(tecnico, 'upsell', e.target.value)}
+                                                        className="form-input"
+                                                    />
+                                                    <div style={{ fontSize: '12px', color: '#718096', marginTop: '5px' }}>
+                                                        Conversão de vendas adicionais
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+
+                                    <div style={{
+                                        background: '#e6f2ff',
+                                        border: '2px solid #3b82f6',
+                                        borderRadius: '8px',
+                                        padding: '15px',
+                                        marginTop: '20px'
+                                    }}>
+                                        <strong>💡 Dica:</strong> As metas são usadas para calcular alertas e rankings automaticamente. Ajuste conforme necessário.
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* TAB: GOOGLE SHEETS */}
+                            {tab === 'sheets' && (
+                                <div>
+                                    <h3 style={{ marginBottom: '20px' }}>📊 Integração com Google Sheets</h3>
+                                    
+                                    <div className="form-group">
+                                        <label className="form-label">URL do Webhook</label>
+                                        <input 
+                                            type="text"
+                                            value={webhookUrl}
+                                            onChange={(e) => setWebhookUrl(e.target.value)}
+                                            className="form-input"
+                                            placeholder="https://script.google.com/macros/s/..."
+                                        />
+                                        <div style={{ fontSize: '12px', color: '#718096', marginTop: '5px' }}>
+                                            Cole a URL gerada após fazer deploy do Google Apps Script
+                                        </div>
+                                    </div>
+
+                                    <div style={{
+                                        background: '#fef3c7',
+                                        border: '2px solid #f59e0b',
+                                        borderRadius: '8px',
+                                        padding: '15px',
+                                        marginTop: '20px'
+                                    }}>
+                                        <strong>📋 Como configurar:</strong>
+                                        <ol style={{ marginTop: '10px', paddingLeft: '20px' }}>
+                                            <li>Abra a planilha Google Sheets</li>
+                                            <li>Extensions → Apps Script</li>
+                                            <li>Cole o código do script (arquivo google-apps-script.js)</li>
+                                            <li>Deploy → New deployment → Web app</li>
+                                            <li>Copie a URL gerada e cole acima</li>
+                                        </ol>
+                                    </div>
+
+                                    <div style={{
+                                        background: '#e6f2ff',
+                                        border: '2px solid #3b82f6',
+                                        borderRadius: '8px',
+                                        padding: '15px',
+                                        marginTop: '15px'
+                                    }}>
+                                        <strong>✅ Status:</strong> {webhookUrl ? '🟢 Configurado' : '🔴 Não configurado'}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* TAB: ALERTAS */}
+                            {tab === 'alertas' && (
+                                <div>
+                                    <h3 style={{ marginBottom: '20px' }}>⚠️ Sistema de Alertas</h3>
+                                    
+                                    <div className="checkbox-group" style={{ marginBottom: '20px' }}>
+                                        <input 
+                                            type="checkbox"
+                                            checked={alertasEnabled}
+                                            onChange={(e) => setAlertasEnabled(e.target.checked)}
+                                        />
+                                        <label style={{ fontSize: '16px' }}>Habilitar alertas de performance</label>
+                                    </div>
+
+                                    <div style={{
+                                        background: '#f7fafc',
+                                        padding: '20px',
+                                        borderRadius: '10px',
+                                        marginBottom: '15px'
+                                    }}>
+                                        <h4 style={{ marginBottom: '10px' }}>📌 Como funciona:</h4>
+                                        <ul style={{ paddingLeft: '20px', color: '#4a5568' }}>
+                                            <li>Sistema calcula automaticamente as métricas de cada técnico</li>
+                                            <li>Compara com as metas definidas</li>
+                                            <li>Exibe alertas visuais no topo da tela</li>
+                                            <li>Alertas são públicos (todos os técnicos veem)</li>
+                                        </ul>
+                                    </div>
+
+                                    <div style={{
+                                        background: '#fef3c7',
+                                        padding: '15px',
+                                        borderRadius: '8px'
+                                    }}>
+                                        <strong>Tipos de Alertas:</strong>
+                                        <div style={{ marginTop: '10px' }}>
+                                            <div>🔴 <strong>CRÍTICO:</strong> 3+ clientes aptos sem oferta nas últimas 10 ordens</div>
+                                            <div style={{ marginTop: '5px' }}>🟡 <strong>ATENÇÃO:</strong> Taxa abaixo da meta</div>
+                                            <div style={{ marginTop: '5px' }}>🟢 <strong>SUCESSO:</strong> Todas as metas atingidas!</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: '15px', marginTop: '30px' }}>
+                                <button className="btn btn-secondary" onClick={onClose}>
+                                    Cancelar
+                                </button>
+                                <button className="btn btn-success" onClick={handleSalvar}>
+                                    💾 Salvar Configurações
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ============================================
+        // MODAL: BUSCAR CLIENTE
+        // ============================================
+        function BuscarClienteModal({ onClose, onSelectCliente }) {
+            const [termo, setTermo] = useState('');
+            const [resultados, setResultados] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [clienteSelecionado, setClienteSelecionado] = useState(null);
+
+            const handleBuscar = async () => {
+                if (termo.length < 3) {
+                    alert('Digite pelo menos 3 caracteres');
+                    return;
+                }
+
+                setLoading(true);
+                try {
+                    const clientes = await buscarHistoricoCliente(termo);
+                    setResultados(clientes);
+                } catch (error) {
+                    console.error('Erro na busca:', error);
+                    alert('Erro ao buscar clientes');
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const calcularDiasUltimaVisita = (visitas) => {
+                if (!visitas || visitas.length === 0) return null;
+                
+                const datasOrdenadas = visitas
+                    .map(v => new Date(v.dataHora))
+                    .sort((a, b) => b - a);
+                
+                const ultimaVisita = datasOrdenadas[0];
+                const hoje = new Date();
+                const diff = Math.floor((hoje - ultimaVisita) / (1000 * 60 * 60 * 24));
+                return diff;
+            };
+
+            return (
+                <div className="modal-overlay">
+                    <div className="modal-container" style={{ maxWidth: '900px' }}>
+                        <div className="modal-header">
+                            <div className="modal-title">🔍 Buscar Cliente</div>
+                            <button className="close-btn" onClick={onClose}>✕</button>
+                        </div>
+                        
+                        <div className="modal-body">
+                            <div style={{ display: 'flex', gap: '10px', marginBottom: '30px' }}>
+                                <input 
+                                    type="text"
+                                    value={termo}
+                                    onChange={(e) => setTermo(e.target.value)}
+                                    onKeyPress={(e) => e.key === 'Enter' && handleBuscar()}
+                                    placeholder="Digite placa, nome ou telefone..."
+                                    className="form-input"
+                                    style={{ flex: 1 }}
+                                    autoFocus
+                                />
+                                <button 
+                                    className="btn btn-primary"
+                                    onClick={handleBuscar}
+                                    disabled={loading}
+                                >
+                                    {loading ? '⏳ Buscando...' : '🔍 Buscar'}
+                                </button>
+                            </div>
+
+                            {resultados.length === 0 && !loading && (
+                                <div style={{ textAlign: 'center', padding: '60px 20px', color: '#718096' }}>
+                                    <div style={{ fontSize: '60px', marginBottom: '20px' }}>🔍</div>
+                                    <h3>Nenhum resultado</h3>
+                                    <p>Digite uma placa, nome ou telefone para buscar</p>
+                                </div>
+                            )}
+
+                            {resultados.length > 0 && (
+                                <div>
+                                    <h4 style={{ marginBottom: '15px', color: '#2d3748' }}>
+                                        📋 {resultados.length} cliente(s) encontrado(s)
+                                    </h4>
+                                    
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                                        {resultados.map((cliente, idx) => {
+                                            const dias = calcularDiasUltimaVisita(cliente.visitas);
+                                            const taxaUpsell = cliente.visitas.length > 0 
+                                                ? (cliente.upsellsAceitos / cliente.visitas.length) * 100 
+                                                : 0;
+
+                                            return (
+                                                <div 
+                                                    key={idx}
+                                                    style={{
+                                                        background: '#f7fafc',
+                                                        padding: '20px',
+                                                        borderRadius: '10px',
+                                                        border: clienteSelecionado === cliente ? '3px solid #667eea' : '1px solid #e2e8f0',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                    onClick={() => setClienteSelecionado(cliente)}
+                                                >
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                                                        <div>
+                                                            <h3 style={{ marginBottom: '5px', color: '#2d3748' }}>
+                                                                🚗 {cliente.placa} - {cliente.cliente}
+                                                            </h3>
+                                                            <div style={{ color: '#718096', fontSize: '14px', marginBottom: '15px' }}>
+                                                                {cliente.marca} {cliente.modelo} {cliente.motor} - {cliente.ano}
+                                                            </div>
+                                                            
+                                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px' }}>
+                                                                <div>
+                                                                    <div style={{ fontSize: '12px', color: '#718096' }}>Total Visitas</div>
+                                                                    <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#667eea' }}>
+                                                                        {cliente.visitas.length}x
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                <div>
+                                                                    <div style={{ fontSize: '12px', color: '#718096' }}>Última Visita</div>
+                                                                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: dias < 30 ? '#48bb78' : dias < 60 ? '#f6ad55' : '#f56565' }}>
+                                                                        {dias} dias
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                <div>
+                                                                    <div style={{ fontSize: '12px', color: '#718096' }}>Aceita Upsell</div>
+                                                                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: taxaUpsell > 50 ? '#48bb78' : '#f6ad55' }}>
+                                                                        {taxaUpsell.toFixed(0)}%
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                <div>
+                                                                    <div style={{ fontSize: '12px', color: '#718096' }}>Total Gasto</div>
+                                                                    <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#667eea' }}>
+                                                                        R$ {cliente.totalGasto.toFixed(2)}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        {clienteSelecionado === cliente && (
+                                                            <div style={{ color: '#667eea', fontSize: '30px' }}>✓</div>
+                                                        )}
+                                                    </div>
+
+                                                    {clienteSelecionado === cliente && (
+                                                        <div style={{
+                                                            marginTop: '20px',
+                                                            padding: '15px',
+                                                            background: 'white',
+                                                            borderRadius: '8px',
+                                                            maxHeight: '200px',
+                                                            overflowY: 'auto'
+                                                        }}>
+                                                            <h5 style={{ marginBottom: '10px' }}>📜 Histórico de Visitas:</h5>
+                                                            {cliente.visitas.slice(0, 5).map((visita, vIdx) => (
+                                                                <div key={vIdx} style={{
+                                                                    padding: '8px',
+                                                                    marginBottom: '5px',
+                                                                    background: '#f7fafc',
+                                                                    borderRadius: '5px',
+                                                                    fontSize: '13px'
+                                                                }}>
+                                                                    <strong>#{visita.numeroOrdem}</strong> - {new Date(visita.dataHora).toLocaleDateString('pt-BR')} - 
+                                                                    R$ {visita.valorTotal?.toFixed(2) || '0.00'} 
+                                                                    {visita.fezUpsell && <span style={{ color: '#48bb78' }}> ✓ Upsell</span>}
+                                                                </div>
+                                                            ))}
+                                                            {cliente.visitas.length > 5 && (
+                                                                <div style={{ fontSize: '12px', color: '#718096', marginTop: '10px' }}>
+                                                                    ... e mais {cliente.visitas.length - 5} visitas
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {clienteSelecionado && (
+                                        <div style={{ display: 'flex', gap: '15px', marginTop: '30px' }}>
+                                            <button className="btn btn-secondary" onClick={onClose}>
+                                                Cancelar
+                                            </button>
+                                            <button 
+                                                className="btn btn-success"
+                                                onClick={() => onSelectCliente(clienteSelecionado)}
+                                            >
+                                                ➕ Criar Nova Ordem para Este Cliente
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
