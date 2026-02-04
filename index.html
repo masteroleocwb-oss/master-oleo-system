@@ -765,6 +765,47 @@
         };
 
         // ============================================
+        // MELHORIA #2: Função global para formatar serviços com detalhes
+        // ============================================
+        const getServicosDetalhados = (order) => {
+            const servicos = [];
+            
+            if (order.oleoMotor) servicos.push(`Óleo Motor (${order.oleoMarca || 'N/A'} - ${order.oleoQuantidade || 'N/A'}L)`);
+            if (order.filtroOleo) servicos.push(`Filtro Óleo (${order.filtroOleoTipo || 'N/A'})`);
+            if (order.arMotor) servicos.push(`Filtro Ar Motor (${order.arMotorCodigo || 'N/A'})`);
+            if (order.arCondicionado) servicos.push(`Filtro Ar Condicionado (${order.arCondicionadoCodigo || 'N/A'})`);
+            if (order.filtroCombustivel) servicos.push(`Filtro Combustível (${order.filtroCombustivelCodigo || 'N/A'})`);
+            if (order.cambioManual) servicos.push(`Câmbio Manual (${order.cambioManualMarca || 'N/A'} - ${order.cambioManualQuantidade || 'N/A'}L)`);
+            
+            // MELHORIA #2: Câmbio automático com detalhes completos
+            if (order.cambioAutomatico) {
+                const marca = order.cambioAutomaticoMarca || 'N/A';
+                const qtdOleo = parseFloat(order.cambioAutomaticoQuantidade || 0);
+                const qtdCarter = parseFloat(order.cambioAutomaticoFluidoCarter || 0);
+                const total = qtdOleo + qtdCarter;
+                
+                let texto = `Câmbio Automático (${marca}`;
+                
+                if (qtdCarter > 0) {
+                    texto += ` - Carter: ${qtdCarter}L`;
+                }
+                if (total > 0) {
+                    texto += ` - Total: ${total}L`;
+                }
+                texto += ')';
+                
+                servicos.push(texto);
+            }
+            
+            if (order.palhetas) servicos.push(`Palhetas (${order.palhetasCodigo || 'N/A'})`);
+            if (order.militec) servicos.push('Militec/Nano');
+            if (order.aditivo) servicos.push(`Aditivo (${order.aditivoQual || 'N/A'})`);
+            if (order.flush) servicos.push('Flush');
+            
+            return servicos;
+        };
+
+        // ============================================
         // FUNÇÕES AUXILIARES - BUSCA DE CLIENTES
         // ============================================
         
@@ -829,8 +870,19 @@
             const alertas = [];
             const tecnicos = Object.keys(SYSTEM_CONFIG.METAS);
             
+            // MELHORIA #4: Filtrar apenas ordens do mês atual
+            const hoje = new Date();
+            const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+            const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0, 23, 59, 59);
+            
+            const ordensDoMes = orders.filter(o => {
+                if (!o.fim && !o.dataHora) return false;
+                const dataOrdem = new Date(o.fim || o.dataHora);
+                return dataOrdem >= inicioMes && dataOrdem <= fimMes;
+            });
+            
             for (const tecnico of tecnicos) {
-                const ordensDoTecnico = orders.filter(o => 
+                const ordensDoTecnico = ordensDoMes.filter(o => 
                     o.lubrificador === tecnico && o.status === 'concluido'
                 );
                 
@@ -852,7 +904,7 @@
                     alertas.push({
                         tipo: 'warning',
                         tecnico: tecnico,
-                        mensagem: `Taxa de ofertas ${taxaOfertas.toFixed(1)}% (Meta: ${metas.ofertas}%)`,
+                        mensagem: `Taxa de ofertas ${taxaOfertas.toFixed(1)}% (Meta: ${metas.ofertas}%) - Este Mês`,
                         detalhes: `${aptosRecebeuOferta}/${clientesAptos} clientes aptos receberam ofertas`
                     });
                 }
@@ -861,12 +913,12 @@
                     alertas.push({
                         tipo: 'warning',
                         tecnico: tecnico,
-                        mensagem: `Taxa de upsell ${taxaUpsell.toFixed(1)}% (Meta: ${metas.upsell}%)`,
+                        mensagem: `Taxa de upsell ${taxaUpsell.toFixed(1)}% (Meta: ${metas.upsell}%) - Este Mês`,
                         detalhes: `${ordensComUpsell}/${totalOrdens} ordens com upsell`
                     });
                 }
                 
-                // Alerta crítico: sequência sem ofertas
+                // Alerta crítico: sequência sem ofertas (últimas 10 do mês)
                 const ultimas10 = ordensDoTecnico.slice(-10);
                 const aptosUltimas10 = ultimas10.filter(o => o.apto === 'sim');
                 const semOfertaUltimas10 = aptosUltimas10.filter(o => !o.clienteAptoRecebeuOferta);
@@ -1308,23 +1360,7 @@
 
         // Componente Card Aguardando
         function CardAguardando({ order, position, onIniciar, onCancelar, onVerDados, onEditar }) {
-            const getServicos = () => {
-                const servicos = [];
-                if (order.oleoMotor) servicos.push(`Óleo Motor (${order.oleoMarca || 'N/A'} - ${order.oleoQuantidade || 'N/A'}L)`);
-                if (order.filtroOleo) servicos.push(`Filtro Óleo (${order.filtroOleoTipo || 'N/A'})`);
-                if (order.arMotor) servicos.push(`Filtro Ar Motor (${order.arMotorCodigo || 'N/A'})`);
-                if (order.arCondicionado) servicos.push(`Filtro Ar Condicionado (${order.arCondicionadoCodigo || 'N/A'})`);
-                if (order.filtroCombustivel) servicos.push(`Filtro Combustível (${order.filtroCombustivelCodigo || 'N/A'})`);
-                if (order.cambioManual) servicos.push(`Câmbio Manual (${order.cambioManualMarca || 'N/A'} - ${order.cambioManualQuantidade || 'N/A'}L)`);
-                if (order.cambioAutomatico) servicos.push(`Câmbio Automático (${order.cambioAutomaticoMarca || 'N/A'} - ${order.cambioAutomaticoQuantidade || 'N/A'}L)`);
-                if (order.palhetas) servicos.push(`Palhetas (${order.palhetasCodigo || 'N/A'})`);
-                if (order.militec) servicos.push('Militec/Nano');
-                if (order.aditivo) servicos.push(`Aditivo (${order.aditivoQual || 'N/A'})`);
-                if (order.flush) servicos.push('Flush');
-                return servicos;
-            };
-
-            const servicos = getServicos();
+            const servicos = getServicosDetalhados(order);
 
             return (
                 <div className="card card-aguardando">
@@ -1381,23 +1417,7 @@
 
         // Componente Card Em Andamento
         function CardEmAndamento({ order, onVerDados, onEditar, onFinalizar }) {
-            const getServicos = () => {
-                const servicos = [];
-                if (order.oleoMotor) servicos.push(`Óleo Motor (${order.oleoMarca || 'N/A'} - ${order.oleoQuantidade || 'N/A'}L)`);
-                if (order.filtroOleo) servicos.push(`Filtro Óleo (${order.filtroOleoTipo || 'N/A'})`);
-                if (order.arMotor) servicos.push(`Filtro Ar Motor (${order.arMotorCodigo || 'N/A'})`);
-                if (order.arCondicionado) servicos.push(`Filtro Ar Condicionado (${order.arCondicionadoCodigo || 'N/A'})`);
-                if (order.filtroCombustivel) servicos.push(`Filtro Combustível (${order.filtroCombustivelCodigo || 'N/A'})`);
-                if (order.cambioManual) servicos.push(`Câmbio Manual (${order.cambioManualMarca || 'N/A'} - ${order.cambioManualQuantidade || 'N/A'}L)`);
-                if (order.cambioAutomatico) servicos.push(`Câmbio Automático (${order.cambioAutomaticoMarca || 'N/A'} - ${order.cambioAutomaticoQuantidade || 'N/A'}L)`);
-                if (order.palhetas) servicos.push(`Palhetas (${order.palhetasCodigo || 'N/A'})`);
-                if (order.militec) servicos.push('Militec/Nano');
-                if (order.aditivo) servicos.push(`Aditivo (${order.aditivoQual || 'N/A'})`);
-                if (order.flush) servicos.push('Flush');
-                return servicos;
-            };
-
-            const servicos = getServicos();
+            const servicos = getServicosDetalhados(order);
 
             return (
                 <div className="card" style={{ borderLeft: '5px solid #4299e1', background: 'linear-gradient(135deg, #e6f2ff 0%, #ffffff 100%)' }}>
@@ -1516,6 +1536,12 @@
         function NovaOrdemModal({ onClose, onSuccess, nextOrderNumber }) {
             const [step, setStep] = useState(1);
             
+            // NOVO: Estados para busca rápida
+            const [buscaRapida, setBuscaRapida] = useState('');
+            const [resultadosBusca, setResultadosBusca] = useState([]);
+            const [buscando, setBuscando] = useState(false);
+            const [mostrarBusca, setMostrarBusca] = useState(false);
+            
             // Carregar dados salvos do localStorage
             const [customMarcas, setCustomMarcas] = useState(() => {
                 const saved = localStorage.getItem('customMarcas');
@@ -1627,7 +1653,6 @@
                 cambio: '',
                 combustivel: '',
                 dataHora: formatDateTimeForInput(),
-                
                 oleoMotor: false,
                 oleoMarca: '',
                 oleoQuantidade: '',
@@ -1747,6 +1772,46 @@
                 }
             };
 
+            // MELHORIA #1: Busca rápida de cliente
+            const handleBuscaRapida = async () => {
+                if (buscaRapida.length < 3) {
+                    alert('Digite pelo menos 3 caracteres');
+                    return;
+                }
+
+                setBuscando(true);
+                try {
+                    const clientes = await buscarHistoricoCliente(buscaRapida);
+                    setResultadosBusca(clientes);
+                    setMostrarBusca(true);
+                } catch (error) {
+                    console.error('Erro na busca:', error);
+                    alert('Erro ao buscar clientes');
+                } finally {
+                    setBuscando(false);
+                }
+            };
+
+            // Preencher dados do cliente automaticamente
+            const preencherDadosCliente = (cliente) => {
+                setFormData(prev => ({
+                    ...prev,
+                    cliente: cliente.cliente || '',
+                    tel: cliente.tel || '',
+                    placa: cliente.placa || '',
+                    marca: cliente.marca || '',
+                    modelo: cliente.modelo || '',
+                    motor: cliente.motor || '',
+                    ano: cliente.ano || ''
+                }));
+                
+                setMostrarBusca(false);
+                setBuscaRapida('');
+                setResultadosBusca([]);
+                
+                alert('✅ Dados preenchidos! Continue com os serviços.');
+            };
+
             return (
                 <div className="modal">
                     <div className="modal-content">
@@ -1773,14 +1838,101 @@
 
                             {step === 1 && (
                                 <div>
+                                    {/* MELHORIA #1: BUSCA RÁPIDA INTEGRADA */}
+                                    <div style={{
+                                        background: '#e6f2ff',
+                                        border: '2px solid #3b82f6',
+                                        borderRadius: '10px',
+                                        padding: '20px',
+                                        marginBottom: '25px'
+                                    }}>
+                                        <h4 style={{ marginBottom: '10px', color: '#1e40af' }}>
+                                            🔍 Cliente já Veio Antes? Busque Aqui!
+                                        </h4>
+                                        <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '15px' }}>
+                                            Digite placa, nome ou telefone para preencher dados automaticamente
+                                        </p>
+                                        <div style={{ display: 'flex', gap: '10px' }}>
+                                            <input 
+                                                type="text"
+                                                value={buscaRapida}
+                                                onChange={(e) => setBuscaRapida(e.target.value)}
+                                                onKeyPress={(e) => e.key === 'Enter' && handleBuscaRapida()}
+                                                placeholder="Ex: AKX1234 ou João Silva ou 41999..."
+                                                className="form-input"
+                                                style={{ flex: 1 }}
+                                            />
+                                            <button 
+                                                className="btn btn-primary"
+                                                onClick={handleBuscaRapida}
+                                                disabled={buscando}
+                                                style={{ minWidth: '120px' }}
+                                            >
+                                                {buscando ? '⏳ Buscando...' : '🔍 Buscar'}
+                                            </button>
+                                        </div>
+
+                                        {mostrarBusca && resultadosBusca.length > 0 && (
+                                            <div style={{
+                                                marginTop: '15px',
+                                                maxHeight: '300px',
+                                                overflowY: 'auto',
+                                                background: 'white',
+                                                borderRadius: '8px',
+                                                padding: '10px'
+                                            }}>
+                                                <h5 style={{ marginBottom: '10px' }}>✅ {resultadosBusca.length} resultado(s):</h5>
+                                                {resultadosBusca.map((cliente, idx) => (
+                                                    <div 
+                                                        key={idx}
+                                                        onClick={() => preencherDadosCliente(cliente)}
+                                                        style={{
+                                                            padding: '12px',
+                                                            marginBottom: '8px',
+                                                            background: '#f7fafc',
+                                                            borderRadius: '6px',
+                                                            cursor: 'pointer',
+                                                            border: '1px solid #e2e8f0',
+                                                            transition: 'all 0.2s'
+                                                        }}
+                                                        onMouseEnter={(e) => e.currentTarget.style.background = '#e6f2ff'}
+                                                        onMouseLeave={(e) => e.currentTarget.style.background = '#f7fafc'}
+                                                    >
+                                                        <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
+                                                            🚗 {cliente.placa} - {cliente.cliente}
+                                                        </div>
+                                                        <div style={{ fontSize: '13px', color: '#64748b' }}>
+                                                            {cliente.marca} {cliente.modelo} {cliente.motor} - {cliente.ano} | 
+                                                            {' '}{cliente.visitas.length} visita(s) | 
+                                                            {' '}Tel: {cliente.tel}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {mostrarBusca && resultadosBusca.length === 0 && (
+                                            <div style={{
+                                                marginTop: '15px',
+                                                padding: '15px',
+                                                background: '#fef3c7',
+                                                borderRadius: '8px',
+                                                color: '#92400e',
+                                                textAlign: 'center'
+                                            }}>
+                                                ℹ️ Nenhum cliente encontrado. Preencha os dados manualmente abaixo.
+                                            </div>
+                                        )}
+                                    </div>
+
                                     <div className="form-group">
                                         <label className="form-label">Vendedor *</label>
                                         <select name="vendedor" value={formData.vendedor} onChange={handleChange} className="form-select" required>
                                             <option value="">Selecione...</option>
-                                            <option value="Caio">Caio</option>
+                                            <option value="Leo">Leo</option>
                                             <option value="Carlos">Carlos</option>
                                             <option value="Faust">Faust</option>
-                                            <option value="Luis">Luis</option>
+                                            <option value="Danilo">Danilo</option>
                                         </select>
                                     </div>
 
@@ -2431,6 +2583,56 @@
             };
 
             // TODOS os serviços disponíveis para upsell (não só os não vendidos)
+            // FUNÇÃO AUXILIAR: Obter detalhes do serviço vendido
+            const getDetalhesServicoVendido = (key) => {
+                const detalhes = [];
+                
+                if (key === 'oleoMotor' && order.oleoMotor) {
+                    if (order.oleoMarca) detalhes.push(`Marca: ${order.oleoMarca}`);
+                    if (order.oleoQuantidade) detalhes.push(`${order.oleoQuantidade}L`);
+                }
+                
+                if (key === 'filtroOleo' && order.filtroOleo) {
+                    if (order.filtroOleoTipo) detalhes.push(`Tipo: ${order.filtroOleoTipo}`);
+                }
+                
+                if (key === 'arMotor' && order.arMotor) {
+                    if (order.arMotorCodigo) detalhes.push(`Código: ${order.arMotorCodigo}`);
+                }
+                
+                if (key === 'arCondicionado' && order.arCondicionado) {
+                    if (order.arCondicionadoCodigo) detalhes.push(`Código: ${order.arCondicionadoCodigo}`);
+                }
+                
+                if (key === 'filtroCombustivel' && order.filtroCombustivel) {
+                    if (order.filtroCombustivelCodigo) detalhes.push(`Código: ${order.filtroCombustivelCodigo}`);
+                }
+                
+                if (key === 'cambioManual' && order.cambioManual) {
+                    if (order.cambioManualMarca) detalhes.push(`Marca: ${order.cambioManualMarca}`);
+                    if (order.cambioManualQuantidade) detalhes.push(`${order.cambioManualQuantidade}L`);
+                }
+                
+                if (key === 'cambioAutomatico' && order.cambioAutomatico) {
+                    if (order.cambioAutomaticoMarca) detalhes.push(`Marca: ${order.cambioAutomaticoMarca}`);
+                    if (order.cambioAutomaticoQuantidade) detalhes.push(`Óleo: ${order.cambioAutomaticoQuantidade}L`);
+                    if (order.cambioAutomaticoFluidoCarter) detalhes.push(`Carter: ${order.cambioAutomaticoFluidoCarter}L`);
+                    
+                    const qtdTotal = parseFloat(order.cambioAutomaticoQuantidade || 0) + parseFloat(order.cambioAutomaticoFluidoCarter || 0);
+                    if (qtdTotal > 0) detalhes.push(`Total: ${qtdTotal}L`);
+                }
+                
+                if (key === 'palhetas' && order.palhetas) {
+                    if (order.palhetasCodigo) detalhes.push(`Código: ${order.palhetasCodigo}`);
+                }
+                
+                if (key === 'aditivo' && order.aditivo) {
+                    if (order.aditivoQual) detalhes.push(`Tipo: ${order.aditivoQual}`);
+                }
+                
+                return detalhes.length > 0 ? ` (${detalhes.join(' | ')})` : '';
+            };
+
             const servicosDisponiveis = [
                 { key: 'oleoMotor', label: 'Óleo de Motor', vendido: order.oleoMotor },
                 { key: 'filtroOleo', label: 'Filtro de Óleo', vendido: order.filtroOleo },
@@ -2511,6 +2713,8 @@
                                                 <option value="">Selecione...</option>
                                                 <option value="Caio">Caio</option>
                                                 <option value="Luis">Luis</option>
+                                                <option value="Pedro">Pedro</option>
+                                                <option value="Leo">Leo</option>
                                                 {(() => {
                                                     const customLubs = JSON.parse(localStorage.getItem('customLubrificadores') || '[]');
                                                     return customLubs.map(lub => (
@@ -2555,7 +2759,16 @@
                                         {order.arCondicionado && <div className="service-item">✓ Filtro Ar Condicionado ({order.arCondicionadoCodigo})</div>}
                                         {order.filtroCombustivel && <div className="service-item">✓ Filtro Combustível ({order.filtroCombustivelCodigo})</div>}
                                         {order.cambioManual && <div className="service-item">✓ Câmbio Manual ({order.cambioManualMarca} - {order.cambioManualQuantidade}L)</div>}
-                                        {order.cambioAutomatico && <div className="service-item">✓ Câmbio Automático ({order.cambioAutomaticoMarca} - {order.cambioAutomaticoQuantidade}L)</div>}
+                                        {/* MELHORIA #3: Detalhes completos de câmbio automático */}
+                                        {order.cambioAutomatico && (
+                                            <div className="service-item">
+                                                ✓ Câmbio Automático ({order.cambioAutomaticoMarca} - {order.cambioAutomaticoQuantidade}L
+                                                {order.cambioAutomaticoFluidoCarter && ` + Carter: ${order.cambioAutomaticoFluidoCarter}L`}
+                                                {order.cambioAutomaticoQuantidade && order.cambioAutomaticoFluidoCarter && 
+                                                    ` = Total: ${(parseFloat(order.cambioAutomaticoQuantidade) + parseFloat(order.cambioAutomaticoFluidoCarter)).toFixed(1)}L`
+                                                })
+                                            </div>
+                                        )}
                                         {order.palhetas && <div className="service-item">✓ Palhetas ({order.palhetasCodigo})</div>}
                                         {order.militec && <div className="service-item">✓ Militec/Nano</div>}
                                         {order.aditivo && <div className="service-item">✓ Aditivo ({order.aditivoQual})</div>}
@@ -2596,7 +2809,11 @@
                                                     />
                                                     <label style={{ fontWeight: 'bold', flex: 1 }}>
                                                         {label}
-                                                        {vendido && <span style={{ color: '#48bb78', fontSize: '12px', marginLeft: '10px' }}>✓ Já vendido pelo vendedor</span>}
+                                                        {vendido && (
+                                                            <span style={{ color: '#48bb78', fontSize: '12px', marginLeft: '10px' }}>
+                                                                ✓ Vendido{getDetalhesServicoVendido(key)}
+                                                            </span>
+                                                        )}
                                                     </label>
                                                 </div>
                                                 
