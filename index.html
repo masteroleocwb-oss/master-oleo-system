@@ -633,9 +633,6 @@
         // CONFIGURAÇÕES GLOBAIS DO SISTEMA
         // ============================================
         const SYSTEM_CONFIG = {
-            // URL do webhook do Google Apps Script (PREENCHER DEPOIS DO DEPLOY)
-            SHEETS_WEBHOOK_URL: localStorage.getItem('sheetsWebhookUrl') || 'https://script.google.com/macros/s/AKfycbxhYQblbrch4KZ_fRAeKlHqV8-h4d1EzRRIWklQoHZIJ8iGg_0IKhgTN7HX35aCPIhx/exec',
-            
             // Senha para acessar configurações
             ADMIN_PASSWORD: 'admin2026',
             
@@ -647,7 +644,7 @@
                 'Pedro': { ofertas: 90, upsell: 45 }
             })),
             
-            // MÊS VIGENTE PARA AVALIAÇÃO (NOVO!)
+            // MÊS VIGENTE PARA AVALIAÇÃO
             MES_VIGENTE: JSON.parse(localStorage.getItem('mesVigente') || JSON.stringify({
                 mes: new Date().getMonth() + 1, // 1-12
                 ano: new Date().getFullYear()
@@ -676,43 +673,15 @@
         // ============================================
         
         // Sincronizar ordem com Google Sheets
-        const syncToSheets = async (action, order) => {
-            if (!SYSTEM_CONFIG.SHEETS_WEBHOOK_URL) {
-                console.log('⚠️ Webhook do Sheets não configurado');
-                return;
-            }
-            
-            try {
-                console.log(`📤 Enviando para Sheets: ${action}`, order);
-                
-                const response = await fetch(SYSTEM_CONFIG.SHEETS_WEBHOOK_URL, {
-                    method: 'POST',
-                    mode: 'no-cors', // Apps Script requer no-cors
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        action: action, // 'create', 'update', 'delete'
-                        order: order
-                    })
-                });
-                
-                console.log('✅ Sincronizado com Sheets');
-            } catch (error) {
-                console.error('❌ Erro ao sincronizar com Sheets:', error);
-            }
-        };
+        // ============================================
+        // REMOÇÃO: Google Sheets foi removido para performance
+        // Dashboard HTML separado será usado para relatórios
+        // ============================================
 
         // Salvar metas no localStorage
         const salvarMetas = (metas) => {
             localStorage.setItem('metasTecnicos', JSON.stringify(metas));
             SYSTEM_CONFIG.METAS = metas;
-        };
-
-        // Salvar URL do webhook
-        const salvarWebhookUrl = (url) => {
-            localStorage.setItem('sheetsWebhookUrl', url);
-            SYSTEM_CONFIG.SHEETS_WEBHOOK_URL = url;
         };
 
         // Função para obter data/hora no horário de Brasília
@@ -1103,9 +1072,6 @@
                         status: 'andamento',
                         inicio: getBrasilDateTime()
                     });
-                    
-                    // Sincronizar com Google Sheets
-                    await syncToSheets('update', { ...order, status: 'andamento', inicio: getBrasilDateTime() });
                     
                     alert('Atendimento iniciado! Carro movido para "Em Andamento".');
                     loadOrders();
@@ -1805,9 +1771,6 @@
                     };
                     
                     const docRef = await db.collection('orders').add(orderData);
-                    
-                    // Sincronizar com Google Sheets
-                    await syncToSheets('create', { id: docRef.id, ...orderData });
                     
                     alert('Ordem criada com sucesso!');
                     onSuccess();
@@ -2615,9 +2578,6 @@
                     
                     await db.collection('orders').doc(order.id).update(updateData);
                     
-                    // Sincronizar com Google Sheets
-                    await syncToSheets('update', { id: order.id, ...order, ...updateData });
-                    
                     alert('Serviço finalizado com sucesso!');
                     onSuccess();
                 } catch (error) {
@@ -3232,9 +3192,6 @@
                 try {
                     await db.collection('orders').doc(order.id).update(formData);
                     
-                    // Sincronizar com Google Sheets
-                    await syncToSheets('update', { id: order.id, ...order, ...formData });
-                    
                     alert('Ordem atualizada com sucesso!');
                     onUpdate();
                     onClose();
@@ -3394,14 +3351,13 @@
         // MODAL: CONFIGURAÇÕES
         // ============================================
         function ConfiguracoesModal({ onClose, onSave }) {
-            const [tab, setTab] = useState('metas'); // 'metas', 'periodo', 'sheets', 'alertas'
+            const [tab, setTab] = useState('metas'); // 'metas', 'periodo', 'alertas'
             const [senha, setSenha] = useState('');
             const [autenticado, setAutenticado] = useState(false);
             const [metas, setMetas] = useState(SYSTEM_CONFIG.METAS);
-            const [webhookUrl, setWebhookUrl] = useState(SYSTEM_CONFIG.SHEETS_WEBHOOK_URL);
             const [alertasEnabled, setAlertasEnabled] = useState(SYSTEM_CONFIG.ALERTAS_ENABLED);
             
-            // NOVO: Estados para mês vigente
+            // Estados para mês vigente
             const [mesVigente, setMesVigente] = useState(SYSTEM_CONFIG.MES_VIGENTE.mes);
             const [anoVigente, setAnoVigente] = useState(SYSTEM_CONFIG.MES_VIGENTE.ano);
 
@@ -3419,11 +3375,6 @@
                 
                 // Salvar mês vigente
                 salvarMesVigente(mesVigente, anoVigente);
-                
-                // Salvar webhook
-                if (webhookUrl) {
-                    salvarWebhookUrl(webhookUrl);
-                }
                 
                 // Salvar alertas
                 localStorage.setItem('alertasEnabled', alertasEnabled);
@@ -3516,20 +3467,6 @@
                                     }}
                                 >
                                     📅 Período
-                                </button>
-                                <button 
-                                    onClick={() => setTab('sheets')}
-                                    style={{
-                                        padding: '10px 20px',
-                                        background: tab === 'sheets' ? '#667eea' : 'transparent',
-                                        color: tab === 'sheets' ? 'white' : '#4a5568',
-                                        border: 'none',
-                                        borderBottom: tab === 'sheets' ? '3px solid #667eea' : 'none',
-                                        cursor: 'pointer',
-                                        fontWeight: 'bold'
-                                    }}
-                                >
-                                    📊 Google Sheets
                                 </button>
                                 <button 
                                     onClick={() => setTab('alertas')}
@@ -3723,54 +3660,6 @@
                                             <li>Sistema recalcula automaticamente os alertas</li>
                                             <li>Banner mostrará: "Período de Avaliação: [Mês]/[Ano]"</li>
                                         </ol>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* TAB: GOOGLE SHEETS */}
-                            {tab === 'sheets' && (
-                                <div>
-                                    <h3 style={{ marginBottom: '20px' }}>📊 Integração com Google Sheets</h3>
-                                    
-                                    <div className="form-group">
-                                        <label className="form-label">URL do Webhook</label>
-                                        <input 
-                                            type="text"
-                                            value={webhookUrl}
-                                            onChange={(e) => setWebhookUrl(e.target.value)}
-                                            className="form-input"
-                                            placeholder="https://script.google.com/macros/s/..."
-                                        />
-                                        <div style={{ fontSize: '12px', color: '#718096', marginTop: '5px' }}>
-                                            Cole a URL gerada após fazer deploy do Google Apps Script
-                                        </div>
-                                    </div>
-
-                                    <div style={{
-                                        background: '#fef3c7',
-                                        border: '2px solid #f59e0b',
-                                        borderRadius: '8px',
-                                        padding: '15px',
-                                        marginTop: '20px'
-                                    }}>
-                                        <strong>📋 Como configurar:</strong>
-                                        <ol style={{ marginTop: '10px', paddingLeft: '20px' }}>
-                                            <li>Abra a planilha Google Sheets</li>
-                                            <li>Extensions → Apps Script</li>
-                                            <li>Cole o código do script (arquivo google-apps-script.js)</li>
-                                            <li>Deploy → New deployment → Web app</li>
-                                            <li>Copie a URL gerada e cole acima</li>
-                                        </ol>
-                                    </div>
-
-                                    <div style={{
-                                        background: '#e6f2ff',
-                                        border: '2px solid #3b82f6',
-                                        borderRadius: '8px',
-                                        padding: '15px',
-                                        marginTop: '15px'
-                                    }}>
-                                        <strong>✅ Status:</strong> {webhookUrl ? '🟢 Configurado' : '🔴 Não configurado'}
                                     </div>
                                 </div>
                             )}
