@@ -18,7 +18,7 @@
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #E31B23 0%, #0066CC 100%);
             min-height: 100vh;
             padding: 20px;
         }
@@ -44,7 +44,7 @@
         .logo {
             font-size: 28px;
             font-weight: bold;
-            color: #667eea;
+            color: #E31B23;
             display: flex;
             align-items: center;
             gap: 10px;
@@ -66,7 +66,7 @@
         .stat-number {
             font-size: 32px;
             font-weight: bold;
-            color: #667eea;
+            color: #E31B23;
         }
         
         .stat-label {
@@ -89,14 +89,14 @@
         }
         
         .btn-primary {
-            background: #667eea;
+            background: #E31B23;
             color: white;
         }
         
         .btn-primary:hover {
-            background: #5a67d8;
+            background: #C41820;
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 5px 15px rgba(227, 27, 35, 0.4);
         }
         
         .btn-success {
@@ -1001,8 +1001,19 @@
             const ordensFiltradas = orders.filter(order => {
                 if (order.status !== 'concluido') return false;
                 
-                const dataOrdem = new Date(order.fim || order.dataHora);
+                // Tentar pegar data da ordem (múltiplos formatos)
+                let dataOrdem = null;
+                if (order.fim) {
+                    dataOrdem = order.fim instanceof Date ? order.fim : new Date(order.fim);
+                } else if (order.dataHora) {
+                    dataOrdem = order.dataHora instanceof Date ? order.dataHora : new Date(order.dataHora);
+                }
+                
+                // Se não tem data válida, ignorar
+                if (!dataOrdem || isNaN(dataOrdem.getTime())) return false;
+                
                 const inicio = new Date(dataInicio);
+                inicio.setHours(0, 0, 0, 0);
                 const fim = new Date(dataFim);
                 fim.setHours(23, 59, 59, 999);
                 
@@ -1185,11 +1196,11 @@
                         </div>
                         
                         <div style={{
-                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            background: 'linear-gradient(135deg, #E31B23 0%, #C41820 100%)',
                             borderRadius: '12px',
                             padding: '20px',
                             color: 'white',
-                            boxShadow: '0 4px 15px rgba(102, 126, 234, 0.3)'
+                            boxShadow: '0 4px 15px rgba(227, 27, 35, 0.3)'
                         }}>
                             <div style={{ fontSize: '13px', opacity: 0.9, marginBottom: '8px', fontWeight: '600' }}>
                                 🎯 TAXA UPSELL
@@ -1282,9 +1293,6 @@
                                             <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600', color: '#4a5568', fontSize: '13px' }}>
                                                 ORDENS
                                             </th>
-                                            <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600', color: '#4a5568', fontSize: '13px' }}>
-                                                FATURAMENTO
-                                            </th>
                                             <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600', color: '#4a5568', fontSize: '13px' }}>
                                                 UPSELLS
                                             </th>
@@ -1301,7 +1309,7 @@
                                     </thead>
                                     <tbody>
                                         {Object.entries(metricasPorLubrificador)
-                                            .sort((a, b) => b[1].faturamento - a[1].faturamento)
+                                            .sort((a, b) => b[1].totalOrdens - a[1].totalOrdens)
                                             .map(([lub, dados]) => {
                                                 const taxaUpsell = (dados.upsells / dados.totalOrdens * 100);
                                                 const taxaOfertas = dados.clientesAptos > 0 ? (dados.aptosRecebeuOferta / dados.clientesAptos * 100) : 0;
@@ -1314,9 +1322,6 @@
                                                         </td>
                                                         <td style={{ padding: '15px', textAlign: 'center', color: '#4a5568' }}>
                                                             {dados.totalOrdens}
-                                                        </td>
-                                                        <td style={{ padding: '15px', textAlign: 'right', fontWeight: '600', color: '#2d3748' }}>
-                                                            R$ {dados.faturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                                         </td>
                                                         <td style={{ padding: '15px', textAlign: 'center', color: '#4a5568' }}>
                                                             {dados.upsells}
@@ -1566,10 +1571,10 @@
                                 fontSize: '15px',
                                 fontWeight: '600',
                                 cursor: 'pointer',
-                                background: activeTab === 'ordens' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'transparent',
+                                background: activeTab === 'ordens' ? 'linear-gradient(135deg, #E31B23 0%, #0066CC 100%)' : 'transparent',
                                 color: activeTab === 'ordens' ? 'white' : '#4a5568',
                                 transition: 'all 0.3s',
-                                boxShadow: activeTab === 'ordens' ? '0 4px 12px rgba(102, 126, 234, 0.3)' : 'none'
+                                boxShadow: activeTab === 'ordens' ? '0 4px 12px rgba(227, 27, 35, 0.3)' : 'none'
                             }}
                         >
                             📋 Ordens de Serviço
@@ -1584,10 +1589,10 @@
                                 fontSize: '15px',
                                 fontWeight: '600',
                                 cursor: 'pointer',
-                                background: activeTab === 'volumetria' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'transparent',
+                                background: activeTab === 'volumetria' ? 'linear-gradient(135deg, #E31B23 0%, #0066CC 100%)' : 'transparent',
                                 color: activeTab === 'volumetria' ? 'white' : '#4a5568',
                                 transition: 'all 0.3s',
-                                boxShadow: activeTab === 'volumetria' ? '0 4px 12px rgba(102, 126, 234, 0.3)' : 'none'
+                                boxShadow: activeTab === 'volumetria' ? '0 4px 12px rgba(227, 27, 35, 0.3)' : 'none'
                             }}
                         >
                             📊 Volumetria
