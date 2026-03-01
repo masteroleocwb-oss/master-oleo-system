@@ -957,6 +957,37 @@
 
         // Componente principal
         // ============================================
+        // FUNÇÃO: Converter data brasileira para Date
+        // ============================================
+        const converterDataBrasileira = (dataStr) => {
+            if (!dataStr || typeof dataStr !== 'string') return null;
+            
+            // Formato brasileiro: "DD/MM/YYYY, HH:MM:SS" ou "DD/MM/YYYY HH:MM:SS"
+            const regex = /(\d{2})\/(\d{2})\/(\d{4})[,\s]+(\d{2}):(\d{2}):(\d{2})/;
+            const match = dataStr.match(regex);
+            
+            if (match) {
+                const [_, dia, mes, ano, hora, min, seg] = match;
+                // Criar data no formato ISO: YYYY-MM-DDTHH:MM:SS
+                const dataISO = `${ano}-${mes}-${dia}T${hora}:${min}:${seg}`;
+                return new Date(dataISO);
+            }
+            
+            // Tentar formato sem hora: "DD/MM/YYYY"
+            const regexSemHora = /(\d{2})\/(\d{2})\/(\d{4})/;
+            const matchSemHora = dataStr.match(regexSemHora);
+            
+            if (matchSemHora) {
+                const [_, dia, mes, ano] = matchSemHora;
+                const dataISO = `${ano}-${mes}-${dia}`;
+                return new Date(dataISO);
+            }
+            
+            // Se não é formato brasileiro, tentar conversão direta
+            return new Date(dataStr);
+        };
+
+        // ============================================
         // FUNÇÃO: Normalizar nome de lubrificador
         // ============================================
         const normalizarLubrificador = (nome) => {
@@ -1001,18 +1032,6 @@
             const ordensFiltradas = orders.filter(order => {
                 if (order.status !== 'concluido') return false;
                 
-                // DEBUG: Ver primeiras ordens para entender formato
-                if (Math.random() < 0.01) { // 1% das ordens
-                    console.log('🔍 DEBUG Ordem:', {
-                        id: order.id,
-                        numero: order.numeroOrdem,
-                        fim: order.fim,
-                        fimType: typeof order.fim,
-                        dataHora: order.dataHora,
-                        dataHoraType: typeof order.dataHora
-                    });
-                }
-                
                 // Tentar pegar data da ordem (múltiplos formatos)
                 let dataOrdem = null;
                 
@@ -1021,12 +1040,10 @@
                     if (order.fim instanceof Date) {
                         dataOrdem = order.fim;
                     } else if (typeof order.fim === 'string') {
-                        dataOrdem = new Date(order.fim);
+                        dataOrdem = converterDataBrasileira(order.fim);
                     } else if (order.fim.seconds) {
-                        // Timestamp do Firebase
                         dataOrdem = new Date(order.fim.seconds * 1000);
                     } else if (order.fim.toDate && typeof order.fim.toDate === 'function') {
-                        // Firestore Timestamp object
                         dataOrdem = order.fim.toDate();
                     }
                 }
@@ -1036,19 +1053,21 @@
                     if (order.dataHora instanceof Date) {
                         dataOrdem = order.dataHora;
                     } else if (typeof order.dataHora === 'string') {
-                        dataOrdem = new Date(order.dataHora);
+                        // Tentar formato brasileiro primeiro
+                        dataOrdem = converterDataBrasileira(order.dataHora);
+                        // Se falhar, é ISO, tentar conversão direta
+                        if (!dataOrdem || isNaN(dataOrdem.getTime())) {
+                            dataOrdem = new Date(order.dataHora);
+                        }
                     } else if (order.dataHora.seconds) {
-                        // Timestamp do Firebase
                         dataOrdem = new Date(order.dataHora.seconds * 1000);
                     } else if (order.dataHora.toDate && typeof order.dataHora.toDate === 'function') {
-                        // Firestore Timestamp object
                         dataOrdem = order.dataHora.toDate();
                     }
                 }
                 
                 // Se ainda não tem data válida, ignorar apenas essa ordem
                 if (!dataOrdem || isNaN(dataOrdem.getTime())) {
-                    console.log('Ordem sem data válida:', order.id, order.numeroOrdem);
                     return false;
                 }
                 
@@ -1063,7 +1082,7 @@
                 
                 // Normalizar nome do lubrificador e filtrar Bruno
                 const lubNormalizado = normalizarLubrificador(order.lubrificador);
-                if (!lubNormalizado) return false; // Ignora Bruno
+                if (!lubNormalizado) return false;
                 
                 if (lubrificadorFiltro !== 'todos' && lubNormalizado !== lubrificadorFiltro) {
                     return false;
