@@ -956,6 +956,332 @@
         };
 
         // Componente principal
+        // ============================================
+        // COMPONENTE: ABA VOLUMETRIA
+        // ============================================
+        function VolumetriaTab({ orders, dataInicio, dataFim, lubrificadorFiltro, onDataInicioChange, onDataFimChange, onLubrificadorChange }) {
+            // Filtrar ordens concluídas no período
+            const ordensFiltradas = orders.filter(order => {
+                if (order.status !== 'concluido') return false;
+                
+                const dataOrdem = new Date(order.fim || order.dataHora);
+                const inicio = new Date(dataInicio);
+                const fim = new Date(dataFim);
+                fim.setHours(23, 59, 59, 999);
+                
+                if (dataOrdem < inicio || dataOrdem > fim) return false;
+                
+                if (lubrificadorFiltro !== 'todos' && order.lubrificador !== lubrificadorFiltro) {
+                    return false;
+                }
+                
+                return true;
+            });
+            
+            // Calcular métricas por lubrificador
+            const metricasPorLubrificador = {};
+            
+            ordensFiltradas.forEach(order => {
+                const lub = order.lubrificador || 'Sem lubrificador';
+                
+                if (!metricasPorLubrificador[lub]) {
+                    metricasPorLubrificador[lub] = {
+                        totalOrdens: 0,
+                        faturamento: 0,
+                        upsells: 0,
+                        valorUpsells: 0,
+                        clientesAptos: 0,
+                        aptosRecebeuOferta: 0
+                    };
+                }
+                
+                metricasPorLubrificador[lub].totalOrdens++;
+                metricasPorLubrificador[lub].faturamento += parseFloat(order.valorTotal || 0);
+                
+                if (order.fezUpsell) {
+                    metricasPorLubrificador[lub].upsells++;
+                    metricasPorLubrificador[lub].valorUpsells += parseFloat(order.valorUpsell || 0);
+                }
+                
+                if (order.apto === 'sim') {
+                    metricasPorLubrificador[lub].clientesAptos++;
+                    if (order.clienteAptoRecebeuOferta) {
+                        metricasPorLubrificador[lub].aptosRecebeuOferta++;
+                    }
+                }
+            });
+            
+            // Calcular totais gerais
+            const totais = {
+                ordens: ordensFiltradas.length,
+                faturamento: ordensFiltradas.reduce((sum, o) => sum + parseFloat(o.valorTotal || 0), 0),
+                upsells: ordensFiltradas.filter(o => o.fezUpsell).length,
+                valorUpsells: ordensFiltradas.reduce((sum, o) => sum + parseFloat(o.valorUpsell || 0), 0)
+            };
+            
+            totais.taxaUpsell = totais.ordens > 0 ? (totais.upsells / totais.ordens * 100) : 0;
+            totais.ticketMedio = totais.ordens > 0 ? (totais.faturamento / totais.ordens) : 0;
+            
+            // Lista de lubrificadores únicos
+            const lubrificadores = [...new Set(orders.map(o => o.lubrificador).filter(Boolean))].sort();
+            
+            return (
+                <div>
+                    {/* FILTROS */}
+                    <div style={{
+                        background: 'white',
+                        borderRadius: '12px',
+                        padding: '20px',
+                        marginBottom: '25px',
+                        boxShadow: '0 4px 15px rgba(0,0,0,0.1)'
+                    }}>
+                        <h3 style={{ margin: '0 0 15px 0', color: '#2d3748', fontSize: '18px' }}>🔍 Filtros</h3>
+                        <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                            <div style={{ flex: '1', minWidth: '180px' }}>
+                                <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', fontWeight: '600', color: '#4a5568' }}>
+                                    Data Início
+                                </label>
+                                <input 
+                                    type="date" 
+                                    value={dataInicio}
+                                    onChange={(e) => onDataInicioChange(e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px',
+                                        borderRadius: '8px',
+                                        border: '2px solid #e2e8f0',
+                                        fontSize: '14px'
+                                    }}
+                                />
+                            </div>
+                            <div style={{ flex: '1', minWidth: '180px' }}>
+                                <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', fontWeight: '600', color: '#4a5568' }}>
+                                    Data Fim
+                                </label>
+                                <input 
+                                    type="date" 
+                                    value={dataFim}
+                                    onChange={(e) => onDataFimChange(e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px',
+                                        borderRadius: '8px',
+                                        border: '2px solid #e2e8f0',
+                                        fontSize: '14px'
+                                    }}
+                                />
+                            </div>
+                            <div style={{ flex: '1', minWidth: '200px' }}>
+                                <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', fontWeight: '600', color: '#4a5568' }}>
+                                    Lubrificador
+                                </label>
+                                <select
+                                    value={lubrificadorFiltro}
+                                    onChange={(e) => onLubrificadorChange(e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px',
+                                        borderRadius: '8px',
+                                        border: '2px solid #e2e8f0',
+                                        fontSize: '14px',
+                                        background: 'white'
+                                    }}
+                                >
+                                    <option value="todos">📊 Todos</option>
+                                    {lubrificadores.map(lub => (
+                                        <option key={lub} value={lub}>{lub}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* CARDS DE MÉTRICAS GERAIS */}
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                        gap: '15px',
+                        marginBottom: '25px'
+                    }}>
+                        <div style={{
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            borderRadius: '12px',
+                            padding: '20px',
+                            color: 'white',
+                            boxShadow: '0 4px 15px rgba(102, 126, 234, 0.3)'
+                        }}>
+                            <div style={{ fontSize: '13px', opacity: 0.9, marginBottom: '8px', fontWeight: '600' }}>
+                                💰 FATURAMENTO
+                            </div>
+                            <div style={{ fontSize: '28px', fontWeight: 'bold', marginBottom: '5px' }}>
+                                R$ {totais.faturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </div>
+                            <div style={{ fontSize: '12px', opacity: 0.8 }}>
+                                Período selecionado
+                            </div>
+                        </div>
+                        
+                        <div style={{
+                            background: 'white',
+                            borderRadius: '12px',
+                            padding: '20px',
+                            boxShadow: '0 4px 15px rgba(0,0,0,0.1)'
+                        }}>
+                            <div style={{ fontSize: '13px', color: '#718096', marginBottom: '8px', fontWeight: '600' }}>
+                                📋 TOTAL ORDENS
+                            </div>
+                            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#2d3748', marginBottom: '5px' }}>
+                                {totais.ordens}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#a0aec0' }}>
+                                Ordens concluídas
+                            </div>
+                        </div>
+                        
+                        <div style={{
+                            background: 'white',
+                            borderRadius: '12px',
+                            padding: '20px',
+                            boxShadow: '0 4px 15px rgba(0,0,0,0.1)'
+                        }}>
+                            <div style={{ fontSize: '13px', color: '#718096', marginBottom: '8px', fontWeight: '600' }}>
+                                🎯 TAXA UPSELL
+                            </div>
+                            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#2d3748', marginBottom: '5px' }}>
+                                {totais.taxaUpsell.toFixed(1)}%
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#a0aec0' }}>
+                                {totais.upsells} vendas adicionais
+                            </div>
+                        </div>
+                        
+                        <div style={{
+                            background: 'white',
+                            borderRadius: '12px',
+                            padding: '20px',
+                            boxShadow: '0 4px 15px rgba(0,0,0,0.1)'
+                        }}>
+                            <div style={{ fontSize: '13px', color: '#718096', marginBottom: '8px', fontWeight: '600' }}>
+                                💵 TICKET MÉDIO
+                            </div>
+                            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#2d3748', marginBottom: '5px' }}>
+                                R$ {totais.ticketMedio.toFixed(2)}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#a0aec0' }}>
+                                Por ordem
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* TABELA POR LUBRIFICADOR */}
+                    <div style={{
+                        background: 'white',
+                        borderRadius: '12px',
+                        padding: '25px',
+                        boxShadow: '0 4px 15px rgba(0,0,0,0.1)'
+                    }}>
+                        <h3 style={{ margin: '0 0 20px 0', color: '#2d3748', fontSize: '18px' }}>
+                            🔧 Performance por Lubrificador
+                        </h3>
+                        
+                        {Object.keys(metricasPorLubrificador).length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '40px', color: '#a0aec0' }}>
+                                <div style={{ fontSize: '48px', marginBottom: '10px' }}>📊</div>
+                                <div>Nenhum dado encontrado para o período selecionado</div>
+                            </div>
+                        ) : (
+                            <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                    <thead>
+                                        <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                                            <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#4a5568', fontSize: '13px' }}>
+                                                LUBRIFICADOR
+                                            </th>
+                                            <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600', color: '#4a5568', fontSize: '13px' }}>
+                                                ORDENS
+                                            </th>
+                                            <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600', color: '#4a5568', fontSize: '13px' }}>
+                                                FATURAMENTO
+                                            </th>
+                                            <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600', color: '#4a5568', fontSize: '13px' }}>
+                                                UPSELLS
+                                            </th>
+                                            <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600', color: '#4a5568', fontSize: '13px' }}>
+                                                TAXA UPSELL
+                                            </th>
+                                            <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600', color: '#4a5568', fontSize: '13px' }}>
+                                                VALOR UPSELLS
+                                            </th>
+                                            <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600', color: '#4a5568', fontSize: '13px' }}>
+                                                TAXA OFERTAS
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {Object.entries(metricasPorLubrificador)
+                                            .sort((a, b) => b[1].faturamento - a[1].faturamento)
+                                            .map(([lub, dados]) => {
+                                                const taxaUpsell = (dados.upsells / dados.totalOrdens * 100);
+                                                const taxaOfertas = dados.clientesAptos > 0 ? (dados.aptosRecebeuOferta / dados.clientesAptos * 100) : 0;
+                                                const meta = SYSTEM_CONFIG.METAS[lub];
+                                                
+                                                return (
+                                                    <tr key={lub} style={{ borderBottom: '1px solid #f7fafc' }}>
+                                                        <td style={{ padding: '15px', fontWeight: '600', color: '#2d3748' }}>
+                                                            {lub}
+                                                        </td>
+                                                        <td style={{ padding: '15px', textAlign: 'center', color: '#4a5568' }}>
+                                                            {dados.totalOrdens}
+                                                        </td>
+                                                        <td style={{ padding: '15px', textAlign: 'right', fontWeight: '600', color: '#2d3748' }}>
+                                                            R$ {dados.faturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                        </td>
+                                                        <td style={{ padding: '15px', textAlign: 'center', color: '#4a5568' }}>
+                                                            {dados.upsells}
+                                                        </td>
+                                                        <td style={{ padding: '15px', textAlign: 'center' }}>
+                                                            <span style={{
+                                                                padding: '4px 12px',
+                                                                borderRadius: '20px',
+                                                                fontSize: '12px',
+                                                                fontWeight: '600',
+                                                                background: meta && taxaUpsell >= meta.upsell ? '#c6f6d5' : '#feebc8',
+                                                                color: meta && taxaUpsell >= meta.upsell ? '#22543d' : '#7c2d12'
+                                                            }}>
+                                                                {taxaUpsell.toFixed(1)}%
+                                                            </span>
+                                                        </td>
+                                                        <td style={{ padding: '15px', textAlign: 'right', fontWeight: '600', color: '#48bb78' }}>
+                                                            R$ {dados.valorUpsells.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                        </td>
+                                                        <td style={{ padding: '15px', textAlign: 'center' }}>
+                                                            <span style={{
+                                                                padding: '4px 12px',
+                                                                borderRadius: '20px',
+                                                                fontSize: '12px',
+                                                                fontWeight: '600',
+                                                                background: meta && taxaOfertas >= meta.ofertas ? '#c6f6d5' : '#feebc8',
+                                                                color: meta && taxaOfertas >= meta.ofertas ? '#22543d' : '#7c2d12'
+                                                            }}>
+                                                                {taxaOfertas.toFixed(1)}%
+                                                                {meta && ` / ${meta.ofertas}%`}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // ============================================
+        // COMPONENTE PRINCIPAL: APP
+        // ============================================
         function App() {
             const [orders, setOrders] = useState([]);
             const [loading, setLoading] = useState(true);
@@ -975,6 +1301,21 @@
             const [searchResults, setSearchResults] = useState([]);
             const [alertas, setAlertas] = useState([]);
             const [showAlertas, setShowAlertas] = useState(true);
+            
+            // SISTEMA DE ABAS v4.1
+            const [activeTab, setActiveTab] = useState('ordens'); // 'ordens' ou 'volumetria'
+            
+            // FILTROS VOLUMETRIA
+            const [volumetriaDataInicio, setVolumetriaDataInicio] = useState(() => {
+                const hoje = new Date();
+                const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+                return primeiroDiaMes.toISOString().split('T')[0];
+            });
+            const [volumetriaDataFim, setVolumetriaDataFim] = useState(() => {
+                const hoje = new Date();
+                return hoje.toISOString().split('T')[0];
+            });
+            const [volumetriaLubrificador, setVolumetriaLubrificador] = useState('todos');
 
             // Carregar ordens do Firebase
             const loadOrders = async () => {
@@ -1121,20 +1462,82 @@
                         </div>
                     </div>
                     
+                    {/* NAVEGAÇÃO POR ABAS */}
+                    <div style={{
+                        background: 'white',
+                        borderRadius: '12px',
+                        padding: '8px',
+                        marginBottom: '20px',
+                        display: 'flex',
+                        gap: '8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                    }}>
+                        <button
+                            onClick={() => setActiveTab('ordens')}
+                            style={{
+                                flex: 1,
+                                padding: '12px 20px',
+                                border: 'none',
+                                borderRadius: '8px',
+                                fontSize: '15px',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                background: activeTab === 'ordens' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'transparent',
+                                color: activeTab === 'ordens' ? 'white' : '#4a5568',
+                                transition: 'all 0.3s',
+                                boxShadow: activeTab === 'ordens' ? '0 4px 12px rgba(102, 126, 234, 0.3)' : 'none'
+                            }}
+                        >
+                            📋 Ordens de Serviço
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('volumetria')}
+                            style={{
+                                flex: 1,
+                                padding: '12px 20px',
+                                border: 'none',
+                                borderRadius: '8px',
+                                fontSize: '15px',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                background: activeTab === 'volumetria' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : 'transparent',
+                                color: activeTab === 'volumetria' ? 'white' : '#4a5568',
+                                transition: 'all 0.3s',
+                                boxShadow: activeTab === 'volumetria' ? '0 4px 12px rgba(102, 126, 234, 0.3)' : 'none'
+                            }}
+                        >
+                            📊 Volumetria
+                        </button>
+                    </div>
+                    
+                    {activeTab === 'ordens' && (
+                        <>
                     {/* BANNER DE ALERTAS */}
                     {SYSTEM_CONFIG.ALERTAS_ENABLED && alertas.length > 0 && showAlertas && (
                         <div style={{
-                            background: '#fff3cd',
-                            border: '2px solid #ffc107',
-                            borderRadius: '10px',
-                            padding: '15px',
-                            marginBottom: '20px'
+                            background: 'linear-gradient(135deg, #fff3cd 0%, #ffe599 100%)',
+                            border: '3px solid #ffc107',
+                            borderRadius: '12px',
+                            padding: '20px',
+                            marginBottom: '25px',
+                            boxShadow: '0 4px 15px rgba(255, 193, 7, 0.3)'
                         }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                                 <div>
-                                    <h3 style={{ margin: 0, color: '#856404' }}>⚠️ ALERTAS DE PERFORMANCE</h3>
-                                    <div style={{ fontSize: '12px', color: '#856404', marginTop: '4px' }}>
-                                        📅 Período de Avaliação: <strong>{getNomeMes(SYSTEM_CONFIG.MES_VIGENTE.mes)}/{SYSTEM_CONFIG.MES_VIGENTE.ano}</strong>
+                                    <h3 style={{ margin: 0, color: '#856404', fontSize: '20px', fontWeight: 'bold' }}>⚠️ ALERTAS DE PERFORMANCE</h3>
+                                    <div style={{ fontSize: '13px', color: '#856404', marginTop: '6px', display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+                                        <span>
+                                            📅 <strong>Período:</strong> {getNomeMes(SYSTEM_CONFIG.MES_VIGENTE.mes)}/{SYSTEM_CONFIG.MES_VIGENTE.ano}
+                                        </span>
+                                        <span style={{ fontWeight: 'bold', color: '#d97706' }}>
+                                            🕐 <strong>Atualizado:</strong> {new Date().toLocaleString('pt-BR', { 
+                                                day: '2-digit', 
+                                                month: '2-digit', 
+                                                year: 'numeric',
+                                                hour: '2-digit',
+                                                minute: '2-digit'
+                                            })}
+                                        </span>
                                     </div>
                                 </div>
                                 <button 
@@ -1142,9 +1545,10 @@
                                     style={{
                                         background: 'transparent',
                                         border: 'none',
-                                        fontSize: '20px',
+                                        fontSize: '24px',
                                         cursor: 'pointer',
-                                        color: '#856404'
+                                        color: '#856404',
+                                        padding: '5px 10px'
                                     }}
                                 >
                                     ✕
@@ -1292,6 +1696,22 @@
                                 </div>
                             )}
                         </>
+                    )}
+                    
+                    </>
+                    )}
+                    
+                    {/* ABA VOLUMETRIA */}
+                    {activeTab === 'volumetria' && (
+                        <VolumetriaTab 
+                            orders={orders}
+                            dataInicio={volumetriaDataInicio}
+                            dataFim={volumetriaDataFim}
+                            lubrificadorFiltro={volumetriaLubrificador}
+                            onDataInicioChange={setVolumetriaDataInicio}
+                            onDataFimChange={setVolumetriaDataFim}
+                            onLubrificadorChange={setVolumetriaLubrificador}
+                        />
                     )}
 
                     {showNewOrderModal && (
@@ -3175,7 +3595,10 @@
                 palhetasCodigo: order.palhetasCodigo || '',
                 aditivoQual: order.aditivoQual || '',
                 lubrificador: order.lubrificador || '',
-                valorInicial: order.valorInicial || ''
+                valorInicial: order.valorInicial || '',
+                apto: order.apto || '',
+                motivoNaoApto: order.motivoNaoApto || '',
+                clienteAptoRecebeuOferta: order.clienteAptoRecebeuOferta || false
             });
 
             const handleChange = (e) => {
@@ -3324,6 +3747,45 @@
                                         <input type="text" name="lubrificador" value={formData.lubrificador} onChange={handleChange} className="form-input" />
                                     </div>
                                 </>
+                            )}
+
+                            {/* NOVA SEÇÃO: Aptidão e Oferta - EDITÁVEL */}
+                            <div className="section-title">📊 Aptidão e Ofertas</div>
+                            <div className="form-group">
+                                <label className="form-label">Cliente Apto para Ofertas?</label>
+                                <select name="apto" value={formData.apto} onChange={handleChange} className="form-select">
+                                    <option value="">Selecione...</option>
+                                    <option value="sim">✅ Sim</option>
+                                    <option value="nao">❌ Não</option>
+                                </select>
+                            </div>
+
+                            {formData.apto === 'nao' && (
+                                <div className="form-group">
+                                    <label className="form-label">Motivo de Não Apto</label>
+                                    <input 
+                                        type="text" 
+                                        name="motivoNaoApto" 
+                                        value={formData.motivoNaoApto} 
+                                        onChange={handleChange} 
+                                        className="form-input"
+                                        placeholder="Ex: Cliente sem tempo, apenas serviço básico"
+                                    />
+                                </div>
+                            )}
+
+                            {formData.apto === 'sim' && (
+                                <div className="checkbox-group" style={{ marginTop: '15px' }}>
+                                    <input 
+                                        type="checkbox" 
+                                        id="editClienteAptoRecebeuOferta"
+                                        checked={formData.clienteAptoRecebeuOferta}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, clienteAptoRecebeuOferta: e.target.checked }))}
+                                    />
+                                    <label htmlFor="editClienteAptoRecebeuOferta" style={{ fontWeight: '600' }}>
+                                        Cliente apto recebeu oferta do lubrificador
+                                    </label>
+                                </div>
                             )}
 
                             {order.valorInicial && (
