@@ -1001,6 +1001,18 @@
             const ordensFiltradas = orders.filter(order => {
                 if (order.status !== 'concluido') return false;
                 
+                // DEBUG: Ver primeiras ordens para entender formato
+                if (Math.random() < 0.01) { // 1% das ordens
+                    console.log('🔍 DEBUG Ordem:', {
+                        id: order.id,
+                        numero: order.numeroOrdem,
+                        fim: order.fim,
+                        fimType: typeof order.fim,
+                        dataHora: order.dataHora,
+                        dataHoraType: typeof order.dataHora
+                    });
+                }
+                
                 // Tentar pegar data da ordem (múltiplos formatos)
                 let dataOrdem = null;
                 
@@ -1013,6 +1025,9 @@
                     } else if (order.fim.seconds) {
                         // Timestamp do Firebase
                         dataOrdem = new Date(order.fim.seconds * 1000);
+                    } else if (order.fim.toDate && typeof order.fim.toDate === 'function') {
+                        // Firestore Timestamp object
+                        dataOrdem = order.fim.toDate();
                     }
                 }
                 
@@ -1025,6 +1040,9 @@
                     } else if (order.dataHora.seconds) {
                         // Timestamp do Firebase
                         dataOrdem = new Date(order.dataHora.seconds * 1000);
+                    } else if (order.dataHora.toDate && typeof order.dataHora.toDate === 'function') {
+                        // Firestore Timestamp object
+                        dataOrdem = order.dataHora.toDate();
                     }
                 }
                 
