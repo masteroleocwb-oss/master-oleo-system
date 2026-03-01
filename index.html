@@ -1003,21 +1003,45 @@
                 
                 // Tentar pegar data da ordem (múltiplos formatos)
                 let dataOrdem = null;
+                
+                // Prioridade 1: campo 'fim' (data de conclusão)
                 if (order.fim) {
-                    dataOrdem = order.fim instanceof Date ? order.fim : new Date(order.fim);
-                } else if (order.dataHora) {
-                    dataOrdem = order.dataHora instanceof Date ? order.dataHora : new Date(order.dataHora);
+                    if (order.fim instanceof Date) {
+                        dataOrdem = order.fim;
+                    } else if (typeof order.fim === 'string') {
+                        dataOrdem = new Date(order.fim);
+                    } else if (order.fim.seconds) {
+                        // Timestamp do Firebase
+                        dataOrdem = new Date(order.fim.seconds * 1000);
+                    }
                 }
                 
-                // Se não tem data válida, ignorar
-                if (!dataOrdem || isNaN(dataOrdem.getTime())) return false;
+                // Prioridade 2: campo 'dataHora' (data de criação)
+                if (!dataOrdem && order.dataHora) {
+                    if (order.dataHora instanceof Date) {
+                        dataOrdem = order.dataHora;
+                    } else if (typeof order.dataHora === 'string') {
+                        dataOrdem = new Date(order.dataHora);
+                    } else if (order.dataHora.seconds) {
+                        // Timestamp do Firebase
+                        dataOrdem = new Date(order.dataHora.seconds * 1000);
+                    }
+                }
+                
+                // Se ainda não tem data válida, ignorar apenas essa ordem
+                if (!dataOrdem || isNaN(dataOrdem.getTime())) {
+                    console.log('Ordem sem data válida:', order.id, order.numeroOrdem);
+                    return false;
+                }
                 
                 const inicio = new Date(dataInicio);
                 inicio.setHours(0, 0, 0, 0);
                 const fim = new Date(dataFim);
                 fim.setHours(23, 59, 59, 999);
                 
-                if (dataOrdem < inicio || dataOrdem > fim) return false;
+                const dentroDoRange = dataOrdem >= inicio && dataOrdem <= fim;
+                
+                if (!dentroDoRange) return false;
                 
                 // Normalizar nome do lubrificador e filtrar Bruno
                 const lubNormalizado = normalizarLubrificador(order.lubrificador);
@@ -1029,6 +1053,8 @@
                 
                 return true;
             });
+            
+            console.log(`📊 Volumetria: ${ordensFiltradas.length} ordens filtradas de ${orders.filter(o => o.status === 'concluido').length} concluídas`);
             
             // Calcular métricas por lubrificador
             const metricasPorLubrificador = {};
