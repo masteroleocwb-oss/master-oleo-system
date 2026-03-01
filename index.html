@@ -957,6 +957,43 @@
 
         // Componente principal
         // ============================================
+        // FUNÇÃO: Normalizar nome de lubrificador
+        // ============================================
+        const normalizarLubrificador = (nome) => {
+            if (!nome) return 'Sem lubrificador';
+            
+            const nomeNormalizado = nome.trim().toLowerCase();
+            
+            // Agrupar variações de Leo
+            if (['leo', 'léo', 'lep'].includes(nomeNormalizado)) {
+                return 'Leo';
+            }
+            
+            // Agrupar variações de Pedro
+            if (['pedro', 'pêdro'].includes(nomeNormalizado)) {
+                return 'Pedro';
+            }
+            
+            // Agrupar variações de Caio
+            if (['caio', 'cáio'].includes(nomeNormalizado)) {
+                return 'Caio';
+            }
+            
+            // Agrupar variações de Luis
+            if (['luis', 'luís', 'luiz'].includes(nomeNormalizado)) {
+                return 'Luis';
+            }
+            
+            // Remover Bruno
+            if (nomeNormalizado === 'bruno') {
+                return null; // Retorna null para ser filtrado
+            }
+            
+            // Capitalizar primeira letra para outros nomes
+            return nome.charAt(0).toUpperCase() + nome.slice(1).toLowerCase();
+        };
+
+        // ============================================
         // COMPONENTE: ABA VOLUMETRIA
         // ============================================
         function VolumetriaTab({ orders, dataInicio, dataFim, lubrificadorFiltro, onDataInicioChange, onDataFimChange, onLubrificadorChange }) {
@@ -971,7 +1008,11 @@
                 
                 if (dataOrdem < inicio || dataOrdem > fim) return false;
                 
-                if (lubrificadorFiltro !== 'todos' && order.lubrificador !== lubrificadorFiltro) {
+                // Normalizar nome do lubrificador e filtrar Bruno
+                const lubNormalizado = normalizarLubrificador(order.lubrificador);
+                if (!lubNormalizado) return false; // Ignora Bruno
+                
+                if (lubrificadorFiltro !== 'todos' && lubNormalizado !== lubrificadorFiltro) {
                     return false;
                 }
                 
@@ -982,7 +1023,8 @@
             const metricasPorLubrificador = {};
             
             ordensFiltradas.forEach(order => {
-                const lub = order.lubrificador || 'Sem lubrificador';
+                const lub = normalizarLubrificador(order.lubrificador);
+                if (!lub) return; // Ignora Bruno
                 
                 if (!metricasPorLubrificador[lub]) {
                     metricasPorLubrificador[lub] = {
@@ -1014,16 +1056,21 @@
             // Calcular totais gerais
             const totais = {
                 ordens: ordensFiltradas.length,
-                faturamento: ordensFiltradas.reduce((sum, o) => sum + parseFloat(o.valorTotal || 0), 0),
                 upsells: ordensFiltradas.filter(o => o.fezUpsell).length,
-                valorUpsells: ordensFiltradas.reduce((sum, o) => sum + parseFloat(o.valorUpsell || 0), 0)
+                valorUpsells: ordensFiltradas.reduce((sum, o) => sum + parseFloat(o.valorUpsell || 0), 0),
+                faturamento: ordensFiltradas.reduce((sum, o) => sum + parseFloat(o.valorTotal || 0), 0)
             };
             
             totais.taxaUpsell = totais.ordens > 0 ? (totais.upsells / totais.ordens * 100) : 0;
             totais.ticketMedio = totais.ordens > 0 ? (totais.faturamento / totais.ordens) : 0;
+            totais.ticketMedioUpsell = totais.upsells > 0 ? (totais.valorUpsells / totais.upsells) : 0;
             
-            // Lista de lubrificadores únicos
-            const lubrificadores = [...new Set(orders.map(o => o.lubrificador).filter(Boolean))].sort();
+            // Lista de lubrificadores únicos (normalizados, sem Bruno)
+            const lubrificadores = [...new Set(
+                orders
+                    .map(o => normalizarLubrificador(o.lubrificador))
+                    .filter(Boolean) // Remove null (Bruno)
+            )].sort();
             
             return (
                 <div>
@@ -1099,28 +1146,10 @@
                     {/* CARDS DE MÉTRICAS GERAIS */}
                     <div style={{
                         display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
                         gap: '15px',
                         marginBottom: '25px'
                     }}>
-                        <div style={{
-                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                            borderRadius: '12px',
-                            padding: '20px',
-                            color: 'white',
-                            boxShadow: '0 4px 15px rgba(102, 126, 234, 0.3)'
-                        }}>
-                            <div style={{ fontSize: '13px', opacity: 0.9, marginBottom: '8px', fontWeight: '600' }}>
-                                💰 FATURAMENTO
-                            </div>
-                            <div style={{ fontSize: '28px', fontWeight: 'bold', marginBottom: '5px' }}>
-                                R$ {totais.faturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                            </div>
-                            <div style={{ fontSize: '12px', opacity: 0.8 }}>
-                                Período selecionado
-                            </div>
-                        </div>
-                        
                         <div style={{
                             background: 'white',
                             borderRadius: '12px',
@@ -1145,12 +1174,30 @@
                             boxShadow: '0 4px 15px rgba(0,0,0,0.1)'
                         }}>
                             <div style={{ fontSize: '13px', color: '#718096', marginBottom: '8px', fontWeight: '600' }}>
-                                🎯 TAXA UPSELL
+                                💵 TICKET MÉDIO
                             </div>
                             <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#2d3748', marginBottom: '5px' }}>
-                                {totais.taxaUpsell.toFixed(1)}%
+                                R$ {totais.ticketMedio.toFixed(2)}
                             </div>
                             <div style={{ fontSize: '12px', color: '#a0aec0' }}>
+                                Por ordem
+                            </div>
+                        </div>
+                        
+                        <div style={{
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            borderRadius: '12px',
+                            padding: '20px',
+                            color: 'white',
+                            boxShadow: '0 4px 15px rgba(102, 126, 234, 0.3)'
+                        }}>
+                            <div style={{ fontSize: '13px', opacity: 0.9, marginBottom: '8px', fontWeight: '600' }}>
+                                🎯 TAXA UPSELL
+                            </div>
+                            <div style={{ fontSize: '28px', fontWeight: 'bold', marginBottom: '5px' }}>
+                                {totais.taxaUpsell.toFixed(1)}%
+                            </div>
+                            <div style={{ fontSize: '12px', opacity: 0.8' }}>
                                 {totais.upsells} vendas adicionais
                             </div>
                         </div>
@@ -1162,13 +1209,48 @@
                             boxShadow: '0 4px 15px rgba(0,0,0,0.1)'
                         }}>
                             <div style={{ fontSize: '13px', color: '#718096', marginBottom: '8px', fontWeight: '600' }}>
-                                💵 TICKET MÉDIO
+                                📊 QTD UPSELLS
                             </div>
                             <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#2d3748', marginBottom: '5px' }}>
-                                R$ {totais.ticketMedio.toFixed(2)}
+                                {totais.upsells}
                             </div>
                             <div style={{ fontSize: '12px', color: '#a0aec0' }}>
-                                Por ordem
+                                Total de upsells
+                            </div>
+                        </div>
+                        
+                        <div style={{
+                            background: 'white',
+                            borderRadius: '12px',
+                            padding: '20px',
+                            boxShadow: '0 4px 15px rgba(0,0,0,0.1)'
+                        }}>
+                            <div style={{ fontSize: '13px', color: '#718096', marginBottom: '8px', fontWeight: '600' }}>
+                                💰 TICKET MÉDIO UPSELL
+                            </div>
+                            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#2d3748', marginBottom: '5px' }}>
+                                R$ {totais.ticketMedioUpsell.toFixed(2)}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#a0aec0' }}>
+                                Por upsell
+                            </div>
+                        </div>
+                        
+                        <div style={{
+                            background: 'linear-gradient(135deg, #48bb78 0%, #38a169 100%)',
+                            borderRadius: '12px',
+                            padding: '20px',
+                            color: 'white',
+                            boxShadow: '0 4px 15px rgba(72, 187, 120, 0.3)'
+                        }}>
+                            <div style={{ fontSize: '13px', opacity: 0.9, marginBottom: '8px', fontWeight: '600' }}>
+                                💸 VALOR TOTAL UPSELL
+                            </div>
+                            <div style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '5px' }}>
+                                R$ {totais.valorUpsells.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </div>
+                            <div style={{ fontSize: '12px', opacity: 0.8 }}>
+                                Total vendas adicionais
                             </div>
                         </div>
                     </div>
@@ -1301,6 +1383,7 @@
             const [searchResults, setSearchResults] = useState([]);
             const [alertas, setAlertas] = useState([]);
             const [showAlertas, setShowAlertas] = useState(true);
+            const [alertasUltimaAtualizacao, setAlertasUltimaAtualizacao] = useState(new Date());
             
             // SISTEMA DE ABAS v4.1
             const [activeTab, setActiveTab] = useState('ordens'); // 'ordens' ou 'volumetria'
@@ -1332,6 +1415,7 @@
                     if (SYSTEM_CONFIG.ALERTAS_ENABLED) {
                         const alertasCalculados = await calcularAlertas(ordersData);
                         setAlertas(alertasCalculados);
+                        setAlertasUltimaAtualizacao(new Date()); // Atualizar data/hora
                     }
                 } catch (error) {
                     console.error('Erro ao carregar ordens:', error);
@@ -1530,7 +1614,7 @@
                                             📅 <strong>Período:</strong> {getNomeMes(SYSTEM_CONFIG.MES_VIGENTE.mes)}/{SYSTEM_CONFIG.MES_VIGENTE.ano}
                                         </span>
                                         <span style={{ fontWeight: 'bold', color: '#d97706' }}>
-                                            🕐 <strong>Atualizado:</strong> {new Date().toLocaleString('pt-BR', { 
+                                            🕐 <strong>Atualizado:</strong> {alertasUltimaAtualizacao.toLocaleString('pt-BR', { 
                                                 day: '2-digit', 
                                                 month: '2-digit', 
                                                 year: 'numeric',
