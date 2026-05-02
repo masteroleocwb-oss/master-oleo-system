@@ -9,6 +9,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
     <style>
         * {
             margin: 0;
@@ -628,6 +629,46 @@
             firebase.initializeApp(firebaseConfig);
         }
         const db = firebase.firestore();
+        const storage = firebase.storage();
+
+        // ============================================
+        // FUNÇÕES DE UPLOAD DE IMAGENS FIREBASE STORAGE
+        // ============================================
+        
+        /**
+         * Upload de imagem para Firebase Storage
+         * @param {File} file - Arquivo de imagem
+         * @param {string} folder - Pasta no Storage (ex: 'vazamentos', 'retornos')
+         * @param {string} orderId - ID da ordem
+         * @returns {Promise<string>} - URL da imagem
+         */
+        const uploadImagem = async (file, folder, orderId) => {
+            try {
+                const timestamp = Date.now();
+                const fileName = `${folder}/${orderId}/${timestamp}_${file.name}`;
+                const storageRef = storage.ref(fileName);
+                
+                await storageRef.put(file);
+                const downloadURL = await storageRef.getDownloadURL();
+                
+                return downloadURL;
+            } catch (error) {
+                console.error('Erro ao fazer upload:', error);
+                throw error;
+            }
+        };
+
+        /**
+         * Upload múltiplo de imagens
+         * @param {FileList} files - Lista de arquivos
+         * @param {string} folder - Pasta no Storage
+         * @param {string} orderId - ID da ordem
+         * @returns {Promise<string[]>} - Array de URLs
+         */
+        const uploadMultiplasImagens = async (files, folder, orderId) => {
+            const uploads = Array.from(files).map(file => uploadImagem(file, folder, orderId));
+            return Promise.all(uploads);
+        };
 
         // ============================================
         // CONFIGURAÇÕES GLOBAIS DO SISTEMA
@@ -651,7 +692,23 @@
             })),
             
             // Alertas habilitados
-            ALERTAS_ENABLED: localStorage.getItem('alertasEnabled') !== 'false'
+            ALERTAS_ENABLED: localStorage.getItem('alertasEnabled') !== 'false',
+            
+            // NOVO v5.0: Fator de ajuste % para valores de upsell (só ADM vê)
+            FATOR_AJUSTE_UPSELL: parseFloat(localStorage.getItem('fatorAjusteUpsell') || '0')
+        };
+
+        // Helper: Salvar fator de ajuste
+        const salvarFatorAjuste = (fator) => {
+            localStorage.setItem('fatorAjusteUpsell', fator.toString());
+            SYSTEM_CONFIG.FATOR_AJUSTE_UPSELL = parseFloat(fator);
+        };
+
+        // Helper: Aplicar fator de ajuste a um valor
+        const aplicarFatorAjuste = (valor) => {
+            if (SYSTEM_CONFIG.FATOR_AJUSTE_UPSELL === 0) return valor;
+            const fator = 1 + (SYSTEM_CONFIG.FATOR_AJUSTE_UPSELL / 100);
+            return valor * fator;
         };
 
         // Helper: Salvar mês vigente
@@ -666,6 +723,13 @@
             const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
                           'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
             return meses[mes - 1];
+        };
+
+        // Helper: Aplicar fator de ajuste nos valores (só para visualização)
+        const aplicarFatorAjuste = (valor) => {
+            const fator = parseFloat(localStorage.getItem('fatorAjuste') || '0');
+            if (fator === 0) return valor;
+            return valor * (1 + fator / 100);
         };
 
         // ============================================
@@ -1027,7 +1091,7 @@
         // ============================================
         // COMPONENTE: ABA VOLUMETRIA
         // ============================================
-        function VolumetriaTab({ orders, dataInicio, dataFim, lubrificadorFiltro, onDataInicioChange, onDataFimChange, onLubrificadorChange }) {
+        function VolumetriaTab({ orders, dataInicio, dataFim, lubrificadorFiltro, onDataInicioChange, onDataFimChange, onLubrificadorChange, isAdmin, expandedLubrificador, onToggleExpanded, onEditUpsell, onDeleteUpsell, loadOrders }) {
             // Filtrar ordens concluídas no período
             const ordensFiltradas = orders.filter(order => {
                 if (order.status !== 'concluido') return false;
@@ -1303,7 +1367,7 @@
                                 💰 TICKET MÉDIO UPSELL
                             </div>
                             <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#2d3748', marginBottom: '5px' }}>
-                                R$ {totais.ticketMedioUpsell.toFixed(2)}
+                                R$ {aplicarFatorAjuste(totais.ticketMedioUpsell).toFixed(2)}
                             </div>
                             <div style={{ fontSize: '12px', color: '#a0aec0' }}>
                                 Por upsell
@@ -1321,7 +1385,7 @@
                                 💸 VALOR TOTAL UPSELL
                             </div>
                             <div style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '5px' }}>
-                                R$ {totais.valorUpsells.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                R$ {aplicarFatorAjuste(totais.valorUpsells).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                             </div>
                             <div style={{ fontSize: '12px', opacity: 0.8 }}>
                                 Total vendas adicionais
@@ -1377,47 +1441,170 @@
                                                 const taxaUpsell = (dados.upsells / dados.totalOrdens * 100);
                                                 const taxaOfertas = dados.clientesAptos > 0 ? (dados.aptosRecebeuOferta / dados.clientesAptos * 100) : 0;
                                                 const meta = SYSTEM_CONFIG.METAS[lub];
+                                                const isExpanded = expandedLubrificador === lub;
+                                                
+                                                // Buscar ordens com upsell deste lubrificador
+                                                const ordensComUpsell = isAdmin && isExpanded ? 
+                                                    ordensFiltradas
+                                                        .filter(o => normalizarLubrificador(o.lubrificador) === lub && o.fezUpsell)
+                                                        .sort((a, b) => {
+                                                            const dataA = new Date(a.fim || a.dataHora);
+                                                            const dataB = new Date(b.fim || b.dataHora);
+                                                            return dataB - dataA; // Mais recente primeiro
+                                                        })
+                                                    : [];
                                                 
                                                 return (
-                                                    <tr key={lub} style={{ borderBottom: '1px solid #f7fafc' }}>
-                                                        <td style={{ padding: '15px', fontWeight: '600', color: '#2d3748' }}>
-                                                            {lub}
-                                                        </td>
-                                                        <td style={{ padding: '15px', textAlign: 'center', color: '#4a5568' }}>
-                                                            {dados.totalOrdens}
-                                                        </td>
-                                                        <td style={{ padding: '15px', textAlign: 'center', color: '#4a5568' }}>
-                                                            {dados.upsells}
-                                                        </td>
-                                                        <td style={{ padding: '15px', textAlign: 'center' }}>
-                                                            <span style={{
-                                                                padding: '4px 12px',
-                                                                borderRadius: '20px',
-                                                                fontSize: '12px',
-                                                                fontWeight: '600',
-                                                                background: meta && taxaUpsell >= meta.upsell ? '#c6f6d5' : '#feebc8',
-                                                                color: meta && taxaUpsell >= meta.upsell ? '#22543d' : '#7c2d12'
-                                                            }}>
-                                                                {taxaUpsell.toFixed(1)}%
-                                                            </span>
-                                                        </td>
-                                                        <td style={{ padding: '15px', textAlign: 'right', fontWeight: '600', color: '#48bb78' }}>
-                                                            R$ {dados.valorUpsells.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                                        </td>
-                                                        <td style={{ padding: '15px', textAlign: 'center' }}>
-                                                            <span style={{
-                                                                padding: '4px 12px',
-                                                                borderRadius: '20px',
-                                                                fontSize: '12px',
-                                                                fontWeight: '600',
-                                                                background: meta && taxaOfertas >= meta.ofertas ? '#c6f6d5' : '#feebc8',
-                                                                color: meta && taxaOfertas >= meta.ofertas ? '#22543d' : '#7c2d12'
-                                                            }}>
-                                                                {taxaOfertas.toFixed(1)}%
-                                                                {meta && ` / ${meta.ofertas}%`}
-                                                            </span>
-                                                        </td>
-                                                    </tr>
+                                                    <React.Fragment key={lub}>
+                                                        <tr style={{ borderBottom: '1px solid #f7fafc' }}>
+                                                            <td 
+                                                                style={{ 
+                                                                    padding: '15px', 
+                                                                    fontWeight: '600', 
+                                                                    color: '#2d3748',
+                                                                    cursor: isAdmin ? 'pointer' : 'default',
+                                                                    userSelect: 'none'
+                                                                }}
+                                                                onClick={() => isAdmin && onToggleExpanded(isExpanded ? null : lub)}
+                                                            >
+                                                                {isAdmin && dados.upsells > 0 && (
+                                                                    <span style={{ marginRight: '8px', fontSize: '12px' }}>
+                                                                        {isExpanded ? '▼' : '▶'}
+                                                                    </span>
+                                                                )}
+                                                                {lub}
+                                                            </td>
+                                                            <td style={{ padding: '15px', textAlign: 'center', color: '#4a5568' }}>
+                                                                {dados.totalOrdens}
+                                                            </td>
+                                                            <td style={{ padding: '15px', textAlign: 'center', color: '#4a5568' }}>
+                                                                {dados.upsells}
+                                                            </td>
+                                                            <td style={{ padding: '15px', textAlign: 'center' }}>
+                                                                <span style={{
+                                                                    padding: '4px 12px',
+                                                                    borderRadius: '20px',
+                                                                    fontSize: '12px',
+                                                                    fontWeight: '600',
+                                                                    background: meta && taxaUpsell >= meta.upsell ? '#c6f6d5' : '#feebc8',
+                                                                    color: meta && taxaUpsell >= meta.upsell ? '#22543d' : '#7c2d12'
+                                                                }}>
+                                                                    {taxaUpsell.toFixed(1)}%
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ padding: '15px', textAlign: 'right', fontWeight: '600', color: '#48bb78' }}>
+                                                                R$ {aplicarFatorAjuste(dados.valorUpsells).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                            </td>
+                                                            <td style={{ padding: '15px', textAlign: 'center' }}>
+                                                                <span style={{
+                                                                    padding: '4px 12px',
+                                                                    borderRadius: '20px',
+                                                                    fontSize: '12px',
+                                                                    fontWeight: '600',
+                                                                    background: meta && taxaOfertas >= meta.ofertas ? '#c6f6d5' : '#feebc8',
+                                                                    color: meta && taxaOfertas >= meta.ofertas ? '#22543d' : '#7c2d12'
+                                                                }}>
+                                                                    {taxaOfertas.toFixed(1)}%
+                                                                    {meta && ` / ${meta.ofertas}%`}
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                        
+                                                        {/* ACCORDION: Lista de ordens com upsell (só ADM) */}
+                                                        {isAdmin && isExpanded && ordensComUpsell.length > 0 && (
+                                                            <tr>
+                                                                <td colSpan="6" style={{ padding: '0', background: '#f7fafc' }}>
+                                                                    <div style={{ padding: '20px', borderTop: '2px solid #e2e8f0' }}>
+                                                                        <h4 style={{ marginBottom: '15px', color: '#2d3748', fontSize: '14px' }}>
+                                                                            📋 Ordens com Upsell ({ordensComUpsell.length})
+                                                                        </h4>
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                                                            {ordensComUpsell.map(order => (
+                                                                                <div 
+                                                                                    key={order.id}
+                                                                                    style={{
+                                                                                        background: 'white',
+                                                                                        padding: '12px 15px',
+                                                                                        borderRadius: '8px',
+                                                                                        display: 'flex',
+                                                                                        justifyContent: 'space-between',
+                                                                                        alignItems: 'center',
+                                                                                        border: '1px solid #e2e8f0'
+                                                                                    }}
+                                                                                >
+                                                                                    <div style={{ flex: 1 }}>
+                                                                                        <span style={{ fontWeight: '600', color: '#2d3748' }}>
+                                                                                            #{order.numeroOrdem}
+                                                                                        </span>
+                                                                                        <span style={{ margin: '0 10px', color: '#a0aec0' }}>•</span>
+                                                                                        <span style={{ color: '#4a5568' }}>{order.placa}</span>
+                                                                                        <span style={{ margin: '0 10px', color: '#a0aec0' }}>•</span>
+                                                                                        <span style={{ color: '#718096', fontSize: '13px' }}>
+                                                                                            {order.cliente}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                                                                                        <div style={{ textAlign: 'right' }}>
+                                                                                            <div style={{ fontWeight: '600', color: '#48bb78', fontSize: '15px' }}>
+                                                                                                R$ {aplicarFatorAjuste(parseFloat(order.valorUpsell || 0)).toFixed(2)}
+                                                                                            </div>
+                                                                                            <div style={{ fontSize: '11px', color: '#a0aec0' }}>
+                                                                                                {new Date(order.fim || order.dataHora).toLocaleDateString('pt-BR')}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                        <button
+                                                                                            onClick={() => onEditUpsell(order)}
+                                                                                            style={{
+                                                                                                padding: '6px 12px',
+                                                                                                background: '#4299e1',
+                                                                                                color: 'white',
+                                                                                                border: 'none',
+                                                                                                borderRadius: '6px',
+                                                                                                cursor: 'pointer',
+                                                                                                fontSize: '12px',
+                                                                                                fontWeight: '600'
+                                                                                            }}
+                                                                                        >
+                                                                                            ✏️ Editar
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={async () => {
+                                                                                                if (confirm(`Tem certeza que deseja ZERAR o upsell da ordem #${order.numeroOrdem}?`)) {
+                                                                                                    try {
+                                                                                                        await db.collection('orders').doc(order.id).update({
+                                                                                                            fezUpsell: false,
+                                                                                                            valorUpsell: 0
+                                                                                                        });
+                                                                                                        alert('✅ Upsell removido com sucesso!');
+                                                                                                        loadOrders();
+                                                                                                    } catch (error) {
+                                                                                                        alert('❌ Erro ao remover upsell');
+                                                                                                        console.error(error);
+                                                                                                    }
+                                                                                                }
+                                                                                            }}
+                                                                                            style={{
+                                                                                                padding: '6px 12px',
+                                                                                                background: '#f56565',
+                                                                                                color: 'white',
+                                                                                                border: 'none',
+                                                                                                borderRadius: '6px',
+                                                                                                cursor: 'pointer',
+                                                                                                fontSize: '12px',
+                                                                                                fontWeight: '600'
+                                                                                            }}
+                                                                                        >
+                                                                                            ❌ Excluir
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                    </React.Fragment>
                                                 );
                                             })}
                                     </tbody>
@@ -1467,6 +1654,16 @@
                 return hoje.toISOString().split('T')[0];
             });
             const [volumetriaLubrificador, setVolumetriaLubrificador] = useState('todos');
+            
+            // NOVOS ESTADOS v5.0
+            const [isAdmin, setIsAdmin] = useState(false); // Controle ADM
+            const [expandedLubrificador, setExpandedLubrificador] = useState(null); // Accordion volumetria
+            const [fatorAjuste, setFatorAjuste] = useState(() => {
+                return parseFloat(localStorage.getItem('fatorAjuste') || '0');
+            }); // Fator % ajuste valores (só ADM)
+            const [showEditHorarioModal, setShowEditHorarioModal] = useState(false); // Modal editar horários
+            const [showEditUpsellModal, setShowEditUpsellModal] = useState(false); // Modal editar upsell
+            const [selectedUpsellOrder, setSelectedUpsellOrder] = useState(null); // Ordem selecionada para editar upsell
 
             // Carregar ordens do Firebase
             const loadOrders = async () => {
@@ -1863,6 +2060,14 @@
                             onDataInicioChange={setVolumetriaDataInicio}
                             onDataFimChange={setVolumetriaDataFim}
                             onLubrificadorChange={setVolumetriaLubrificador}
+                            isAdmin={isAdmin}
+                            expandedLubrificador={expandedLubrificador}
+                            onToggleExpanded={setExpandedLubrificador}
+                            onEditUpsell={(order) => {
+                                setSelectedUpsellOrder(order);
+                                setShowEditUpsellModal(true);
+                            }}
+                            loadOrders={loadOrders}
                         />
                     )}
 
@@ -1900,6 +2105,7 @@
                                 setSelectedOrder(null);
                             }}
                             onUpdate={loadOrders}
+                            isAdmin={isAdmin}
                         />
                     )}
 
@@ -1933,7 +2139,35 @@
                             onClose={() => setShowConfigModal(false)}
                             onSave={() => {
                                 setShowConfigModal(false);
+                                // Atualizar fator de ajuste do localStorage
+                                setFatorAjuste(parseFloat(localStorage.getItem('fatorAjuste') || '0'));
                                 loadOrders(); // Recarregar para recalcular alertas
+                            }}
+                            onAdminAuth={(isAdm) => setIsAdmin(isAdm)}
+                        />
+                    )}
+                    
+                    {/* MODAL EDITAR UPSELL (ADM) */}
+                    {showEditUpsellModal && selectedUpsellOrder && (
+                        <EditarUpsellModal 
+                            order={selectedUpsellOrder}
+                            onClose={() => {
+                                setShowEditUpsellModal(false);
+                                setSelectedUpsellOrder(null);
+                            }}
+                            onSave={async (novoValor) => {
+                                try {
+                                    await db.collection('orders').doc(selectedUpsellOrder.id).update({
+                                        valorUpsell: parseFloat(novoValor)
+                                    });
+                                    alert('✅ Valor do upsell atualizado!');
+                                    setShowEditUpsellModal(false);
+                                    setSelectedUpsellOrder(null);
+                                    loadOrders();
+                                } catch (error) {
+                                    alert('❌ Erro ao atualizar upsell');
+                                    console.error(error);
+                                }
                             }}
                         />
                     )}
@@ -2995,7 +3229,11 @@
                 upsells: order.upsells || {},
                 obsCarro: order.obsCarro || '',
                 obsOferta: order.obsOferta || '',
-                valorAdd: '0'
+                valorAdd: '0',
+                // NOVOS CAMPOS v5.0
+                temVazamento: order.inspecao?.temVazamento || 'nao',
+                fotosVazamento: order.inspecao?.fotosVazamento || [],
+                uploadingVazamento: false
             });
 
             // Auto-save: Salvar progresso no Firebase a cada mudança
@@ -3143,7 +3381,12 @@
                             new Date(order.dataHora).toLocaleString('pt-BR'),
                             formData.inicio
                         ) : 'N/A',
-                        tempoServico: calcularDiferencaTempo(formData.inicio, fim)
+                        tempoServico: calcularDiferencaTempo(formData.inicio, fim),
+                        // DADOS DE INSPEÇÃO - v5.0
+                        inspecao: {
+                            temVazamento: formData.temVazamento,
+                            fotosVazamento: formData.fotosVazamento || []
+                        }
                     };
 
                     console.log('Dados a serem salvos:', updateData);
@@ -3276,6 +3519,97 @@
                                     <div className="form-group">
                                         <label className="form-label">Quilometragem (KM) *</label>
                                         <input type="number" name="km" value={formData.km} onChange={handleChange} className="form-input" placeholder="Ex: 45000" required />
+                                    </div>
+
+                                    {/* CHECKLIST DE VAZAMENTO - v5.0 */}
+                                    <div style={{ 
+                                        background: '#f7fafc', 
+                                        padding: '20px', 
+                                        borderRadius: '12px', 
+                                        marginBottom: '20px',
+                                        border: '2px solid #e2e8f0'
+                                    }}>
+                                        <div style={{ fontSize: '16px', fontWeight: '600', color: '#2d3748', marginBottom: '15px' }}>
+                                            🔍 Inspeção Inicial
+                                        </div>
+                                        
+                                        <div className="form-group" style={{ marginBottom: '15px' }}>
+                                            <label className="form-label">Veículo apresenta vazamento? *</label>
+                                            <div style={{ display: 'flex', gap: '15px', marginTop: '8px' }}>
+                                                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                                                    <input 
+                                                        type="radio" 
+                                                        name="temVazamento" 
+                                                        value="nao"
+                                                        checked={formData.temVazamento === 'nao'}
+                                                        onChange={(e) => setFormData(prev => ({ ...prev, temVazamento: e.target.value, fotosVazamento: [] }))}
+                                                        style={{ marginRight: '8px' }}
+                                                    />
+                                                    <span style={{ fontWeight: '500' }}>❌ Não</span>
+                                                </label>
+                                                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                                                    <input 
+                                                        type="radio" 
+                                                        name="temVazamento" 
+                                                        value="sim"
+                                                        checked={formData.temVazamento === 'sim'}
+                                                        onChange={(e) => setFormData(prev => ({ ...prev, temVazamento: e.target.value }))}
+                                                        style={{ marginRight: '8px' }}
+                                                    />
+                                                    <span style={{ fontWeight: '500' }}>✅ Sim</span>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        {formData.temVazamento === 'sim' && (
+                                            <div className="form-group">
+                                                <label className="form-label">📸 Fotos do Vazamento</label>
+                                                <input 
+                                                    type="file" 
+                                                    accept="image/*"
+                                                    multiple
+                                                    onChange={async (e) => {
+                                                        const files = Array.from(e.target.files);
+                                                        if (files.length === 0) return;
+                                                        
+                                                        setFormData(prev => ({ ...prev, uploadingVazamento: true }));
+                                                        
+                                                        try {
+                                                            const uploadPromises = files.map(async (file) => {
+                                                                const fileName = `vazamentos/${order.id}/${Date.now()}_${file.name}`;
+                                                                const storageRef = firebase.storage().ref(fileName);
+                                                                await storageRef.put(file);
+                                                                return await storageRef.getDownloadURL();
+                                                            });
+                                                            
+                                                            const urls = await Promise.all(uploadPromises);
+                                                            setFormData(prev => ({
+                                                                ...prev,
+                                                                fotosVazamento: [...prev.fotosVazamento, ...urls],
+                                                                uploadingVazamento: false
+                                                            }));
+                                                            alert(`✅ ${urls.length} foto(s) enviada(s)!`);
+                                                        } catch (error) {
+                                                            console.error('Erro ao enviar fotos:', error);
+                                                            alert('❌ Erro ao enviar fotos');
+                                                            setFormData(prev => ({ ...prev, uploadingVazamento: false }));
+                                                        }
+                                                    }}
+                                                    className="form-input"
+                                                    disabled={formData.uploadingVazamento}
+                                                />
+                                                {formData.uploadingVazamento && (
+                                                    <div style={{ marginTop: '10px', color: '#4299e1', fontSize: '13px' }}>
+                                                        ⏳ Enviando fotos...
+                                                    </div>
+                                                )}
+                                                {formData.fotosVazamento.length > 0 && (
+                                                    <div style={{ marginTop: '10px', fontSize: '13px', color: '#48bb78' }}>
+                                                        ✅ {formData.fotosVazamento.length} foto(s) anexada(s)
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="section-title">Serviços a Realizar</div>
@@ -3499,8 +3833,9 @@
         }
 
         // Modal Detalhes
-        function DetalhesModal({ order, onClose, onUpdate }) {
+        function DetalhesModal({ order, onClose, onUpdate, isAdmin }) {
             const [editMode, setEditMode] = useState(false);
+            const [showEditHorariosModal, setShowEditHorariosModal] = useState(false);
             const [formData, setFormData] = useState({
                 valorInicial: order.valorInicial || '',
                 valorUpsell: order.valorUpsell || 0,
@@ -3579,7 +3914,27 @@
                                 </div>
                             )}
 
-                            <div className="section-title">Tempos</div>
+                            <div className="section-title">
+                                Tempos
+                                {isAdmin && order.inicio && (
+                                    <button 
+                                        onClick={() => setShowEditHorariosModal(true)}
+                                        style={{
+                                            marginLeft: '15px',
+                                            padding: '5px 12px',
+                                            background: '#4299e1',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '6px',
+                                            cursor: 'pointer',
+                                            fontSize: '12px',
+                                            fontWeight: '600'
+                                        }}
+                                    >
+                                        ✏️ Editar Horários
+                                    </button>
+                                )}
+                            </div>
                             <div className="info-row">
                                 <span className="info-label">Registro:</span>
                                 <span>{order.dataHora ? new Date(order.dataHora).toLocaleString('pt-BR') : 'N/A'}</span>
@@ -3695,6 +4050,112 @@
                                 </div>
                             )}
 
+                            {/* SEÇÃO INSPEÇÃO INICIAL - v5.0 */}
+                            {order.inspecao && (
+                                <>
+                                    <div className="section-title" style={{ marginTop: '25px' }}>📸 Inspeção Inicial</div>
+                                    <div className="info-row">
+                                        <span className="info-label">Vazamento detectado:</span>
+                                        <span style={{ 
+                                            fontWeight: 'bold',
+                                            color: order.inspecao.temVazamento === 'sim' ? '#f56565' : '#48bb78'
+                                        }}>
+                                            {order.inspecao.temVazamento === 'sim' ? '⚠️ SIM' : '✅ NÃO'}
+                                        </span>
+                                    </div>
+                                    {order.inspecao.temVazamento === 'sim' && order.inspecao.fotosVazamento && order.inspecao.fotosVazamento.length > 0 && (
+                                        <div style={{ marginTop: '10px' }}>
+                                            <div style={{ fontSize: '13px', color: '#718096', marginBottom: '8px', fontWeight: '600' }}>
+                                                Fotos do vazamento:
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                                {order.inspecao.fotosVazamento.map((url, idx) => (
+                                                    <a 
+                                                        key={idx}
+                                                        href={url} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer"
+                                                        style={{
+                                                            padding: '8px 15px',
+                                                            background: '#4299e1',
+                                                            color: 'white',
+                                                            borderRadius: '6px',
+                                                            textDecoration: 'none',
+                                                            fontSize: '13px',
+                                                            fontWeight: '600'
+                                                        }}
+                                                    >
+                                                        📷 Foto {idx + 1}
+                                                    </a>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+
+                            {/* SEÇÃO RETORNO - v5.0 */}
+                            {order.retorno && order.retorno.isRetorno && (
+                                <>
+                                    <div className="section-title" style={{ marginTop: '25px', color: '#f39c12' }}>🔁 Dados de Retorno</div>
+                                    <div style={{ 
+                                        background: '#fef5e7', 
+                                        padding: '15px', 
+                                        borderRadius: '8px',
+                                        border: '2px solid #f39c12'
+                                    }}>
+                                        <div className="info-row">
+                                            <span className="info-label">Motivo:</span>
+                                            <span style={{ fontWeight: '600' }}>
+                                                {order.retorno.motivo === 'vazamento_novo' && 'Vazamento novo detectado'}
+                                                {order.retorno.motivo === 'servico_incompleto' && 'Serviço não foi completado'}
+                                                {order.retorno.motivo === 'problema_peca' && 'Problema com peça/produto'}
+                                                {order.retorno.motivo === 'cliente_insatisfeito' && 'Cliente insatisfeito'}
+                                                {order.retorno.motivo === 'outros' && 'Outros'}
+                                            </span>
+                                        </div>
+                                        {order.retorno.descricao && (
+                                            <div style={{ marginTop: '10px' }}>
+                                                <div style={{ fontSize: '13px', color: '#718096', marginBottom: '5px', fontWeight: '600' }}>
+                                                    Descrição:
+                                                </div>
+                                                <div style={{ padding: '10px', background: 'white', borderRadius: '6px', fontSize: '14px' }}>
+                                                    {order.retorno.descricao}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {order.retorno.fotosRetorno && order.retorno.fotosRetorno.length > 0 && (
+                                            <div style={{ marginTop: '10px' }}>
+                                                <div style={{ fontSize: '13px', color: '#718096', marginBottom: '8px', fontWeight: '600' }}>
+                                                    Fotos do problema:
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                                    {order.retorno.fotosRetorno.map((url, idx) => (
+                                                        <a 
+                                                            key={idx}
+                                                            href={url} 
+                                                            target="_blank" 
+                                                            rel="noopener noreferrer"
+                                                            style={{
+                                                                padding: '8px 15px',
+                                                                background: '#f39c12',
+                                                                color: 'white',
+                                                                borderRadius: '6px',
+                                                                textDecoration: 'none',
+                                                                fontSize: '13px',
+                                                                fontWeight: '600'
+                                                            }}
+                                                        >
+                                                            📷 Foto {idx + 1}
+                                                        </a>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
+
                             <div style={{ display: 'flex', gap: '15px', marginTop: '30px' }}>
                                 {editMode ? (
                                     <>
@@ -3718,6 +4179,28 @@
                             </div>
                         </div>
                     </div>
+                    
+                    {/* MODAL EDITAR HORÁRIOS (ADM) - v5.0 */}
+                    {showEditHorariosModal && (
+                        <div className="modal-overlay" style={{ zIndex: 10001 }}>
+                            <div className="modal-container" style={{ maxWidth: '500px' }}>
+                                <div className="modal-header">
+                                    <div className="modal-title">⏱️ Editar Horários</div>
+                                    <button className="close-btn" onClick={() => setShowEditHorariosModal(false)}>✕</button>
+                                </div>
+                                <div className="modal-body">
+                                    <EditarHorariosForm 
+                                        order={order}
+                                        onClose={() => setShowEditHorariosModal(false)}
+                                        onSuccess={() => {
+                                            setShowEditHorariosModal(false);
+                                            onUpdate();
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
@@ -3750,8 +4233,15 @@
                 valorInicial: order.valorInicial || '',
                 apto: order.apto || '',
                 motivoNaoApto: order.motivoNaoApto || '',
-                clienteAptoRecebeuOferta: order.clienteAptoRecebeuOferta || false
+                clienteAptoRecebeuOferta: order.clienteAptoRecebeuOferta || false,
+                // CAMPOS DE RETORNO - v5.0
+                isRetorno: order.retorno?.isRetorno || false,
+                motivoRetorno: order.retorno?.motivo || '',
+                descricaoRetorno: order.retorno?.descricao || ''
             });
+            
+            const [fotosRetorno, setFotosRetorno] = useState(order.retorno?.fotosRetorno || []);
+            const [uploadingRetorno, setUploadingRetorno] = useState(false);
 
             const handleChange = (e) => {
                 const { name, value } = e.target;
@@ -3765,7 +4255,17 @@
                 }
 
                 try {
-                    await db.collection('orders').doc(order.id).update(formData);
+                    const updateData = {
+                        ...formData,
+                        retorno: {
+                            isRetorno: formData.isRetorno,
+                            motivo: formData.motivoRetorno || '',
+                            descricao: formData.descricaoRetorno || '',
+                            fotosRetorno: fotosRetorno
+                        }
+                    };
+                    
+                    await db.collection('orders').doc(order.id).update(updateData);
                     
                     alert('Ordem atualizada com sucesso!');
                     onUpdate();
@@ -3947,6 +4447,111 @@
                                 </div>
                             )}
 
+                            {/* SEÇÃO DE RETORNO - v5.0 */}
+                            <div className="section-title" style={{ marginTop: '30px' }}>🔁 Retorno</div>
+                            
+                            <div className="checkbox-group">
+                                <input 
+                                    type="checkbox" 
+                                    id="isRetorno"
+                                    checked={formData.isRetorno}
+                                    onChange={(e) => {
+                                        setFormData(prev => ({ ...prev, isRetorno: e.target.checked }));
+                                        if (!e.target.checked) {
+                                            setFormData(prev => ({ ...prev, motivoRetorno: '', descricaoRetorno: '' }));
+                                            setFotosRetorno([]);
+                                        }
+                                    }}
+                                />
+                                <label htmlFor="isRetorno" style={{ fontWeight: '600' }}>
+                                    Esta ordem é um retorno
+                                </label>
+                            </div>
+
+                            {formData.isRetorno && (
+                                <div style={{ 
+                                    background: '#fef5e7', 
+                                    padding: '20px', 
+                                    borderRadius: '8px', 
+                                    marginTop: '15px',
+                                    border: '2px solid #f39c12'
+                                }}>
+                                    <div className="form-group">
+                                        <label className="form-label">Motivo do Retorno *</label>
+                                        <select 
+                                            name="motivoRetorno"
+                                            value={formData.motivoRetorno}
+                                            onChange={handleChange}
+                                            className="form-select"
+                                        >
+                                            <option value="">Selecione...</option>
+                                            <option value="vazamento_novo">Vazamento novo detectado</option>
+                                            <option value="servico_incompleto">Serviço não foi completado</option>
+                                            <option value="problema_peca">Problema com peça/produto</option>
+                                            <option value="cliente_insatisfeito">Cliente insatisfeito</option>
+                                            <option value="outros">Outros</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <div className="form-group">
+                                        <label className="form-label">Descrição do Problema *</label>
+                                        <textarea 
+                                            name="descricaoRetorno"
+                                            value={formData.descricaoRetorno}
+                                            onChange={handleChange}
+                                            className="form-input"
+                                            rows="3"
+                                            placeholder="Descreva detalhadamente o motivo do retorno..."
+                                        />
+                                    </div>
+                                    
+                                    <div className="form-group">
+                                        <label className="form-label">📸 Fotos do Problema</label>
+                                        <input 
+                                            type="file" 
+                                            accept="image/*"
+                                            multiple
+                                            onChange={async (e) => {
+                                                const files = Array.from(e.target.files);
+                                                if (files.length === 0) return;
+                                                
+                                                setUploadingRetorno(true);
+                                                
+                                                try {
+                                                    const uploadPromises = files.map(async (file) => {
+                                                        const fileName = `retornos/${order.id}/${Date.now()}_${file.name}`;
+                                                        const storageRef = firebase.storage().ref(fileName);
+                                                        await storageRef.put(file);
+                                                        return await storageRef.getDownloadURL();
+                                                    });
+                                                    
+                                                    const urls = await Promise.all(uploadPromises);
+                                                    setFotosRetorno([...fotosRetorno, ...urls]);
+                                                    setUploadingRetorno(false);
+                                                    alert(`✅ ${urls.length} foto(s) enviada(s)!`);
+                                                } catch (error) {
+                                                    console.error('Erro ao enviar fotos:', error);
+                                                    alert('❌ Erro ao enviar fotos');
+                                                    setUploadingRetorno(false);
+                                                }
+                                            }}
+                                            className="form-input"
+                                            disabled={uploadingRetorno}
+                                        />
+                                        {uploadingRetorno && (
+                                            <div style={{ marginTop: '10px', color: '#4299e1', fontSize: '13px' }}>
+                                                ⏳ Enviando fotos...
+                                            </div>
+                                        )}
+                                        {fotosRetorno.length > 0 && (
+                                            <div style={{ marginTop: '10px', fontSize: '13px', color: '#48bb78' }}>
+                                                ✅ {fotosRetorno.length} foto(s) anexada(s)
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                             <div style={{ display: 'flex', gap: '15px', marginTop: '30px' }}>
                                 <button className="btn btn-secondary" onClick={onClose}>
                                     Cancelar
@@ -3964,12 +4569,15 @@
         // ============================================
         // MODAL: CONFIGURAÇÕES
         // ============================================
-        function ConfiguracoesModal({ onClose, onSave }) {
-            const [tab, setTab] = useState('metas'); // 'metas', 'periodo', 'alertas'
+        function ConfiguracoesModal({ onClose, onSave, onAdminAuth }) {
+            const [tab, setTab] = useState('metas'); // 'metas', 'periodo', 'alertas', 'avancado'
             const [senha, setSenha] = useState('');
             const [autenticado, setAutenticado] = useState(false);
             const [metas, setMetas] = useState(SYSTEM_CONFIG.METAS);
             const [alertasEnabled, setAlertasEnabled] = useState(SYSTEM_CONFIG.ALERTAS_ENABLED);
+            const [fatorAjusteLocal, setFatorAjusteLocal] = useState(() => {
+                return parseFloat(localStorage.getItem('fatorAjuste') || '0');
+            });
             
             // Estados para mês vigente
             const [mesVigente, setMesVigente] = useState(SYSTEM_CONFIG.MES_VIGENTE.mes);
@@ -3978,6 +4586,7 @@
             const handleLogin = () => {
                 if (senha === SYSTEM_CONFIG.ADMIN_PASSWORD) {
                     setAutenticado(true);
+                    if (onAdminAuth) onAdminAuth(true); // Notificar que é ADM
                 } else {
                     alert('❌ Senha incorreta!');
                 }
@@ -3993,6 +4602,9 @@
                 // Salvar alertas
                 localStorage.setItem('alertasEnabled', alertasEnabled);
                 SYSTEM_CONFIG.ALERTAS_ENABLED = alertasEnabled;
+                
+                // Salvar fator de ajuste
+                localStorage.setItem('fatorAjuste', fatorAjusteLocal.toString());
                 
                 alert('✅ Configurações salvas com sucesso!\n\n📅 Período de avaliação: ' + getNomeMes(mesVigente) + '/' + anoVigente);
                 onSave();
@@ -4095,6 +4707,20 @@
                                     }}
                                 >
                                     ⚠️ Alertas
+                                </button>
+                                <button 
+                                    onClick={() => setTab('avancado')}
+                                    style={{
+                                        padding: '10px 20px',
+                                        background: tab === 'avancado' ? '#667eea' : 'transparent',
+                                        color: tab === 'avancado' ? 'white' : '#4a5568',
+                                        border: 'none',
+                                        borderBottom: tab === 'avancado' ? '3px solid #667eea' : 'none',
+                                        cursor: 'pointer',
+                                        fontWeight: 'bold'
+                                    }}
+                                >
+                                    🔧 Avançado
                                 </button>
                             </div>
 
@@ -4322,6 +4948,67 @@
                                 </div>
                             )}
 
+                            {/* TAB: AVANÇADO */}
+                            {tab === 'avancado' && (
+                                <div>
+                                    <h3 style={{ marginBottom: '20px' }}>🔧 Configurações Avançadas</h3>
+                                    
+                                    <div style={{
+                                        background: '#f7fafc',
+                                        padding: '25px',
+                                        borderRadius: '10px',
+                                        marginBottom: '20px'
+                                    }}>
+                                        <h4 style={{ marginBottom: '15px', color: '#2d3748' }}>💰 Fator de Ajuste de Valores (%)</h4>
+                                        <p style={{ color: '#718096', marginBottom: '20px', fontSize: '14px' }}>
+                                            Ajusta APENAS a visualização dos valores de upsell no dashboard. Os dados reais no Firebase não são alterados.
+                                        </p>
+                                        
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                                            <label style={{ fontWeight: '600', minWidth: '120px' }}>Fator de ajuste:</label>
+                                            <input 
+                                                type="number"
+                                                value={fatorAjusteLocal}
+                                                onChange={(e) => setFatorAjusteLocal(parseFloat(e.target.value) || 0)}
+                                                className="form-input"
+                                                style={{ width: '150px' }}
+                                                step="0.1"
+                                                placeholder="0.0"
+                                            />
+                                            <span style={{ color: '#4a5568' }}>%</span>
+                                        </div>
+                                        
+                                        <div style={{
+                                            marginTop: '15px',
+                                            padding: '12px',
+                                            background: '#e6f2ff',
+                                            borderRadius: '8px',
+                                            fontSize: '13px',
+                                            color: '#2d5ba6'
+                                        }}>
+                                            <strong>Exemplos:</strong><br/>
+                                            • <code>-10</code> → Reduz valores em 10%<br/>
+                                            • <code>5</code> → Aumenta valores em 5%<br/>
+                                            • <code>0</code> → Sem ajuste (padrão)
+                                        </div>
+                                    </div>
+                                    
+                                    <div style={{
+                                        background: '#fef3c7',
+                                        padding: '15px',
+                                        borderRadius: '8px',
+                                        border: '1px solid #f59e0b'
+                                    }}>
+                                        <strong>⚠️ Importante:</strong>
+                                        <ul style={{ paddingLeft: '20px', marginTop: '8px', color: '#92400e' }}>
+                                            <li>Este ajuste é INVISÍVEL para operadores</li>
+                                            <li>Afeta: Valor Total Upsell, Valor Upsells por lubrificador, Ticket Médio Upsell</li>
+                                            <li>NÃO afeta os dados reais salvos no Firebase</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            )}
+
                             <div style={{ display: 'flex', gap: '15px', marginTop: '30px' }}>
                                 <button className="btn btn-secondary" onClick={onClose}>
                                     Cancelar
@@ -4331,6 +5018,162 @@
                                 </button>
                             </div>
                         </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ============================================
+        // MODAL: EDITAR UPSELL (ADM)
+        // ============================================
+        function EditarUpsellModal({ order, onClose, onSave }) {
+            const [valorUpsell, setValorUpsell] = useState(order.valorUpsell || 0);
+            
+            return (
+                <div className="modal-overlay">
+                    <div className="modal-container" style={{ maxWidth: '500px' }}>
+                        <div className="modal-header">
+                            <div className="modal-title">✏️ Editar Valor do Upsell</div>
+                            <button className="close-btn" onClick={onClose}>✕</button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ marginBottom: '20px', padding: '15px', background: '#f7fafc', borderRadius: '8px' }}>
+                                <div style={{ fontSize: '13px', color: '#718096', marginBottom: '5px' }}>Ordem:</div>
+                                <div style={{ fontWeight: '600', color: '#2d3748' }}>
+                                    #{order.numeroOrdem} - {order.placa}
+                                </div>
+                                <div style={{ fontSize: '13px', color: '#718096', marginTop: '5px' }}>
+                                    Cliente: {order.cliente}
+                                </div>
+                            </div>
+                            
+                            <div className="form-group">
+                                <label className="form-label">Valor do Upsell (R$)</label>
+                                <input 
+                                    type="number"
+                                    value={valorUpsell}
+                                    onChange={(e) => setValorUpsell(e.target.value)}
+                                    className="form-input"
+                                    step="0.01"
+                                    min="0"
+                                    autoFocus
+                                />
+                            </div>
+                            
+                            <div style={{ display: 'flex', gap: '10px', marginTop: '25px' }}>
+                                <button className="btn btn-secondary" onClick={onClose} style={{ flex: 1 }}>
+                                    Cancelar
+                                </button>
+                                <button 
+                                    className="btn btn-success" 
+                                    onClick={() => onSave(valorUpsell)}
+                                    style={{ flex: 1 }}
+                                >
+                                    💾 Salvar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ============================================
+        // FORM: EDITAR HORÁRIOS (ADM) - v5.0
+        // ============================================
+        function EditarHorariosForm({ order, onClose, onSuccess }) {
+            // Converter datas brasileiras para formato datetime-local
+            const formatToDatetimeLocal = (brasilDateTime) => {
+                if (!brasilDateTime) return '';
+                try {
+                    const [datePart, timePart] = brasilDateTime.split(', ');
+                    const [day, month, year] = datePart.split('/');
+                    const [hour, minute] = timePart.split(':');
+                    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+                } catch (e) {
+                    return '';
+                }
+            };
+            
+            const [inicio, setInicio] = useState(formatToDatetimeLocal(order.inicio));
+            const [fim, setFim] = useState(formatToDatetimeLocal(order.fim));
+            
+            const handleSalvar = async () => {
+                if (!inicio || !fim) {
+                    alert('Preencha ambos os horários!');
+                    return;
+                }
+                
+                // Converter de volta para formato brasileiro
+                const formatToBrasil = (datetimeLocal) => {
+                    if (!datetimeLocal) return '';
+                    const date = new Date(datetimeLocal);
+                    return date.toLocaleString('pt-BR', { 
+                        day: '2-digit', 
+                        month: '2-digit', 
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                    });
+                };
+                
+                const inicioFormatado = formatToBrasil(inicio);
+                const fimFormatado = formatToBrasil(fim);
+                
+                if (new Date(inicio) >= new Date(fim)) {
+                    alert('⚠️ Horário de fim deve ser posterior ao horário de início!');
+                    return;
+                }
+                
+                try {
+                    await db.collection('orders').doc(order.id).update({
+                        inicio: inicioFormatado,
+                        fim: fimFormatado
+                    });
+                    alert('✅ Horários atualizados com sucesso!');
+                    onSuccess();
+                } catch (error) {
+                    console.error('Erro ao atualizar horários:', error);
+                    alert('❌ Erro ao atualizar horários');
+                }
+            };
+            
+            return (
+                <div>
+                    <div style={{ marginBottom: '15px', padding: '12px', background: '#f7fafc', borderRadius: '8px' }}>
+                        <div style={{ fontSize: '13px', color: '#718096', marginBottom: '5px' }}>
+                            Ordem: #{order.numeroOrdem} - {order.placa}
+                        </div>
+                    </div>
+                    
+                    <div className="form-group">
+                        <label className="form-label">Data/Hora Início *</label>
+                        <input 
+                            type="datetime-local"
+                            value={inicio}
+                            onChange={(e) => setInicio(e.target.value)}
+                            className="form-input"
+                        />
+                    </div>
+                    
+                    <div className="form-group">
+                        <label className="form-label">Data/Hora Fim *</label>
+                        <input 
+                            type="datetime-local"
+                            value={fim}
+                            onChange={(e) => setFim(e.target.value)}
+                            className="form-input"
+                        />
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                        <button className="btn btn-secondary" onClick={onClose} style={{ flex: 1 }}>
+                            Cancelar
+                        </button>
+                        <button className="btn btn-success" onClick={handleSalvar} style={{ flex: 1 }}>
+                            💾 Salvar
+                        </button>
                     </div>
                 </div>
             );
