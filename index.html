@@ -704,13 +704,6 @@
             SYSTEM_CONFIG.FATOR_AJUSTE_UPSELL = parseFloat(fator);
         };
 
-        // Helper: Aplicar fator de ajuste a um valor
-        const aplicarFatorAjuste = (valor) => {
-            if (SYSTEM_CONFIG.FATOR_AJUSTE_UPSELL === 0) return valor;
-            const fator = 1 + (SYSTEM_CONFIG.FATOR_AJUSTE_UPSELL / 100);
-            return valor * fator;
-        };
-
         // Helper: Salvar mês vigente
         const salvarMesVigente = (mes, ano) => {
             const mesVigente = { mes: parseInt(mes), ano: parseInt(ano) };
