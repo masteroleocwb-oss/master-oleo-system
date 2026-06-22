@@ -742,11 +742,27 @@
             return meses[mes - 1];
         };
 
+        // Fator de ajuste GLOBAL (compartilhado entre todos os usuários via Firestore).
+        // Começa com o último valor conhecido em cache (localStorage) para a primeira
+        // pintura, e é sobrescrito pelo listener do Firestore assim que ele conecta.
+        let GLOBAL_FATOR_AJUSTE = parseFloat(localStorage.getItem('fatorAjuste') || '0');
+
         // Helper: Aplicar fator de ajuste nos valores (só para visualização)
         const aplicarFatorAjuste = (valor) => {
-            const fator = parseFloat(localStorage.getItem('fatorAjuste') || '0');
-            if (fator === 0) return valor;
+            const fator = GLOBAL_FATOR_AJUSTE;
+            if (!fator) return valor;
             return valor * (1 + fator / 100);
+        };
+
+        // Salvar fator de ajuste GLOBAL no Firestore (reflete para todos os usuários)
+        const salvarFatorAjusteGlobal = async (fator) => {
+            const valor = parseFloat(fator) || 0;
+            GLOBAL_FATOR_AJUSTE = valor;
+            localStorage.setItem('fatorAjuste', valor.toString()); // cache local
+            await db.collection('config').doc('global').set(
+                { fatorAjuste: valor, fatorAjusteAtualizadoEm: firebase.firestore.FieldValue.serverTimestamp() },
+                { merge: true }
+            );
         };
 
         // ============================================
@@ -842,6 +858,7 @@
             const servicos = [];
             
             if (order.oleoMotor) servicos.push(`Óleo Motor (${order.oleoMarca || 'N/A'} - ${order.oleoQuantidade || 'N/A'}L)`);
+            if (order.fluidoFreio) servicos.push(`Fluído de Freio (${order.fluidoFreioMarca || 'N/A'} - ${order.fluidoFreioQuantidade || 'N/A'}L)`);
             if (order.filtroOleo) servicos.push(`Filtro Óleo (${order.filtroOleoTipo || 'N/A'})`);
             if (order.arMotor) servicos.push(`Filtro Ar Motor (${order.arMotorCodigo || 'N/A'})`);
             if (order.arCondicionado) servicos.push(`Filtro Ar Condicionado (${order.arCondicionadoCodigo || 'N/A'})`);
@@ -1713,6 +1730,21 @@
                 return () => clearInterval(interval);
             }, []);
 
+            // Ouvir o fator de ajuste GLOBAL em tempo real (compartilhado entre todos
+            // os usuários). Quando o ADM altera o %, todos os apps abertos atualizam.
+            useEffect(() => {
+                const unsub = db.collection('config').doc('global').onSnapshot(
+                    (doc) => {
+                        const fator = doc.exists ? parseFloat(doc.data().fatorAjuste || 0) : 0;
+                        GLOBAL_FATOR_AJUSTE = fator;
+                        localStorage.setItem('fatorAjuste', fator.toString());
+                        setFatorAjuste(fator);
+                    },
+                    (err) => console.error('Erro ao ouvir configuração global:', err)
+                );
+                return () => unsub();
+            }, []);
+
             // Filtrar ordens por data
             const getFilteredOrders = () => {
                 const today = new Date();
@@ -2490,6 +2522,9 @@
                 oleoMotor: false,
                 oleoMarca: '',
                 oleoQuantidade: '',
+                fluidoFreio: false,
+                fluidoFreioMarca: '',
+                fluidoFreioQuantidade: '',
                 filtroOleo: false,
                 filtroOleoTipo: '',
                 arMotor: false,
@@ -2549,9 +2584,9 @@
             };
 
             const validateStep2 = () => {
-                const hasService = formData.oleoMotor || formData.filtroOleo || formData.arMotor || 
-                                  formData.arCondicionado || formData.filtroCombustivel || 
-                                  formData.cambioManual || formData.cambioAutomatico || 
+                const hasService = formData.oleoMotor || formData.fluidoFreio || formData.filtroOleo || formData.arMotor ||
+                                  formData.arCondicionado || formData.filtroCombustivel ||
+                                  formData.cambioManual || formData.cambioAutomatico ||
                                   formData.palhetas || formData.militec || formData.aditivo || formData.flush;
                 
                 if (!hasService) {
@@ -2764,6 +2799,7 @@
                                             <option value="Faust">Faust</option>
                                             <option value="Cadu">Cadu</option>
                                             <option value="Danilo">Danilo</option>
+                                            <option value="Junior">Junior</option>
                                         </select>
                                     </div>
 
@@ -3024,6 +3060,23 @@
                                             <div className="form-group">
                                                 <label className="form-label">Quantidade (L)</label>
                                                 <input type="number" step="0.01" name="oleoQuantidade" value={formData.oleoQuantidade} onChange={handleChange} className="form-input" placeholder="Ex: 4.5" />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="fluidoFreio" name="fluidoFreio" checked={formData.fluidoFreio} onChange={handleChange} />
+                                        <label htmlFor="fluidoFreio">Troca de Fluído de Freio</label>
+                                    </div>
+                                    {formData.fluidoFreio && (
+                                        <div className="form-row" style={{ marginLeft: '30px', marginBottom: '15px' }}>
+                                            <div className="form-group">
+                                                <label className="form-label">Marca do Fluído</label>
+                                                <input type="text" name="fluidoFreioMarca" value={formData.fluidoFreioMarca} onChange={handleChange} className="form-input" placeholder="Ex: Bosch DOT4" />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Quantidade (L)</label>
+                                                <input type="number" step="0.01" name="fluidoFreioQuantidade" value={formData.fluidoFreioQuantidade} onChange={handleChange} className="form-input" placeholder="Ex: 1.0" />
                                             </div>
                                         </div>
                                     )}
@@ -3422,6 +3475,7 @@
             // TODOS os serviços disponíveis para upsell (não só os não vendidos)
             const servicosDisponiveis = [
                 { key: 'oleoMotor', label: 'Óleo de Motor', vendido: order.oleoMotor },
+                { key: 'fluidoFreio', label: 'Fluído de Freio', vendido: order.fluidoFreio },
                 { key: 'filtroOleo', label: 'Filtro de Óleo', vendido: order.filtroOleo },
                 { key: 'arMotor', label: 'Filtro Ar Motor', vendido: order.arMotor, temFoto: true },
                 { key: 'arCondicionado', label: 'Filtro Ar Condicionado', vendido: order.arCondicionado, temFoto: true },
@@ -3632,6 +3686,7 @@
                                     <div className="section-title">Serviços a Realizar</div>
                                     <div className="services-list">
                                         {order.oleoMotor && <div className="service-item">✓ Óleo Motor ({order.oleoMarca} - {order.oleoQuantidade}L)</div>}
+                                        {order.fluidoFreio && <div className="service-item">✓ Fluído de Freio ({order.fluidoFreioMarca} - {order.fluidoFreioQuantidade}L)</div>}
                                         {order.filtroOleo && <div className="service-item">✓ Filtro Óleo ({order.filtroOleoTipo})</div>}
                                         {order.arMotor && <div className="service-item">✓ Filtro Ar Motor ({order.arMotorCodigo})</div>}
                                         {order.arCondicionado && <div className="service-item">✓ Filtro Ar Condicionado ({order.arCondicionadoCodigo})</div>}
@@ -4235,6 +4290,8 @@
                 km: order.km || '',
                 oleoMarca: order.oleoMarca || '',
                 oleoQuantidade: order.oleoQuantidade || '',
+                fluidoFreioMarca: order.fluidoFreioMarca || '',
+                fluidoFreioQuantidade: order.fluidoFreioQuantidade || '',
                 filtroOleoTipo: order.filtroOleoTipo || '',
                 arMotorCodigo: order.arMotorCodigo || '',
                 arCondicionadoCodigo: order.arCondicionadoCodigo || '',
@@ -4356,6 +4413,18 @@
                                     <div className="form-group">
                                         <label className="form-label">Quantidade (L)</label>
                                         <input type="number" step="0.01" name="oleoQuantidade" value={formData.oleoQuantidade} onChange={handleChange} className="form-input" />
+                                    </div>
+                                </div>
+                            )}
+                            {order.fluidoFreio && (
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Marca do Fluído de Freio</label>
+                                        <input type="text" name="fluidoFreioMarca" value={formData.fluidoFreioMarca} onChange={handleChange} className="form-input" />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Quantidade (L)</label>
+                                        <input type="number" step="0.01" name="fluidoFreioQuantidade" value={formData.fluidoFreioQuantidade} onChange={handleChange} className="form-input" />
                                     </div>
                                 </div>
                             )}
@@ -4609,21 +4678,27 @@
                 }
             };
 
-            const handleSalvar = () => {
+            const handleSalvar = async () => {
                 // Salvar metas
                 salvarMetas(metas);
-                
+
                 // Salvar mês vigente
                 salvarMesVigente(mesVigente, anoVigente);
-                
+
                 // Salvar alertas
                 localStorage.setItem('alertasEnabled', alertasEnabled);
                 SYSTEM_CONFIG.ALERTAS_ENABLED = alertasEnabled;
-                
-                // Salvar fator de ajuste
-                localStorage.setItem('fatorAjuste', fatorAjusteLocal.toString());
-                
-                alert('✅ Configurações salvas com sucesso!\n\n📅 Período de avaliação: ' + getNomeMes(mesVigente) + '/' + anoVigente);
+
+                // Salvar fator de ajuste GLOBAL (reflete para TODOS os usuários)
+                try {
+                    await salvarFatorAjusteGlobal(fatorAjusteLocal);
+                } catch (err) {
+                    console.error('Erro ao salvar fator de ajuste global:', err);
+                    alert('⚠️ As metas foram salvas, mas não foi possível salvar o fator de ajuste no servidor. Verifique a conexão e tente novamente.');
+                    return;
+                }
+
+                alert('✅ Configurações salvas com sucesso!\n\nO ajuste de % agora vale para TODOS os usuários.\n📅 Período de avaliação: ' + getNomeMes(mesVigente) + '/' + anoVigente);
                 onSave();
             };
 
