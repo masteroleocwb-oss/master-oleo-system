@@ -897,8 +897,40 @@
             if (order.militec) servicos.push('Militec/Nano');
             if (order.aditivo) servicos.push(`Aditivo (${order.aditivoQual || 'N/A'})`);
             if (order.flush) servicos.push('Flush');
-            
+
             return servicos;
+        };
+
+        // Mapa global de rótulos de serviços (reutilizado em detalhes, upsell e consulta)
+        const SERVICO_LABELS = {
+            oleoMotor: 'Óleo de Motor',
+            fluidoFreio: 'Fluído de Freio',
+            filtroOleo: 'Filtro de Óleo',
+            arMotor: 'Filtro Ar Motor',
+            arCondicionado: 'Filtro Ar Condicionado',
+            filtroCombustivel: 'Filtro Combustível',
+            cambioManual: 'Câmbio Manual',
+            cambioAutomatico: 'Câmbio Automático',
+            palhetas: 'Palhetas',
+            militec: 'Militec/Nano',
+            aditivo: 'Aditivo',
+            flush: 'Flush'
+        };
+
+        // Lista os upsells (ofertas) de uma ordem com label, status (aceito/recusado),
+        // valor e eventual foto. Usado no modal de detalhes da ordem concluída.
+        const getUpsellsDetalhados = (order) => {
+            const upsells = order.upsells || {};
+            return Object.keys(upsells).map(key => {
+                const u = upsells[key] || {};
+                return {
+                    key,
+                    label: SERVICO_LABELS[key] || key,
+                    aceito: u.aceito === 'sim',
+                    valor: parseFloat(u.valor || 0),
+                    foto: u.foto || null
+                };
+            });
         };
 
         // ============================================
@@ -1889,6 +1921,24 @@
                             📋 Ordens de Serviço
                         </button>
                         <button
+                            onClick={() => setActiveTab('consulta')}
+                            style={{
+                                flex: 1,
+                                padding: '12px 20px',
+                                border: 'none',
+                                borderRadius: '8px',
+                                fontSize: '15px',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                background: activeTab === 'consulta' ? 'linear-gradient(135deg, #E31B23 0%, #0066CC 100%)' : 'transparent',
+                                color: activeTab === 'consulta' ? 'white' : '#4a5568',
+                                transition: 'all 0.3s',
+                                boxShadow: activeTab === 'consulta' ? '0 4px 12px rgba(227, 27, 35, 0.3)' : 'none'
+                            }}
+                        >
+                            🔎 Consulta
+                        </button>
+                        <button
                             onClick={() => setActiveTab('volumetria')}
                             style={{
                                 flex: 1,
@@ -2099,9 +2149,20 @@
                     </>
                     )}
                     
+                    {/* ABA CONSULTA */}
+                    {activeTab === 'consulta' && (
+                        <ConsultaTab
+                            orders={orders}
+                            onVer={(order) => {
+                                setSelectedOrder(order);
+                                setShowDetailsModal(true);
+                            }}
+                        />
+                    )}
+
                     {/* ABA VOLUMETRIA */}
                     {activeTab === 'volumetria' && (
-                        <VolumetriaTab 
+                        <VolumetriaTab
                             orders={orders}
                             dataInicio={volumetriaDataInicio}
                             dataFim={volumetriaDataFim}
@@ -2394,6 +2455,129 @@
                             👁️ Ver Detalhes
                         </button>
                     </div>
+                </div>
+            );
+        }
+
+        // Componente Aba Consulta — busca e filtros sobre carros concluídos
+        function ConsultaTab({ orders, onVer }) {
+            const [termo, setTermo] = useState('');
+            const [lubFiltro, setLubFiltro] = useState('todos');
+            const [vendedorFiltro, setVendedorFiltro] = useState('todos');
+            const [servicoFiltro, setServicoFiltro] = useState('todos');
+            const [dataInicio, setDataInicio] = useState('');
+            const [dataFim, setDataFim] = useState('');
+            const [soUpsell, setSoUpsell] = useState(false);
+
+            const concluidos = orders.filter(o => o.status === 'concluido');
+
+            // Listas únicas para os dropdowns (a partir dos concluídos)
+            const lubrificadores = [...new Set(concluidos.map(o => o.lubrificador).filter(Boolean))].sort();
+            const vendedores = [...new Set(concluidos.map(o => o.vendedor).filter(Boolean))].sort();
+
+            const dataDe = dataInicio ? new Date(dataInicio + 'T00:00:00') : null;
+            const dataAte = dataFim ? new Date(dataFim + 'T23:59:59') : null;
+            const termoLower = termo.trim().toLowerCase();
+
+            const resultados = concluidos.filter(o => {
+                // Texto: placa, cliente ou telefone
+                if (termoLower) {
+                    const alvo = `${o.placa || ''} ${o.cliente || ''} ${o.tel || ''}`.toLowerCase();
+                    if (!alvo.includes(termoLower)) return false;
+                }
+                if (lubFiltro !== 'todos' && o.lubrificador !== lubFiltro) return false;
+                if (vendedorFiltro !== 'todos' && o.vendedor !== vendedorFiltro) return false;
+                if (servicoFiltro !== 'todos' && !o[servicoFiltro]) return false;
+                if (soUpsell && !o.fezUpsell) return false;
+                if (dataDe || dataAte) {
+                    const ref = o.fim || o.dataHora;
+                    if (!ref) return false;
+                    const d = new Date(ref);
+                    if (dataDe && d < dataDe) return false;
+                    if (dataAte && d > dataAte) return false;
+                }
+                return true;
+            });
+
+            // Mais recentes primeiro
+            const resultadosOrdenados = [...resultados].sort((a, b) => {
+                return new Date(b.fim || b.dataHora || 0) - new Date(a.fim || a.dataHora || 0);
+            });
+
+            const limpar = () => {
+                setTermo(''); setLubFiltro('todos'); setVendedorFiltro('todos');
+                setServicoFiltro('todos'); setDataInicio(''); setDataFim(''); setSoUpsell(false);
+            };
+
+            const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '2px solid #e2e8f0', fontSize: '14px', background: 'white' };
+            const labelStyle = { display: 'block', marginBottom: '5px', fontSize: '13px', fontWeight: '600', color: '#4a5568' };
+
+            return (
+                <div>
+                    {/* FILTROS */}
+                    <div style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '25px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
+                        <h3 style={{ margin: '0 0 15px 0', color: '#2d3748', fontSize: '18px' }}>🔎 Consultar Carros Concluídos</h3>
+                        <div style={{ marginBottom: '15px' }}>
+                            <label style={labelStyle}>Buscar (placa, cliente ou telefone)</label>
+                            <input type="text" value={termo} onChange={(e) => setTermo(e.target.value)} placeholder="Ex: ABC1D23, João, 41999..." style={inputStyle} autoFocus />
+                        </div>
+                        <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                            <div style={{ flex: '1', minWidth: '160px' }}>
+                                <label style={labelStyle}>Lubrificador (quem fez)</label>
+                                <select value={lubFiltro} onChange={(e) => setLubFiltro(e.target.value)} style={inputStyle}>
+                                    <option value="todos">Todos</option>
+                                    {lubrificadores.map(l => <option key={l} value={l}>{l}</option>)}
+                                </select>
+                            </div>
+                            <div style={{ flex: '1', minWidth: '160px' }}>
+                                <label style={labelStyle}>Vendedor</label>
+                                <select value={vendedorFiltro} onChange={(e) => setVendedorFiltro(e.target.value)} style={inputStyle}>
+                                    <option value="todos">Todos</option>
+                                    {vendedores.map(v => <option key={v} value={v}>{v}</option>)}
+                                </select>
+                            </div>
+                            <div style={{ flex: '1', minWidth: '160px' }}>
+                                <label style={labelStyle}>Serviço realizado</label>
+                                <select value={servicoFiltro} onChange={(e) => setServicoFiltro(e.target.value)} style={inputStyle}>
+                                    <option value="todos">Todos</option>
+                                    {Object.keys(SERVICO_LABELS).map(k => <option key={k} value={k}>{SERVICO_LABELS[k]}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', alignItems: 'flex-end', marginTop: '15px' }}>
+                            <div style={{ flex: '1', minWidth: '160px' }}>
+                                <label style={labelStyle}>Data Início</label>
+                                <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} style={inputStyle} />
+                            </div>
+                            <div style={{ flex: '1', minWidth: '160px' }}>
+                                <label style={labelStyle}>Data Fim</label>
+                                <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} style={inputStyle} />
+                            </div>
+                            <div style={{ flex: '1', minWidth: '160px', display: 'flex', alignItems: 'center', gap: '8px', paddingBottom: '10px' }}>
+                                <input type="checkbox" id="soUpsell" checked={soUpsell} onChange={(e) => setSoUpsell(e.target.checked)} style={{ width: '18px', height: '18px' }} />
+                                <label htmlFor="soUpsell" style={{ fontSize: '14px', fontWeight: '600', color: '#4a5568', cursor: 'pointer' }}>💰 Só com upsell</label>
+                            </div>
+                            <button className="btn btn-secondary" onClick={limpar} style={{ marginBottom: '2px' }}>🧹 Limpar</button>
+                        </div>
+                    </div>
+
+                    <h4 style={{ color: 'white', marginBottom: '15px' }}>
+                        {resultadosOrdenados.length} resultado(s)
+                    </h4>
+
+                    {resultadosOrdenados.length === 0 ? (
+                        <div className="empty-state">
+                            <div className="empty-state-icon">🔎</div>
+                            <h3>Nenhum carro encontrado</h3>
+                            <p>Ajuste os filtros ou o termo de busca</p>
+                        </div>
+                    ) : (
+                        <div className="cards-container">
+                            {resultadosOrdenados.map(order => (
+                                <CardConcluido key={order.id} order={order} onVer={() => onVer(order)} />
+                            ))}
+                        </div>
+                    )}
                 </div>
             );
         }
@@ -3916,6 +4100,10 @@
                 voltouComProblema: order.voltouComProblema || false
             });
 
+            // Serviços realizados e ofertas (upsell) desta ordem, para consulta
+            const servicosRealizados = getServicosDetalhados(order);
+            const upsellsDetalhados = getUpsellsDetalhados(order);
+
             const handleChange = (e) => {
                 const { name, value, type, checked } = e.target;
                 setFormData(prev => ({
@@ -3984,6 +4172,17 @@
                                     <span className="info-label">Lubrificador:</span>
                                     <span>{order.lubrificador}</span>
                                 </div>
+                            )}
+
+                            {servicosRealizados.length > 0 && (
+                                <>
+                                    <div className="section-title">🔧 Serviços Realizados</div>
+                                    <div className="services-list">
+                                        {servicosRealizados.map((s, i) => (
+                                            <div key={i} className="service-item">✓ {s}</div>
+                                        ))}
+                                    </div>
+                                </>
                             )}
 
                             <div className="section-title">
@@ -4065,6 +4264,27 @@
                                     <span className="value-amount">R$ {parseFloat(order.valorTotal || order.valorInicial || 0).toFixed(2)}</span>
                                 </div>
                             </div>
+
+                            {upsellsDetalhados.length > 0 && (
+                                <>
+                                    <div className="section-title">💰 Ofertas / Upsell</div>
+                                    <div className="services-list">
+                                        {upsellsDetalhados.map((u, i) => (
+                                            <div key={i} className="info-row">
+                                                <span>
+                                                    {u.aceito ? '✅' : '❌'} {u.label}
+                                                    {u.foto && (
+                                                        <a href={u.foto} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '8px', color: '#4299e1', textDecoration: 'none', fontSize: '13px' }}>📷 ver foto</a>
+                                                    )}
+                                                </span>
+                                                <span style={{ fontWeight: 'bold', color: u.aceito ? '#48bb78' : '#a0aec0' }}>
+                                                    {u.aceito ? `+ R$ ${u.valor.toFixed(2)}` : 'Recusado'}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
 
                             {order.obsCarro && (
                                 <>
