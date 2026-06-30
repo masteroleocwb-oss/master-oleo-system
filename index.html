@@ -1144,7 +1144,17 @@
             if (['luis', 'luís', 'luiz'].includes(nomeNormalizado)) {
                 return 'Luis';
             }
-            
+
+            // Agrupar variações de Joilson
+            if (['joilson', 'joílson', 'joelson', 'joulson', 'joinson'].includes(nomeNormalizado)) {
+                return 'Joilson';
+            }
+
+            // Agrupar variações de Thiago / Tiago (com ou sem "h")
+            if (['thiago', 'tiago', 'thyago', 'tyago', 'thiágo', 'tiágo'].includes(nomeNormalizado)) {
+                return 'Thiago';
+            }
+
             // Remover Bruno
             if (nomeNormalizado === 'bruno') {
                 return null; // Retorna null para ser filtrado
@@ -2471,8 +2481,9 @@
 
             const concluidos = orders.filter(o => o.status === 'concluido');
 
-            // Listas únicas para os dropdowns (a partir dos concluídos)
-            const lubrificadores = [...new Set(concluidos.map(o => o.lubrificador).filter(Boolean))].sort();
+            // Listas únicas para os dropdowns (a partir dos concluídos).
+            // Lubrificador é normalizado para agrupar variações de nome (ex: Tiago/Thiago).
+            const lubrificadores = [...new Set(concluidos.map(o => normalizarLubrificador(o.lubrificador)).filter(Boolean))].sort();
             const vendedores = [...new Set(concluidos.map(o => o.vendedor).filter(Boolean))].sort();
 
             const dataDe = dataInicio ? new Date(dataInicio + 'T00:00:00') : null;
@@ -2485,7 +2496,7 @@
                     const alvo = `${o.placa || ''} ${o.cliente || ''} ${o.tel || ''}`.toLowerCase();
                     if (!alvo.includes(termoLower)) return false;
                 }
-                if (lubFiltro !== 'todos' && o.lubrificador !== lubFiltro) return false;
+                if (lubFiltro !== 'todos' && normalizarLubrificador(o.lubrificador) !== lubFiltro) return false;
                 if (vendedorFiltro !== 'todos' && o.vendedor !== vendedorFiltro) return false;
                 if (servicoFiltro !== 'todos' && !o[servicoFiltro]) return false;
                 if (soUpsell && !o.fezUpsell) return false;
