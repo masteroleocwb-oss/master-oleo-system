@@ -1204,28 +1204,28 @@
                 return 'Leo';
             }
             
-            // Agrupar variações de Pedro
-            if (['pedro', 'pêdro'].includes(nomeNormalizado)) {
+            // Agrupar Pedro (inclui sobrenome)
+            if (nomeNormalizado.includes('pedro')) {
                 return 'Pedro';
             }
-            
-            // Agrupar variações de Caio
-            if (['caio', 'cáio'].includes(nomeNormalizado)) {
+
+            // Agrupar Caio (inclui sobrenome)
+            if (nomeNormalizado.includes('caio')) {
                 return 'Caio';
             }
-            
-            // Agrupar variações de Luis
-            if (['luis', 'luís', 'luiz'].includes(nomeNormalizado)) {
+
+            // Agrupar Luis / Luiz (inclui sobrenome)
+            if (nomeNormalizado.includes('luis') || nomeNormalizado.includes('luís') || nomeNormalizado.includes('luiz')) {
                 return 'Luis';
             }
 
-            // Agrupar variações de Joilson
-            if (['joilson', 'joílson', 'joelson', 'joulson', 'joinson'].includes(nomeNormalizado)) {
+            // Agrupar Joilson (inclui nome com sobrenome, ex: "Joilson da Silva")
+            if (nomeNormalizado.includes('joilson') || nomeNormalizado.includes('joelson') || nomeNormalizado.includes('joulson')) {
                 return 'Joilson';
             }
 
-            // Agrupar variações de Thiago / Tiago (com ou sem "h")
-            if (['thiago', 'tiago', 'thyago', 'tyago', 'thiágo', 'tiágo'].includes(nomeNormalizado)) {
+            // Agrupar Thiago / Tiago com ou sem "h" (inclui sobrenome, ex: "Thiago Moraes")
+            if (nomeNormalizado.includes('thiago') || nomeNormalizado.includes('tiago') || nomeNormalizado.includes('thyago') || nomeNormalizado.includes('tyago')) {
                 return 'Thiago';
             }
 
@@ -1531,7 +1531,7 @@
                                 💸 VALOR TOTAL UPSELL
                             </div>
                             <div style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '5px' }}>
-                                R$ {aplicarFatorAjuste(totais.valorUpsells).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                R$ {aplicarFatorAjuste(totais.valorUpsells).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </div>
                             <div style={{ fontSize: '12px', opacity: 0.8 }}>
                                 Total vendas adicionais
@@ -1644,7 +1644,7 @@
                                                                 </span>
                                                             </td>
                                                             <td style={{ padding: '15px', textAlign: 'right', fontWeight: '600', color: '#48bb78' }}>
-                                                                R$ {aplicarFatorAjuste(dados.valorUpsells).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                                R$ {aplicarFatorAjuste(dados.valorUpsells).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                             </td>
                                                             <td style={{ padding: '15px', textAlign: 'center' }}>
                                                                 <span
@@ -1666,9 +1666,9 @@
                                                                     onMouseEnter={(e) => { e.currentTarget.style.filter = 'blur(3px)'; }}
                                                                     onMouseLeave={(e) => { e.currentTarget.style.filter = 'blur(5px)'; }}
                                                                 >
-                                                                    R$ {comissao.comissaoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                                    R$ {comissao.comissaoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                                 </span>
-                                                                <div style={{ fontSize: '10px', color: '#a0aec0', marginTop: '4px' }}>🔒 clique p/ ver</div>
+                                                                <div style={{ fontSize: '10px', color: '#a0aec0', marginTop: '4px' }}>🔒 clique p/ ver <span style={{ color: '#e53e3e', fontWeight: '900' }}>*</span></div>
                                                             </td>
                                                         </tr>
                                                         
@@ -1803,7 +1803,7 @@
                 }
             };
 
-            const fmt = (v) => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+            const fmt = (v) => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             const [ano, mes] = (mesRef || '').split('-');
             const mesLabel = mes ? `${getNomeMes(parseInt(mes))}/${ano}` : mesRef;
 
@@ -1879,13 +1879,24 @@
 
                                     <div className="value-display" style={{ marginTop: '18px' }}>
                                         <div className="value-row value-total">
-                                            <span className="value-label">COMISSÃO A RECEBER:</span>
+                                            <span className="value-label">COMISSÃO A RECEBER: <span style={{ color: '#e53e3e', fontWeight: '900' }}>*</span></span>
                                             <span className="value-amount">{fmt(comissao.comissaoFinal)}</span>
                                         </div>
                                     </div>
 
+                                    <div style={{ background: '#fff5f5', border: '2px solid #fc8181', borderRadius: '8px', padding: '12px', marginTop: '12px', color: '#c53030', fontSize: '13px', lineHeight: '1.5' }}>
+                                        <strong style={{ color: '#e53e3e' }}>* Valor ESTIMADO.</strong> Todas as ordens ainda serão analisadas para confirmar o que de fato foi vendido.
+                                        Descontos serão aplicados em caso de retorno do veículo (vazamento, protetor de cárter, filtro mal encaixado, sujeira na longarina — <strong>−R$ 30,00 cada</strong>).
+                                        Em crédito parcelado, pode haver desconto da taxa da maquininha.
+                                    </div>
+
+                                    {/* Regras completas */}
+                                    <div style={{ marginTop: '18px' }}>
+                                        <RegrasUpsellPanel />
+                                    </div>
+
                                     {/* Tabela de faixas (transparência) */}
-                                    <div className="section-title" style={{ marginTop: '20px' }}>📊 Faixas de comissão</div>
+                                    <div className="section-title" style={{ marginTop: '10px' }}>📊 Faixas de comissão</div>
                                     <div className="services-list">
                                         {FAIXAS_COMISSAO.map((f, i) => (
                                             <div key={i} className="info-row" style={{
@@ -2134,9 +2145,6 @@
                         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                             <button className="btn btn-primary" onClick={() => setShowNewOrderModal(true)}>
                                 ➕ Nova Ordem
-                            </button>
-                            <button className="btn btn-secondary" onClick={() => setShowSearchModal(true)}>
-                                🔍 Buscar Cliente
                             </button>
                             <button className="btn btn-secondary" onClick={() => setShowConfigModal(true)}>
                                 ⚙️ Configurações
@@ -2486,22 +2494,9 @@
                         />
                     )}
                     
-                    {/* MODAL BUSCA DE CLIENTES */}
-                    {showSearchModal && (
-                        <BuscarClienteModal 
-                            onClose={() => setShowSearchModal(false)}
-                            onSelectCliente={(cliente) => {
-                                // Preencher nova ordem com dados do cliente
-                                setShowSearchModal(false);
-                                setShowNewOrderModal(true);
-                                // TODO: Passar dados do cliente para NovaOrdemModal
-                            }}
-                        />
-                    )}
-                    
                     {/* MODAL CONFIGURAÇÕES */}
                     {showConfigModal && (
-                        <ConfiguracoesModal 
+                        <ConfiguracoesModal
                             onClose={() => setShowConfigModal(false)}
                             onSave={() => {
                                 setShowConfigModal(false);
@@ -2510,6 +2505,7 @@
                                 loadOrders(); // Recarregar para recalcular alertas
                             }}
                             onAdminAuth={(isAdm) => setIsAdmin(isAdm)}
+                            lubrificadores={[...new Set(orders.map(o => normalizarLubrificador(o.lubrificador)).filter(Boolean))].sort()}
                         />
                     )}
                     
@@ -3837,12 +3833,21 @@
                                 <li>R$ 8.000 a R$ 12.000 → 5%</li>
                                 <li>R$ 12.000 ou mais → 7%</li>
                             </ul>
-                            <div style={{ fontWeight: '700', color: '#822727', marginBottom: '4px' }}>⚠️ Descontos:</div>
-                            <ul style={{ margin: '0', paddingLeft: '20px' }}>
-                                <li>Retorno por vazamento: −R$ 30</li>
-                                <li>Protetor de cárter mal encaixado: −R$ 30</li>
-                                <li>Estorno por insatisfação/reembolso/refação do item de upsell</li>
+                            <div style={{ fontWeight: '700', color: '#822727', marginBottom: '4px' }}>⚠️ Descontos por retorno (−R$ 30 cada):</div>
+                            <ul style={{ margin: '0 0 12px 0', paddingLeft: '20px' }}>
+                                <li>Retorno por vazamento</li>
+                                <li>Protetor de cárter mal encaixado</li>
+                                <li>Filtro mal encaixado</li>
+                                <li>Sujeira na longarina</li>
                             </ul>
+                            <div style={{ fontWeight: '700', color: '#822727', marginBottom: '4px' }}>⚠️ Estorno:</div>
+                            <ul style={{ margin: '0 0 12px 0', paddingLeft: '20px' }}>
+                                <li>Insatisfação / reembolso / refação de item de upsell</li>
+                            </ul>
+                            <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '8px', padding: '10px', color: '#856404' }}>
+                                💳 <strong>Crédito parcelado:</strong> alguns valores podem sair menores porque é descontada a taxa da maquininha.
+                                A empresa recebe parcelado, mas a comissão do lubrificador é paga à vista.
+                            </div>
                             <p style={{ marginTop: '10px', color: '#718096' }}>Comissão paga à vista, junto ao fechamento da OS.</p>
                         </div>
                     )}
@@ -5301,7 +5306,7 @@
         // ============================================
         // MODAL: CONFIGURAÇÕES
         // ============================================
-        function ConfiguracoesModal({ onClose, onSave, onAdminAuth }) {
+        function ConfiguracoesModal({ onClose, onSave, onAdminAuth, lubrificadores = [] }) {
             const [tab, setTab] = useState('metas'); // 'metas', 'periodo', 'alertas', 'avancado'
             const [senha, setSenha] = useState('');
             const [autenticado, setAutenticado] = useState(false);
@@ -5323,7 +5328,12 @@
                 return `${SYSTEM_CONFIG.MES_VIGENTE.ano}-${m}`;
             });
 
-            const lubrificadoresComissao = Object.keys(SYSTEM_CONFIG.METAS || {});
+            // Lubrificadores para comissão: metas cadastradas + os que já executaram ordens
+            // (nomes normalizados, ex: Joilson, Thiago), sem duplicar e sem Leo/Bruno.
+            const lubrificadoresComissao = [...new Set([
+                ...Object.keys(SYSTEM_CONFIG.METAS || {}),
+                ...lubrificadores
+            ])].filter(l => l && l !== 'Leo' && l !== 'Sem lubrificador').sort();
 
             const setSenhaLubComissao = (lub, val) => setComissaoSenhas(prev => ({ ...prev, [lub]: val }));
 
@@ -5787,10 +5797,12 @@
                             {tab === 'comissoes' && (
                                 <div>
                                     <h3 style={{ marginBottom: '10px' }}>💰 Comissões dos Lubrificadores</h3>
-                                    <p style={{ color: '#718096', marginBottom: '20px', fontSize: '14px' }}>
+                                    <p style={{ color: '#718096', marginBottom: '15px', fontSize: '14px' }}>
                                         Defina a <strong>senha individual</strong> (usada por cada um para ver a própria comissão) e lance os
                                         <strong> ajustes do mês</strong> (retornos, estornos, descontos de fechamento). Os ajustes são subtraídos da comissão.
                                     </p>
+
+                                    <RegrasUpsellPanel />
 
                                     <div style={{ marginBottom: '20px' }}>
                                         <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', color: '#4a5568' }}>
@@ -5832,7 +5844,7 @@
                                                 <div style={{ marginTop: '12px' }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                                                         <span style={{ fontSize: '13px', fontWeight: '600', color: '#4a5568' }}>
-                                                            Ajustes do mês {totalAjustesLub > 0 && <span style={{ color: '#f56565' }}>(− R$ {totalAjustesLub.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})</span>}
+                                                            Ajustes do mês {totalAjustesLub > 0 && <span style={{ color: '#f56565' }}>(− R$ {totalAjustesLub.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>}
                                                         </span>
                                                         <button
                                                             onClick={() => addAjusteComissao(lub)}
@@ -5848,7 +5860,7 @@
                                                             <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white', padding: '8px 12px', borderRadius: '6px', marginBottom: '6px', border: '1px solid #e2e8f0' }}>
                                                                 <span style={{ fontSize: '13px', color: '#2d3748' }}>{a.descricao}</span>
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                                    <span style={{ fontSize: '13px', fontWeight: '600', color: '#f56565' }}>− R$ {parseFloat(a.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                                                    <span style={{ fontSize: '13px', fontWeight: '600', color: '#f56565' }}>− R$ {parseFloat(a.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                                                     <button onClick={() => removeAjusteComissao(lub, idx)} style={{ background: 'none', border: 'none', color: '#f56565', cursor: 'pointer', fontSize: '16px' }}>🗑️</button>
                                                                 </div>
                                                             </div>
