@@ -840,22 +840,27 @@
 
             const faixa = getFaixaComissao(totalUpsell);
             const pct = faixa.pct;
-            const comissaoBase = totalUpsell * (pct / 100);
 
-            // Teto de câmbio: comissão do fluido de câmbio por OS limitada a R$50
-            let descontoCambio = 0;
+            // Separar a comissão em duas partes POSITIVAS (evita mostrar número negativo):
+            //  - Serviços: upsell que não é câmbio, comissão pela faixa
+            //  - Câmbio: comissão do fluido de câmbio por OS, limitada ao teto de R$50/OS
+            let totalCambio = 0;
+            let comissaoCambio = 0;
             detalheOrdens.forEach(d => {
-                const comissaoCambio = d.valorCambio * (pct / 100);
-                if (comissaoCambio > TETO_COMISSAO_CAMBIO_OS) {
-                    d.excedenteCambio = comissaoCambio - TETO_COMISSAO_CAMBIO_OS;
-                    descontoCambio += d.excedenteCambio;
-                }
+                totalCambio += d.valorCambio;
+                const bruta = d.valorCambio * (pct / 100);
+                d.comissaoCambio = Math.min(bruta, TETO_COMISSAO_CAMBIO_OS);
+                comissaoCambio += d.comissaoCambio;
             });
 
-            const totalAjustes = ajustes.reduce((s, a) => s + parseFloat(a.valor || 0), 0);
-            const comissaoFinal = Math.max(0, comissaoBase - descontoCambio - totalAjustes);
+            const totalServicos = totalUpsell - totalCambio;
+            const comissaoServicos = totalServicos * (pct / 100);
+            const comissaoBase = comissaoServicos + comissaoCambio; // subtotal antes dos ajustes
 
-            return { totalUpsell, faixa, pct, comissaoBase, descontoCambio, totalAjustes, comissaoFinal, detalheOrdens };
+            const totalAjustes = ajustes.reduce((s, a) => s + parseFloat(a.valor || 0), 0);
+            const comissaoFinal = Math.max(0, comissaoBase - totalAjustes);
+
+            return { totalUpsell, totalCambio, totalServicos, faixa, pct, comissaoServicos, comissaoCambio, comissaoBase, totalAjustes, comissaoFinal, detalheOrdens };
         };
 
         // ============================================
@@ -1852,15 +1857,19 @@
                                         <span style={{ fontWeight: 'bold', color: '#667eea' }}>{comissao.faixa.label} → {comissao.pct}%</span>
                                     </div>
                                     <div className="info-row">
-                                        <span className="info-label">Comissão base ({comissao.pct}%):</span>
-                                        <span>{fmt(comissao.comissaoBase)}</span>
+                                        <span className="info-label">Comissão de serviços ({comissao.pct}%):</span>
+                                        <span style={{ color: '#48bb78', fontWeight: '600' }}>{fmt(comissao.comissaoServicos)}</span>
                                     </div>
-                                    {comissao.descontoCambio > 0 && (
+                                    {comissao.totalCambio > 0 && (
                                         <div className="info-row">
-                                            <span className="info-label">Ajuste teto câmbio (R$50/OS):</span>
-                                            <span style={{ color: '#f56565' }}>- {fmt(comissao.descontoCambio)}</span>
+                                            <span className="info-label">Comissão de câmbio (teto R$50/OS):</span>
+                                            <span style={{ color: '#48bb78', fontWeight: '600' }}>+ {fmt(comissao.comissaoCambio)}</span>
                                         </div>
                                     )}
+                                    <div className="info-row">
+                                        <span className="info-label">Subtotal:</span>
+                                        <span style={{ fontWeight: 'bold' }}>{fmt(comissao.comissaoBase)}</span>
+                                    </div>
                                     {ajustes && ajustes.length > 0 && (
                                         <>
                                             <div className="section-title" style={{ marginTop: '18px' }}>Ajustes (ADM)</div>
@@ -2538,11 +2547,26 @@
         }
 
         // Componente Card Aguardando
+        // Banner vermelho: serviço para EXECUÇÃO, não teste (câmbio/freio)
+        function BannerExecucaoNaoTeste({ order }) {
+            const cambio = (order.cambioManual || order.cambioAutomatico) && order.execCambioSemQuestionar !== false;
+            const freio = order.fluidoFreio && order.execFreioSemQuestionar !== false;
+            if (!cambio && !freio) return null;
+            return (
+                <div style={{ background: '#e53e3e', color: 'white', fontWeight: '800', textAlign: 'center', padding: '8px 10px', borderRadius: '8px', marginBottom: '10px', fontSize: '13px', lineHeight: '1.35' }}>
+                    ⚡ SERVIÇO PARA EXECUÇÃO — NÃO É TESTE
+                    {cambio && <div style={{ fontWeight: '600', fontSize: '12px' }}>Fluído de câmbio: só executar</div>}
+                    {freio && <div style={{ fontWeight: '600', fontSize: '12px' }}>Fluído de freio: só executar</div>}
+                </div>
+            );
+        }
+
         function CardAguardando({ order, position, onIniciar, onCancelar, onVerDados, onEditar }) {
             const servicos = getServicosDetalhados(order);
 
             return (
                 <div className="card card-aguardando">
+                    <BannerExecucaoNaoTeste order={order} />
                     <div className="card-header">
                         <span className="order-number">#{order.numeroOrdem}</span>
                         <span className="queue-position">Posição {position}</span>
@@ -2600,6 +2624,7 @@
 
             return (
                 <div className="card" style={{ borderLeft: '5px solid #4299e1', background: 'linear-gradient(135deg, #e6f2ff 0%, #ffffff 100%)' }}>
+                    <BannerExecucaoNaoTeste order={order} />
                     <div className="card-header">
                         <span className="order-number">#{order.numeroOrdem}</span>
                         <span className="badge" style={{ background: '#4299e1', color: 'white' }}>🔵 Em Atendimento</span>
@@ -4288,12 +4313,12 @@
                                     </div>
 
                                     {/* Instruções "executar sem questionar" definidas pelo vendas na abertura */}
-                                    {(order.cambioManual || order.cambioAutomatico) && order.execCambioSemQuestionar && (
+                                    {(order.cambioManual || order.cambioAutomatico) && order.execCambioSemQuestionar !== false && (
                                         <div className="alert" style={{ background: '#fff5f5', border: '2px solid #e53e3e', color: '#c53030', fontWeight: '700' }}>
                                             ⚡ FLUÍDO DE CÂMBIO: NÃO FAZER TESTE — SÓ EXECUTAR O SERVIÇO.
                                         </div>
                                     )}
-                                    {order.fluidoFreio && order.execFreioSemQuestionar && (
+                                    {order.fluidoFreio && order.execFreioSemQuestionar !== false && (
                                         <div className="alert" style={{ background: '#fff5f5', border: '2px solid #e53e3e', color: '#c53030', fontWeight: '700' }}>
                                             ⚡ FLUÍDO DE FREIO: NÃO FAZER TESTE — SÓ EXECUTAR O SERVIÇO.
                                         </div>
@@ -4528,8 +4553,13 @@
                 valorUpsell: order.valorUpsell || 0,
                 obsCarro: order.obsCarro || '',
                 obsOferta: order.obsOferta || '',
-                voltouComProblema: order.voltouComProblema || false
+                voltouComProblema: order.voltouComProblema || false,
+                // Checklist de retorno
+                retornoData: order.retorno?.data || '',
+                retornoMotivo: order.retorno?.motivo || '',
+                retornoDescricao: order.retorno?.descricao || ''
             });
+            const [fotosRetorno, setFotosRetorno] = useState(order.retorno?.fotosRetorno || []);
 
             // Serviços realizados e ofertas (upsell) desta ordem, para consulta
             const servicosRealizados = getServicosDetalhados(order);
@@ -4543,12 +4573,35 @@
                 }));
             };
 
+            const handleUploadFotoRetorno = (e) => {
+                const files = Array.from(e.target.files || []);
+                files.forEach(file => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const base64 = reader.result;
+                        const sizeKB = (base64.length * 0.75) / 1024;
+                        if (sizeKB > 500) { alert('⚠️ Foto muito grande (máx ~500KB). Tire com resolução menor.'); return; }
+                        setFotosRetorno(prev => [...prev, base64]);
+                    };
+                    reader.readAsDataURL(file);
+                });
+                e.target.value = '';
+            };
+
             const handleSave = async () => {
                 try {
                     const valorTotal = parseFloat(formData.valorInicial || 0) + parseFloat(formData.valorUpsell || 0);
+                    const retorno = formData.voltouComProblema ? {
+                        isRetorno: true,
+                        data: formData.retornoData || '',
+                        motivo: formData.retornoMotivo || '',
+                        descricao: formData.retornoDescricao || '',
+                        fotosRetorno: fotosRetorno
+                    } : { isRetorno: false };
                     await db.collection('orders').doc(order.id).update({
                         ...formData,
-                        valorTotal
+                        valorTotal,
+                        retorno
                     });
                     alert('Alterações salvas com sucesso!');
                     setEditMode(false);
@@ -4770,6 +4823,51 @@
                                             ⚠️ Cliente voltou com problema
                                         </label>
                                     </div>
+
+                                    {formData.voltouComProblema && editMode && (
+                                        <div style={{ marginTop: '12px', padding: '15px', background: '#fff5f5', border: '2px solid #fc8181', borderRadius: '10px' }}>
+                                            <div style={{ fontWeight: '700', color: '#c53030', marginBottom: '10px' }}>🔁 Checklist de Retorno</div>
+                                            <div className="form-group">
+                                                <label className="form-label">Data do retorno</label>
+                                                <input type="date" name="retornoData" value={formData.retornoData} onChange={handleChange} className="form-input" style={{ maxWidth: '220px' }} />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Motivo</label>
+                                                <select name="retornoMotivo" value={formData.retornoMotivo} onChange={handleChange} className="form-select">
+                                                    <option value="">Selecione...</option>
+                                                    <option value="vazamento_novo">Vazamento novo detectado</option>
+                                                    <option value="protetor_carter">Protetor de cárter mal encaixado</option>
+                                                    <option value="filtro_mal_encaixado">Filtro mal encaixado</option>
+                                                    <option value="sujeira_longarina">Sujeira na longarina</option>
+                                                    <option value="servico_incompleto">Serviço não foi completado</option>
+                                                    <option value="problema_peca">Problema com peça/produto</option>
+                                                    <option value="cliente_insatisfeito">Cliente insatisfeito</option>
+                                                    <option value="outros">Outros</option>
+                                                </select>
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Descrição</label>
+                                                <textarea name="retornoDescricao" value={formData.retornoDescricao} onChange={handleChange} className="form-textarea" rows="2" placeholder="Detalhe o que ocorreu no retorno..."></textarea>
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">📸 Fotos do retorno</label>
+                                                <input type="file" accept="image/*" capture="environment" multiple className="form-input" onChange={handleUploadFotoRetorno} />
+                                                {fotosRetorno.length > 0 && (
+                                                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '10px' }}>
+                                                        {fotosRetorno.map((foto, idx) => (
+                                                            <div key={idx} style={{ position: 'relative' }}>
+                                                                <img src={foto} alt={'retorno ' + (idx + 1)} style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
+                                                                <button
+                                                                    onClick={() => setFotosRetorno(prev => prev.filter((_, i) => i !== idx))}
+                                                                    style={{ position: 'absolute', top: '-8px', right: '-8px', background: '#f56565', color: 'white', border: 'none', borderRadius: '50%', width: '22px', height: '22px', cursor: 'pointer', fontWeight: 'bold' }}
+                                                                >×</button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -4827,10 +4925,19 @@
                                         borderRadius: '8px',
                                         border: '2px solid #f39c12'
                                     }}>
+                                        {order.retorno.data && (
+                                            <div className="info-row">
+                                                <span className="info-label">Data:</span>
+                                                <span style={{ fontWeight: '600' }}>{new Date(order.retorno.data + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+                                            </div>
+                                        )}
                                         <div className="info-row">
                                             <span className="info-label">Motivo:</span>
                                             <span style={{ fontWeight: '600' }}>
                                                 {order.retorno.motivo === 'vazamento_novo' && 'Vazamento novo detectado'}
+                                                {order.retorno.motivo === 'protetor_carter' && 'Protetor de cárter mal encaixado'}
+                                                {order.retorno.motivo === 'filtro_mal_encaixado' && 'Filtro mal encaixado'}
+                                                {order.retorno.motivo === 'sujeira_longarina' && 'Sujeira na longarina'}
                                                 {order.retorno.motivo === 'servico_incompleto' && 'Serviço não foi completado'}
                                                 {order.retorno.motivo === 'problema_peca' && 'Problema com peça/produto'}
                                                 {order.retorno.motivo === 'cliente_insatisfeito' && 'Cliente insatisfeito'}
