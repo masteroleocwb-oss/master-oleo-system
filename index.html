@@ -704,9 +704,9 @@
             // Metas por técnico (salvas em localStorage)
             // Leo não tem meta, por isso não está na lista
             METAS: JSON.parse(localStorage.getItem('metasTecnicos') || JSON.stringify({
-                'Caio': { ofertas: 90, upsell: 45 },
-                'Luis': { ofertas: 90, upsell: 45 },
-                'Pedro': { ofertas: 90, upsell: 45 }
+                'Caio': { upsell: 45 },
+                'Luis': { upsell: 45 },
+                'Pedro': { upsell: 45 }
             })),
             
             // MÊS VIGENTE PARA AVALIAÇÃO
@@ -763,6 +763,99 @@
                 { fatorAjuste: valor, fatorAjusteAtualizadoEm: firebase.firestore.FieldValue.serverTimestamp() },
                 { merge: true }
             );
+        };
+
+        // ============================================
+        // COMISSÃO DE UPSELL — configuração e cálculo
+        // ============================================
+
+        // Config de comissão GLOBAL (senhas por lubrificador + ajustes por mês).
+        // Estrutura: { senhas: { "Caio": "1234", ... }, ajustes: { "2026-06": { "Caio": [{descricao, valor}] } } }
+        let GLOBAL_COMISSAO = (() => {
+            try { return JSON.parse(localStorage.getItem('comissaoConfig') || '{}'); }
+            catch (e) { return {}; }
+        })();
+        if (!GLOBAL_COMISSAO.senhas) GLOBAL_COMISSAO.senhas = {};
+        if (!GLOBAL_COMISSAO.ajustes) GLOBAL_COMISSAO.ajustes = {};
+
+        // Salvar config de comissão GLOBAL no Firestore (reflete para todos)
+        const salvarComissaoConfig = async (config) => {
+            GLOBAL_COMISSAO = {
+                senhas: config.senhas || {},
+                ajustes: config.ajustes || {}
+            };
+            localStorage.setItem('comissaoConfig', JSON.stringify(GLOBAL_COMISSAO)); // cache local
+            await db.collection('config').doc('global').set(
+                { comissao: GLOBAL_COMISSAO, comissaoAtualizadoEm: firebase.firestore.FieldValue.serverTimestamp() },
+                { merge: true }
+            );
+        };
+
+        // Faixas de comissão por volume individual de upsell no mês
+        const FAIXAS_COMISSAO = [
+            { min: 0,     max: 4999.99,  pct: 0, label: 'Abaixo de R$ 5.000' },
+            { min: 5000,  max: 7999.99,  pct: 3, label: 'R$ 5.000 a R$ 7.999' },
+            { min: 8000,  max: 11999.99, pct: 5, label: 'R$ 8.000 a R$ 12.000' },
+            { min: 12000, max: Infinity, pct: 7, label: 'R$ 12.000 ou mais' }
+        ];
+        const TETO_COMISSAO_CAMBIO_OS = 50; // teto de comissão do fluido de câmbio por OS
+        const CAMBIO_UPSELL_KEYS = ['cambioManual', 'cambioAutomatico'];
+
+        const getFaixaComissao = (totalUpsell) => {
+            const faixa = FAIXAS_COMISSAO.find(f => totalUpsell >= f.min && totalUpsell <= f.max);
+            return faixa || FAIXAS_COMISSAO[0];
+        };
+
+        // Calcula a comissão de UM lubrificador a partir das ordens do período.
+        // Base = valor REAL de upsell (order.valorUpsell), refletindo edições/exclusões do ADM.
+        // Aplica faixa por volume e teto de R$50/OS na parte de fluido de câmbio.
+        const calcularComissaoLub = (ordens, ajustes = []) => {
+            let totalUpsell = 0;
+            const detalheOrdens = [];
+
+            ordens.forEach(o => {
+                // Aplica o fator de ajuste global sobre o valor de upsell (base da comissão)
+                const v = aplicarFatorAjuste(parseFloat(o.valorUpsell || 0));
+                if (v <= 0) return;
+                totalUpsell += v;
+
+                // Valor de fluido de câmbio vendido como upsell nesta OS (também ajustado)
+                let vCambio = 0;
+                const ups = o.upsells || {};
+                CAMBIO_UPSELL_KEYS.forEach(k => {
+                    const it = ups[k];
+                    if (it && it.aceito === 'sim') vCambio += aplicarFatorAjuste(parseFloat(it.valor || 0));
+                });
+                vCambio = Math.min(Math.max(vCambio, 0), v); // não excede o upsell atual da OS
+
+                detalheOrdens.push({
+                    id: o.id,
+                    numeroOrdem: o.numeroOrdem,
+                    placa: o.placa,
+                    cliente: o.cliente,
+                    valorUpsell: v,
+                    valorCambio: vCambio
+                });
+            });
+
+            const faixa = getFaixaComissao(totalUpsell);
+            const pct = faixa.pct;
+            const comissaoBase = totalUpsell * (pct / 100);
+
+            // Teto de câmbio: comissão do fluido de câmbio por OS limitada a R$50
+            let descontoCambio = 0;
+            detalheOrdens.forEach(d => {
+                const comissaoCambio = d.valorCambio * (pct / 100);
+                if (comissaoCambio > TETO_COMISSAO_CAMBIO_OS) {
+                    d.excedenteCambio = comissaoCambio - TETO_COMISSAO_CAMBIO_OS;
+                    descontoCambio += d.excedenteCambio;
+                }
+            });
+
+            const totalAjustes = ajustes.reduce((s, a) => s + parseFloat(a.valor || 0), 0);
+            const comissaoFinal = Math.max(0, comissaoBase - descontoCambio - totalAjustes);
+
+            return { totalUpsell, faixa, pct, comissaoBase, descontoCambio, totalAjustes, comissaoFinal, detalheOrdens };
         };
 
         // ============================================
@@ -893,6 +986,10 @@
                 servicos.push(texto);
             }
             
+            if (order.difDianteiro) servicos.push(`Óleo Diferencial Dianteiro (${order.difDianteiroMarca || 'N/A'} - ${order.difDianteiroQuantidade || 'N/A'}L)`);
+            if (order.difTraseiro) servicos.push(`Óleo Diferencial Traseiro (${order.difTraseiroMarca || 'N/A'} - ${order.difTraseiroQuantidade || 'N/A'}L)`);
+            if (order.caixaTransferencia) servicos.push(`Óleo Caixa de Transferência (${order.caixaTransferenciaMarca || 'N/A'} - ${order.caixaTransferenciaQuantidade || 'N/A'}L)`);
+            if (order.higienizacaoAC) servicos.push(`Higienização A/C${order.higienizacaoACGratis ? ' (GRÁTIS - caninho nos dutos)' : ''}`);
             if (order.palhetas) servicos.push(`Palhetas (${order.palhetasCodigo || 'N/A'})`);
             if (order.militec) servicos.push('Militec/Nano');
             if (order.aditivo) servicos.push(`Aditivo (${order.aditivoQual || 'N/A'})`);
@@ -911,6 +1008,10 @@
             filtroCombustivel: 'Filtro Combustível',
             cambioManual: 'Câmbio Manual',
             cambioAutomatico: 'Câmbio Automático',
+            difDianteiro: 'Óleo Diferencial Dianteiro',
+            difTraseiro: 'Óleo Diferencial Traseiro',
+            caixaTransferencia: 'Óleo Caixa de Transferência',
+            higienizacaoAC: 'Higienização A/C',
             palhetas: 'Palhetas',
             militec: 'Militec/Nano',
             aditivo: 'Aditivo',
@@ -1026,28 +1127,15 @@
                 
                 const metas = SYSTEM_CONFIG.METAS[tecnico];
                 
-                // Calcular métricas
+                // Calcular métricas (baseadas em upsell)
                 const totalOrdens = ordensDoTecnico.length;
-                const clientesAptos = ordensDoTecnico.filter(o => o.apto === 'sim').length;
-                const aptosRecebeuOferta = ordensDoTecnico.filter(o => o.clienteAptoRecebeuOferta).length;
                 const ordensComUpsell = ordensDoTecnico.filter(o => o.fezUpsell).length;
-                
-                const taxaOfertas = clientesAptos > 0 ? (aptosRecebeuOferta / clientesAptos) * 100 : 0;
                 const taxaUpsell = (ordensComUpsell / totalOrdens) * 100;
-                
+
                 // Nome do mês para exibição
                 const nomeMes = getNomeMes(mesVigente);
-                
-                // Gerar alertas baseado nas metas
-                if (taxaOfertas < metas.ofertas) {
-                    alertas.push({
-                        tipo: 'warning',
-                        tecnico: tecnico,
-                        mensagem: `Taxa de ofertas ${taxaOfertas.toFixed(1)}% (Meta: ${metas.ofertas}%) - ${nomeMes}/${anoVigente}`,
-                        detalhes: `${aptosRecebeuOferta}/${clientesAptos} clientes aptos receberam ofertas`
-                    });
-                }
-                
+
+                // Gerar alertas baseado na meta de upsell
                 if (taxaUpsell < metas.upsell) {
                     alertas.push({
                         tipo: 'warning',
@@ -1056,28 +1144,14 @@
                         detalhes: `${ordensComUpsell}/${totalOrdens} ordens com upsell`
                     });
                 }
-                
-                // Alerta crítico: sequência sem ofertas (últimas 10 do mês vigente)
-                const ultimas10 = ordensDoTecnico.slice(-10);
-                const aptosUltimas10 = ultimas10.filter(o => o.apto === 'sim');
-                const semOfertaUltimas10 = aptosUltimas10.filter(o => !o.clienteAptoRecebeuOferta);
-                
-                if (semOfertaUltimas10.length >= 3) {
-                    alertas.push({
-                        tipo: 'critical',
-                        tecnico: tecnico,
-                        mensagem: `🚨 CRÍTICO: ${semOfertaUltimas10.length} clientes aptos sem oferta nas últimas 10 ordens!`,
-                        detalhes: `Ordens: ${semOfertaUltimas10.map(o => '#' + o.numeroOrdem).join(', ')} (${nomeMes}/${anoVigente})`
-                    });
-                }
-                
+
                 // Alerta positivo
-                if (taxaOfertas >= metas.ofertas && taxaUpsell >= metas.upsell) {
+                if (taxaUpsell >= metas.upsell) {
                     alertas.push({
                         tipo: 'success',
                         tecnico: tecnico,
-                        mensagem: `🎉 Parabéns! Todas as metas atingidas!`,
-                        detalhes: `Ofertas: ${taxaOfertas.toFixed(1)}% | Upsell: ${taxaUpsell.toFixed(1)}%`
+                        mensagem: `🎉 Parabéns! Meta de upsell atingida!`,
+                        detalhes: `Upsell: ${taxaUpsell.toFixed(1)}%`
                     });
                 }
             }
@@ -1167,7 +1241,12 @@
         // ============================================
         // COMPONENTE: ABA VOLUMETRIA
         // ============================================
-        function VolumetriaTab({ orders, dataInicio, dataFim, lubrificadorFiltro, onDataInicioChange, onDataFimChange, onLubrificadorChange, isAdmin, expandedLubrificador, onToggleExpanded, onEditUpsell, onDeleteUpsell, loadOrders }) {
+        function VolumetriaTab({ orders, dataInicio, dataFim, lubrificadorFiltro, onDataInicioChange, onDataFimChange, onLubrificadorChange, isAdmin, expandedLubrificador, onToggleExpanded, onEditUpsell, onDeleteUpsell, loadOrders, comissaoConfig }) {
+            // Estado do modal de comissão (lubrificador selecionado)
+            const [comissaoLub, setComissaoLub] = useState(null);
+            const cfgComissao = comissaoConfig || GLOBAL_COMISSAO;
+            const mesRefComissao = (dataFim || '').slice(0, 7); // 'YYYY-MM' — mês de referência dos ajustes
+
             // Filtrar ordens concluídas no período
             const ordensFiltradas = orders.filter(order => {
                 if (order.status !== 'concluido') return false;
@@ -1245,25 +1324,16 @@
                         totalOrdens: 0,
                         faturamento: 0,
                         upsells: 0,
-                        valorUpsells: 0,
-                        clientesAptos: 0,
-                        aptosRecebeuOferta: 0
+                        valorUpsells: 0
                     };
                 }
-                
+
                 metricasPorLubrificador[lub].totalOrdens++;
                 metricasPorLubrificador[lub].faturamento += parseFloat(order.valorTotal || 0);
-                
+
                 if (order.fezUpsell) {
                     metricasPorLubrificador[lub].upsells++;
                     metricasPorLubrificador[lub].valorUpsells += parseFloat(order.valorUpsell || 0);
-                }
-                
-                if (order.apto === 'sim') {
-                    metricasPorLubrificador[lub].clientesAptos++;
-                    if (order.clienteAptoRecebeuOferta) {
-                        metricasPorLubrificador[lub].aptosRecebeuOferta++;
-                    }
                 }
             });
             
@@ -1506,7 +1576,7 @@
                                                 VALOR UPSELLS
                                             </th>
                                             <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600', color: '#4a5568', fontSize: '13px' }}>
-                                                TAXA OFERTAS
+                                                COMISSÃO
                                             </th>
                                         </tr>
                                     </thead>
@@ -1515,7 +1585,6 @@
                                             .sort((a, b) => b[1].totalOrdens - a[1].totalOrdens)
                                             .map(([lub, dados]) => {
                                                 const taxaUpsell = (dados.upsells / dados.totalOrdens * 100);
-                                                const taxaOfertas = dados.clientesAptos > 0 ? (dados.aptosRecebeuOferta / dados.clientesAptos * 100) : 0;
                                                 const meta = SYSTEM_CONFIG.METAS[lub];
                                                 const isExpanded = expandedLubrificador === lub;
                                                 
@@ -1529,7 +1598,13 @@
                                                             return dataB - dataA; // Mais recente primeiro
                                                         })
                                                     : [];
-                                                
+
+                                                // Comissão deste lubrificador no período (base real de upsell)
+                                                const ordensLub = ordensFiltradas.filter(o => normalizarLubrificador(o.lubrificador) === lub);
+                                                const ajustesLub = (((cfgComissao.ajustes || {})[mesRefComissao]) || {})[lub] || [];
+                                                const comissao = calcularComissaoLub(ordensLub, ajustesLub);
+                                                const senhaLub = (cfgComissao.senhas || {})[lub] || '';
+
                                                 return (
                                                     <React.Fragment key={lub}>
                                                         <tr style={{ borderBottom: '1px solid #f7fafc' }}>
@@ -1572,17 +1647,28 @@
                                                                 R$ {aplicarFatorAjuste(dados.valorUpsells).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                                             </td>
                                                             <td style={{ padding: '15px', textAlign: 'center' }}>
-                                                                <span style={{
-                                                                    padding: '4px 12px',
-                                                                    borderRadius: '20px',
-                                                                    fontSize: '12px',
-                                                                    fontWeight: '600',
-                                                                    background: meta && taxaOfertas >= meta.ofertas ? '#c6f6d5' : '#feebc8',
-                                                                    color: meta && taxaOfertas >= meta.ofertas ? '#22543d' : '#7c2d12'
-                                                                }}>
-                                                                    {taxaOfertas.toFixed(1)}%
-                                                                    {meta && ` / ${meta.ofertas}%`}
+                                                                <span
+                                                                    onClick={() => setComissaoLub({ lub, comissao, senha: senhaLub, ajustes: ajustesLub })}
+                                                                    title="Clique e informe sua senha para ver a comissão"
+                                                                    style={{
+                                                                        display: 'inline-block',
+                                                                        padding: '4px 14px',
+                                                                        borderRadius: '20px',
+                                                                        fontSize: '13px',
+                                                                        fontWeight: '700',
+                                                                        color: '#22543d',
+                                                                        background: '#c6f6d5',
+                                                                        cursor: 'pointer',
+                                                                        filter: 'blur(5px)',
+                                                                        transition: 'filter 0.15s',
+                                                                        userSelect: 'none'
+                                                                    }}
+                                                                    onMouseEnter={(e) => { e.currentTarget.style.filter = 'blur(3px)'; }}
+                                                                    onMouseLeave={(e) => { e.currentTarget.style.filter = 'blur(5px)'; }}
+                                                                >
+                                                                    R$ {comissao.comissaoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                                                 </span>
+                                                                <div style={{ fontSize: '10px', color: '#a0aec0', marginTop: '4px' }}>🔒 clique p/ ver</div>
                                                             </td>
                                                         </tr>
                                                         
@@ -1688,6 +1774,154 @@
                             </div>
                         )}
                     </div>
+
+                    {comissaoLub && (
+                        <ComissaoModal
+                            dados={comissaoLub}
+                            mesRef={mesRefComissao}
+                            onClose={() => setComissaoLub(null)}
+                        />
+                    )}
+                </div>
+            );
+        }
+
+        // ============================================
+        // MODAL: COMISSÃO DO LUBRIFICADOR (protegido por senha)
+        // ============================================
+        function ComissaoModal({ dados, mesRef, onClose }) {
+            const { lub, comissao, senha, ajustes } = dados;
+            const temSenha = !!(senha && senha.length > 0);
+            const [autenticado, setAutenticado] = useState(!temSenha);
+            const [senhaDigitada, setSenhaDigitada] = useState('');
+
+            const tentarAcesso = () => {
+                if (senhaDigitada === senha) {
+                    setAutenticado(true);
+                } else {
+                    alert('❌ Senha incorreta.');
+                }
+            };
+
+            const fmt = (v) => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+            const [ano, mes] = (mesRef || '').split('-');
+            const mesLabel = mes ? `${getNomeMes(parseInt(mes))}/${ano}` : mesRef;
+
+            return (
+                <div className="modal">
+                    <div className="modal-content" style={{ maxWidth: '620px' }}>
+                        <div className="modal-header">
+                            <div className="modal-title">💰 Comissão — {lub}</div>
+                            <button className="close-btn" onClick={onClose}>✕</button>
+                        </div>
+                        <div className="modal-body">
+                            {!autenticado ? (
+                                <div style={{ textAlign: 'center', padding: '20px' }}>
+                                    <div style={{ fontSize: '48px', marginBottom: '10px' }}>🔒</div>
+                                    <p style={{ color: '#4a5568', marginBottom: '15px' }}>
+                                        Digite sua senha para ver a comissão de <strong>{lub}</strong>.
+                                    </p>
+                                    <input
+                                        type="password"
+                                        value={senhaDigitada}
+                                        onChange={(e) => setSenhaDigitada(e.target.value)}
+                                        onKeyPress={(e) => e.key === 'Enter' && tentarAcesso()}
+                                        placeholder="Senha"
+                                        className="form-input"
+                                        style={{ maxWidth: '260px', margin: '0 auto 15px', textAlign: 'center' }}
+                                        autoFocus
+                                    />
+                                    <div>
+                                        <button className="btn btn-primary" onClick={tentarAcesso}>🔓 Acessar</button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="alert alert-info" style={{ marginBottom: '15px' }}>
+                                        📅 Período de referência: <strong>{mesLabel}</strong>
+                                    </div>
+
+                                    {/* Resumo do cálculo */}
+                                    <div className="section-title">Cálculo</div>
+                                    <div className="info-row">
+                                        <span className="info-label">Total de upsell no mês:</span>
+                                        <span style={{ fontWeight: 'bold' }}>{fmt(comissao.totalUpsell)}</span>
+                                    </div>
+                                    <div className="info-row">
+                                        <span className="info-label">Faixa aplicada:</span>
+                                        <span style={{ fontWeight: 'bold', color: '#667eea' }}>{comissao.faixa.label} → {comissao.pct}%</span>
+                                    </div>
+                                    <div className="info-row">
+                                        <span className="info-label">Comissão base ({comissao.pct}%):</span>
+                                        <span>{fmt(comissao.comissaoBase)}</span>
+                                    </div>
+                                    {comissao.descontoCambio > 0 && (
+                                        <div className="info-row">
+                                            <span className="info-label">Ajuste teto câmbio (R$50/OS):</span>
+                                            <span style={{ color: '#f56565' }}>- {fmt(comissao.descontoCambio)}</span>
+                                        </div>
+                                    )}
+                                    {ajustes && ajustes.length > 0 && (
+                                        <>
+                                            <div className="section-title" style={{ marginTop: '18px' }}>Ajustes (ADM)</div>
+                                            {ajustes.map((a, i) => (
+                                                <div className="info-row" key={i}>
+                                                    <span className="info-label">{a.descricao || 'Ajuste'}:</span>
+                                                    <span style={{ color: '#f56565' }}>- {fmt(a.valor)}</span>
+                                                </div>
+                                            ))}
+                                            <div className="info-row">
+                                                <span className="info-label">Total de ajustes:</span>
+                                                <span style={{ color: '#f56565', fontWeight: 'bold' }}>- {fmt(comissao.totalAjustes)}</span>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    <div className="value-display" style={{ marginTop: '18px' }}>
+                                        <div className="value-row value-total">
+                                            <span className="value-label">COMISSÃO A RECEBER:</span>
+                                            <span className="value-amount">{fmt(comissao.comissaoFinal)}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Tabela de faixas (transparência) */}
+                                    <div className="section-title" style={{ marginTop: '20px' }}>📊 Faixas de comissão</div>
+                                    <div className="services-list">
+                                        {FAIXAS_COMISSAO.map((f, i) => (
+                                            <div key={i} className="info-row" style={{
+                                                background: f.pct === comissao.pct ? '#ebf8ff' : 'transparent',
+                                                borderRadius: '6px', padding: '6px 8px'
+                                            }}>
+                                                <span>{f.label}</span>
+                                                <span style={{ fontWeight: f.pct === comissao.pct ? 'bold' : 'normal', color: f.pct === comissao.pct ? '#2b6cb0' : '#4a5568' }}>
+                                                    {f.pct}%{f.pct === comissao.pct ? ' ✓' : ''}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p style={{ fontSize: '12px', color: '#a0aec0', marginTop: '10px' }}>
+                                        ℹ️ Fluido de câmbio vendido pelo mecânico tem teto de comissão de R$ 50,00 por OS.
+                                        Comissão à vista, junto ao fechamento da OS. Valores já consideram o fator de ajuste.
+                                    </p>
+
+                                    {/* Detalhe das ordens */}
+                                    {comissao.detalheOrdens.length > 0 && (
+                                        <>
+                                            <div className="section-title" style={{ marginTop: '20px' }}>🧾 Ordens do período ({comissao.detalheOrdens.length})</div>
+                                            <div className="services-list">
+                                                {comissao.detalheOrdens.map((d, i) => (
+                                                    <div key={i} className="info-row">
+                                                        <span>#{d.numeroOrdem} • {d.placa}{d.valorCambio > 0 ? ' 🔧câmbio' : ''}</span>
+                                                        <span style={{ fontWeight: '600', color: '#48bb78' }}>{fmt(d.valorUpsell)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    </div>
                 </div>
             );
         }
@@ -1737,6 +1971,7 @@
             const [fatorAjuste, setFatorAjuste] = useState(() => {
                 return parseFloat(localStorage.getItem('fatorAjuste') || '0');
             }); // Fator % ajuste valores (só ADM)
+            const [comissaoConfig, setComissaoConfig] = useState(GLOBAL_COMISSAO); // Senhas + ajustes de comissão (global)
             const [showEditHorarioModal, setShowEditHorarioModal] = useState(false); // Modal editar horários
             const [showEditUpsellModal, setShowEditUpsellModal] = useState(false); // Modal editar upsell
             const [selectedUpsellOrder, setSelectedUpsellOrder] = useState(null); // Ordem selecionada para editar upsell
@@ -1777,10 +2012,20 @@
             useEffect(() => {
                 const unsub = db.collection('config').doc('global').onSnapshot(
                     (doc) => {
-                        const fator = doc.exists ? parseFloat(doc.data().fatorAjuste || 0) : 0;
+                        const data = doc.exists ? doc.data() : {};
+                        const fator = parseFloat(data.fatorAjuste || 0);
                         GLOBAL_FATOR_AJUSTE = fator;
                         localStorage.setItem('fatorAjuste', fator.toString());
                         setFatorAjuste(fator);
+
+                        // Config de comissão (senhas + ajustes)
+                        const comissao = {
+                            senhas: (data.comissao && data.comissao.senhas) || {},
+                            ajustes: (data.comissao && data.comissao.ajustes) || {}
+                        };
+                        GLOBAL_COMISSAO = comissao;
+                        localStorage.setItem('comissaoConfig', JSON.stringify(comissao));
+                        setComissaoConfig(comissao);
                     },
                     (err) => console.error('Erro ao ouvir configuração global:', err)
                 );
@@ -2188,6 +2433,7 @@
                                 setShowEditUpsellModal(true);
                             }}
                             loadOrders={loadOrders}
+                            comissaoConfig={comissaoConfig}
                         />
                     )}
 
@@ -2720,6 +2966,17 @@
                 fluidoFreio: false,
                 fluidoFreioMarca: '',
                 fluidoFreioQuantidade: '',
+                difDianteiro: false,
+                difDianteiroMarca: '',
+                difDianteiroQuantidade: '',
+                difTraseiro: false,
+                difTraseiroMarca: '',
+                difTraseiroQuantidade: '',
+                caixaTransferencia: false,
+                caixaTransferenciaMarca: '',
+                caixaTransferenciaQuantidade: '',
+                higienizacaoAC: false,
+                higienizacaoACGratis: false,
                 filtroOleo: false,
                 filtroOleoTipo: '',
                 arMotor: false,
@@ -2744,9 +3001,12 @@
                 aditivoQual: '',
                 flush: false,
                 flushDescricao: '',
-                
-                apto: 'sim',
-                motivoNaoApto: '',
+
+                // Flags "Executar sem questionar/fazer testes" (default LIGADO).
+                // O time de vendas pode desligar na abertura, para câmbio e freio.
+                execCambioSemQuestionar: true,
+                execFreioSemQuestionar: true,
+
                 valorInicial: ''
             });
 
@@ -2782,6 +3042,8 @@
                 const hasService = formData.oleoMotor || formData.fluidoFreio || formData.filtroOleo || formData.arMotor ||
                                   formData.arCondicionado || formData.filtroCombustivel ||
                                   formData.cambioManual || formData.cambioAutomatico ||
+                                  formData.difDianteiro || formData.difTraseiro || formData.caixaTransferencia ||
+                                  formData.higienizacaoAC ||
                                   formData.palhetas || formData.militec || formData.aditivo || formData.flush;
                 
                 if (!hasService) {
@@ -2797,12 +3059,7 @@
                     alert('Preencha o valor inicial da venda');
                     return false;
                 }
-                
-                if (formData.apto === 'nao' && !formData.motivoNaoApto) {
-                    alert('Informe o motivo do cliente não ser apto para ofertas');
-                    return false;
-                }
-                
+
                 return true;
             };
 
@@ -3264,15 +3521,84 @@
                                         <label htmlFor="fluidoFreio">Troca de Fluído de Freio</label>
                                     </div>
                                     {formData.fluidoFreio && (
+                                        <div style={{ marginLeft: '30px', marginBottom: '15px' }}>
+                                            <div className="form-row">
+                                                <div className="form-group">
+                                                    <label className="form-label">Marca do Fluído</label>
+                                                    <input type="text" name="fluidoFreioMarca" value={formData.fluidoFreioMarca} onChange={handleChange} className="form-input" placeholder="Ex: Bosch DOT4" />
+                                                </div>
+                                                <div className="form-group">
+                                                    <label className="form-label">Quantidade (L)</label>
+                                                    <input type="number" step="0.01" name="fluidoFreioQuantidade" value={formData.fluidoFreioQuantidade} onChange={handleChange} className="form-input" placeholder="Ex: 1.0" />
+                                                </div>
+                                            </div>
+                                            <div className="checkbox-group" style={{ background: '#fff3cd', padding: '10px', borderRadius: '8px', border: '1px solid #ffc107' }}>
+                                                <input type="checkbox" id="execFreioSemQuestionar" name="execFreioSemQuestionar" checked={formData.execFreioSemQuestionar} onChange={handleChange} />
+                                                <label htmlFor="execFreioSemQuestionar" style={{ fontWeight: '600', color: '#856404' }}>⚡ Executar sem questionar / fazer testes (fluído de freio)</label>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* NOVOS SERVIÇOS */}
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="difDianteiro" name="difDianteiro" checked={formData.difDianteiro} onChange={handleChange} />
+                                        <label htmlFor="difDianteiro">Óleo de Diferencial Dianteiro</label>
+                                    </div>
+                                    {formData.difDianteiro && (
                                         <div className="form-row" style={{ marginLeft: '30px', marginBottom: '15px' }}>
                                             <div className="form-group">
-                                                <label className="form-label">Marca do Fluído</label>
-                                                <input type="text" name="fluidoFreioMarca" value={formData.fluidoFreioMarca} onChange={handleChange} className="form-input" placeholder="Ex: Bosch DOT4" />
+                                                <label className="form-label">Marca do Óleo</label>
+                                                <input type="text" name="difDianteiroMarca" value={formData.difDianteiroMarca} onChange={handleChange} className="form-input" placeholder="Ex: 75W90" />
                                             </div>
                                             <div className="form-group">
                                                 <label className="form-label">Quantidade (L)</label>
-                                                <input type="number" step="0.01" name="fluidoFreioQuantidade" value={formData.fluidoFreioQuantidade} onChange={handleChange} className="form-input" placeholder="Ex: 1.0" />
+                                                <input type="number" step="0.01" name="difDianteiroQuantidade" value={formData.difDianteiroQuantidade} onChange={handleChange} className="form-input" placeholder="Ex: 1.5" />
                                             </div>
+                                        </div>
+                                    )}
+
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="difTraseiro" name="difTraseiro" checked={formData.difTraseiro} onChange={handleChange} />
+                                        <label htmlFor="difTraseiro">Óleo de Diferencial Traseiro</label>
+                                    </div>
+                                    {formData.difTraseiro && (
+                                        <div className="form-row" style={{ marginLeft: '30px', marginBottom: '15px' }}>
+                                            <div className="form-group">
+                                                <label className="form-label">Marca do Óleo</label>
+                                                <input type="text" name="difTraseiroMarca" value={formData.difTraseiroMarca} onChange={handleChange} className="form-input" placeholder="Ex: 75W90" />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Quantidade (L)</label>
+                                                <input type="number" step="0.01" name="difTraseiroQuantidade" value={formData.difTraseiroQuantidade} onChange={handleChange} className="form-input" placeholder="Ex: 1.5" />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="caixaTransferencia" name="caixaTransferencia" checked={formData.caixaTransferencia} onChange={handleChange} />
+                                        <label htmlFor="caixaTransferencia">Óleo de Caixa de Transferência</label>
+                                    </div>
+                                    {formData.caixaTransferencia && (
+                                        <div className="form-row" style={{ marginLeft: '30px', marginBottom: '15px' }}>
+                                            <div className="form-group">
+                                                <label className="form-label">Marca do Óleo</label>
+                                                <input type="text" name="caixaTransferenciaMarca" value={formData.caixaTransferenciaMarca} onChange={handleChange} className="form-input" placeholder="Ex: Dexron VI" />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Quantidade (L)</label>
+                                                <input type="number" step="0.01" name="caixaTransferenciaQuantidade" value={formData.caixaTransferenciaQuantidade} onChange={handleChange} className="form-input" placeholder="Ex: 1.0" />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="higienizacaoAC" name="higienizacaoAC" checked={formData.higienizacaoAC} onChange={handleChange} />
+                                        <label htmlFor="higienizacaoAC">Higienização de Ar Condicionado</label>
+                                    </div>
+                                    {formData.higienizacaoAC && (
+                                        <div className="checkbox-group" style={{ marginLeft: '30px', marginBottom: '15px', background: '#e6f2ff', padding: '10px', borderRadius: '8px' }}>
+                                            <input type="checkbox" id="higienizacaoACGratis" name="higienizacaoACGratis" checked={formData.higienizacaoACGratis} onChange={handleChange} />
+                                            <label htmlFor="higienizacaoACGratis" style={{ fontWeight: '600', color: '#2d5ba6' }}>É a higienização GRÁTIS (caninho nos dutos) — sem valor/comissão</label>
                                         </div>
                                     )}
 
@@ -3381,6 +3707,13 @@
                                         </div>
                                     )}
 
+                                    {(formData.cambioManual || formData.cambioAutomatico) && (
+                                        <div className="checkbox-group" style={{ marginLeft: '30px', marginBottom: '15px', background: '#fff3cd', padding: '10px', borderRadius: '8px', border: '1px solid #ffc107' }}>
+                                            <input type="checkbox" id="execCambioSemQuestionar" name="execCambioSemQuestionar" checked={formData.execCambioSemQuestionar} onChange={handleChange} />
+                                            <label htmlFor="execCambioSemQuestionar" style={{ fontWeight: '600', color: '#856404' }}>⚡ Executar sem questionar / fazer testes (fluído de câmbio)</label>
+                                        </div>
+                                    )}
+
                                     <div className="checkbox-group">
                                         <input type="checkbox" id="palhetas" name="palhetas" checked={formData.palhetas} onChange={handleChange} />
                                         <label htmlFor="palhetas">Troca de Palhetas</label>
@@ -3430,21 +3763,6 @@
                             {step === 3 && (
                                 <div>
                                     <div className="form-group">
-                                        <label className="form-label">Cliente está apto para receber ofertas? *</label>
-                                        <select name="apto" value={formData.apto} onChange={handleChange} className="form-select" required>
-                                            <option value="sim">Sim</option>
-                                            <option value="nao">Não</option>
-                                        </select>
-                                    </div>
-
-                                    {formData.apto === 'nao' && (
-                                        <div className="form-group">
-                                            <label className="form-label">Motivo *</label>
-                                            <textarea name="motivoNaoApto" value={formData.motivoNaoApto} onChange={handleChange} className="form-textarea" placeholder="Por que o cliente não está apto?" required></textarea>
-                                        </div>
-                                    )}
-
-                                    <div className="form-group">
                                         <label className="form-label">Valor da Venda Inicial (R$) *</label>
                                         <input type="number" step="0.01" name="valorInicial" value={formData.valorInicial} onChange={handleChange} className="form-input" placeholder="0.00" required />
                                     </div>
@@ -3483,6 +3801,55 @@
             );
         }
 
+        // Painel colapsável com as regras de upsell/comissão (clareza para o mecânico)
+        function RegrasUpsellPanel() {
+            const [aberto, setAberto] = useState(false);
+            return (
+                <div style={{ border: '2px solid #4299e1', borderRadius: '10px', marginBottom: '20px', overflow: 'hidden' }}>
+                    <div
+                        onClick={() => setAberto(!aberto)}
+                        style={{ background: '#ebf8ff', padding: '12px 15px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: '700', color: '#2b6cb0' }}
+                    >
+                        <span>📋 Regras de Upsell e Comissão {aberto ? '' : '(toque para ver)'}</span>
+                        <span>{aberto ? '▲' : '▼'}</span>
+                    </div>
+                    {aberto && (
+                        <div style={{ padding: '15px', fontSize: '13px', color: '#2d3748', lineHeight: '1.6' }}>
+                            <div style={{ fontWeight: '700', color: '#22543d', marginBottom: '4px' }}>✅ CONTA como upsell (entra na comissão):</div>
+                            <ul style={{ margin: '0 0 12px 0', paddingLeft: '20px' }}>
+                                <li>Sanitização/Higienização de A/C (a paga)</li>
+                                <li>Filtros adicionais (combustível, cabine, ar)</li>
+                                <li>Aditivos (radiador, combustível, óleo, limpeza de bicos, produtos de limpeza)</li>
+                                <li>Fluido de freio</li>
+                                <li>Limpadores de para-brisa (palhetas)</li>
+                                <li>Scanner/testes de óleo de câmbio — desde que cobrados e oferecidos pelo mecânico</li>
+                                <li>Fluido de câmbio vendido pelo mecânico, em cima de carro que entrou para outro serviço — <strong>teto de R$ 50 por OS</strong></li>
+                            </ul>
+                            <div style={{ fontWeight: '700', color: '#822727', marginBottom: '4px' }}>❌ NÃO conta:</div>
+                            <ul style={{ margin: '0 0 12px 0', paddingLeft: '20px' }}>
+                                <li>Câmbio agendado pelo vendedor (cliente já veio para isso)</li>
+                                <li>Vendas feitas pelo balcão/vendedor</li>
+                            </ul>
+                            <div style={{ fontWeight: '700', color: '#2b6cb0', marginBottom: '4px' }}>📊 Faixas (sobre o total de upsell do mês):</div>
+                            <ul style={{ margin: '0 0 12px 0', paddingLeft: '20px' }}>
+                                <li>Abaixo de R$ 5.000 → 0%</li>
+                                <li>R$ 5.000 a R$ 7.999 → 3%</li>
+                                <li>R$ 8.000 a R$ 12.000 → 5%</li>
+                                <li>R$ 12.000 ou mais → 7%</li>
+                            </ul>
+                            <div style={{ fontWeight: '700', color: '#822727', marginBottom: '4px' }}>⚠️ Descontos:</div>
+                            <ul style={{ margin: '0', paddingLeft: '20px' }}>
+                                <li>Retorno por vazamento: −R$ 30</li>
+                                <li>Protetor de cárter mal encaixado: −R$ 30</li>
+                                <li>Estorno por insatisfação/reembolso/refação do item de upsell</li>
+                            </ul>
+                            <p style={{ marginTop: '10px', color: '#718096' }}>Comissão paga à vista, junto ao fechamento da OS.</p>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
         // Modal Executar Serviço
         function ExecutarServicoModal({ order, onClose, onSuccess }) {
             const [step, setStep] = useState(1);
@@ -3498,7 +3865,10 @@
                 // NOVOS CAMPOS v5.0
                 temVazamento: order.inspecao?.temVazamento || 'nao',
                 fotosVazamento: order.inspecao?.fotosVazamento || [],
-                uploadingVazamento: false
+                uploadingVazamento: false,
+                // Fluído de freio confirmado na execução
+                fluidoFreioExec: order.fluidoFreio || false,
+                fluidoFreioQuantidadeExec: order.fluidoFreioQuantidade || ''
             });
 
             // Auto-save: Salvar progresso no Firebase a cada mudança
@@ -3622,7 +3992,7 @@
                     ).length;
                     
                     // MÉTRICAS PARA SISTEMA DE METAS
-                    const clienteAptoRecebeuOferta = order.apto === 'sim' && totalOfertasFeitas > 0;
+                    const clienteAptoRecebeuOferta = totalOfertasFeitas > 0;
                     const taxaConversaoOferta = totalOfertasFeitas > 0 ? (ofertasAceitas / totalOfertasFeitas) * 100 : 0;
 
                     const updateData = {
@@ -3638,9 +4008,12 @@
                         valorTotal,
                         fezUpsell: quantidadeItensUpsell > 0,
                         quantidadeItensUpsell,
+                        // Fluído de freio confirmado na execução
+                        fluidoFreio: !!formData.fluidoFreioExec,
+                        fluidoFreioQuantidade: formData.fluidoFreioExec ? formData.fluidoFreioQuantidadeExec : '',
                         // NOVOS CAMPOS PARA METAS
                         totalOfertasFeitas, // Quantas ofertas o técnico fez
-                        clienteAptoRecebeuOferta, // true/false se cliente apto recebeu oferta
+                        clienteAptoRecebeuOferta, // ofertas feitas > 0
                         taxaConversaoOferta, // % de conversão das ofertas feitas
                         tempoEspera: order.dataHora && formData.inicio ? calcularDiferencaTempo(
                             new Date(order.dataHora).toLocaleString('pt-BR'),
@@ -3677,6 +4050,10 @@
                 { key: 'filtroCombustivel', label: 'Filtro Combustível', vendido: order.filtroCombustivel, temFoto: true },
                 { key: 'cambioManual', label: 'Câmbio Manual', vendido: order.cambioManual },
                 { key: 'cambioAutomatico', label: 'Câmbio Automático', vendido: order.cambioAutomatico },
+                { key: 'difDianteiro', label: 'Óleo Diferencial Dianteiro', vendido: order.difDianteiro },
+                { key: 'difTraseiro', label: 'Óleo Diferencial Traseiro', vendido: order.difTraseiro },
+                { key: 'caixaTransferencia', label: 'Óleo Caixa de Transferência', vendido: order.caixaTransferencia },
+                { key: 'higienizacaoAC', label: 'Higienização A/C', vendido: order.higienizacaoAC },
                 { key: 'palhetas', label: 'Palhetas', vendido: order.palhetas },
                 { key: 'militec', label: 'Militec/Nano', vendido: order.militec },
                 { key: 'aditivo', label: 'Aditivo', vendido: order.aditivo },
@@ -3895,30 +4272,41 @@
                                                 {order.cambioAutomaticoFiltroCodigo && ` | Filtro: ${order.cambioAutomaticoFiltroCodigo}`})
                                             </div>
                                         )}
+                                        {order.difDianteiro && <div className="service-item">✓ Óleo Diferencial Dianteiro ({order.difDianteiroMarca} - {order.difDianteiroQuantidade}L)</div>}
+                                        {order.difTraseiro && <div className="service-item">✓ Óleo Diferencial Traseiro ({order.difTraseiroMarca} - {order.difTraseiroQuantidade}L)</div>}
+                                        {order.caixaTransferencia && <div className="service-item">✓ Óleo Caixa de Transferência ({order.caixaTransferenciaMarca} - {order.caixaTransferenciaQuantidade}L)</div>}
+                                        {order.higienizacaoAC && <div className="service-item">✓ Higienização A/C{order.higienizacaoACGratis ? ' (GRÁTIS - caninho nos dutos)' : ''}</div>}
                                         {order.palhetas && <div className="service-item">✓ Palhetas ({order.palhetasCodigo})</div>}
                                         {order.militec && <div className="service-item">✓ Militec/Nano</div>}
                                         {order.aditivo && <div className="service-item">✓ Aditivo ({order.aditivoQual})</div>}
                                         {order.flush && <div className="service-item">✓ Flush</div>}
                                     </div>
 
-                                    {order.apto === 'sim' ? (
-                                        <div className="alert alert-success">
-                                            <strong>✅ CLIENTE ACEITA OFERTAS!</strong>
-                                            <div>Ofereça serviços adicionais na próxima etapa</div>
-                                        </div>
-                                    ) : (
-                                        <div className="alert alert-danger">
-                                            <strong>❌ NÃO OFERECER SERVIÇOS EXTRAS</strong>
-                                            <div>Motivo: {order.motivoNaoApto}</div>
+                                    {/* Instruções "executar sem questionar" definidas pelo vendas na abertura */}
+                                    {(order.cambioManual || order.cambioAutomatico) && order.execCambioSemQuestionar && (
+                                        <div className="alert" style={{ background: '#fff3cd', border: '2px solid #ffc107', color: '#856404' }}>
+                                            <strong>⚡ FLUÍDO DE CÂMBIO: executar sem questionar / sem fazer testes.</strong>
                                         </div>
                                     )}
+                                    {order.fluidoFreio && order.execFreioSemQuestionar && (
+                                        <div className="alert" style={{ background: '#fff3cd', border: '2px solid #ffc107', color: '#856404' }}>
+                                            <strong>⚡ FLUÍDO DE FREIO: executar sem questionar / sem fazer testes.</strong>
+                                        </div>
+                                    )}
+
+                                    <div className="alert alert-success">
+                                        <strong>💡 Ofereça serviços adicionais na próxima etapa</strong>
+                                        <div>Consulte as regras de upsell antes de oferecer.</div>
+                                    </div>
                                 </div>
                             )}
 
-                            {step === 2 && order.apto === 'sim' && (
+                            {step === 2 && (
                                 <div>
                                     <div className="section-title">Ofertas Adicionais (Upsell)</div>
-                                    
+
+                                    <RegrasUpsellPanel />
+
                                     {servicosDisponiveis.length === 0 ? (
                                         <div className="alert alert-info">
                                             Todos os serviços já foram vendidos pelo vendedor.
@@ -4032,15 +4420,42 @@
                                 </div>
                             )}
 
-                            {(step === 3 || (step === 2 && order.apto !== 'sim')) && (
+                            {step === 3 && (
                                 <div>
+                                    {/* Troca de fluído de freio realizada na execução */}
+                                    <div className="section-title">Fluído de Freio</div>
+                                    <div className="checkbox-group" style={{ marginBottom: '10px' }}>
+                                        <input
+                                            type="checkbox"
+                                            id="fluidoFreioExec"
+                                            checked={formData.fluidoFreioExec}
+                                            onChange={(e) => setFormData(prev => ({ ...prev, fluidoFreioExec: e.target.checked }))}
+                                        />
+                                        <label htmlFor="fluidoFreioExec" style={{ fontWeight: '600' }}>Troca de fluído de freio realizada</label>
+                                    </div>
+                                    {formData.fluidoFreioExec && (
+                                        <div className="form-group" style={{ marginLeft: '30px', marginBottom: '15px' }}>
+                                            <label className="form-label">Quantidade de Fluído (L)</label>
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                name="fluidoFreioQuantidadeExec"
+                                                value={formData.fluidoFreioQuantidadeExec}
+                                                onChange={handleChange}
+                                                className="form-input"
+                                                placeholder="Ex: 1.0"
+                                                style={{ maxWidth: '200px' }}
+                                            />
+                                        </div>
+                                    )}
+
                                     <div className="form-group">
                                         <label className="form-label">Observações sobre o Carro</label>
-                                        <textarea 
-                                            name="obsCarro" 
-                                            value={formData.obsCarro} 
-                                            onChange={handleChange} 
-                                            className="form-textarea" 
+                                        <textarea
+                                            name="obsCarro"
+                                            value={formData.obsCarro}
+                                            onChange={handleChange}
+                                            className="form-textarea"
                                             placeholder="Ex: Vazamento de óleo, pneus gastos..."
                                             rows="3"
                                         ></textarea>
@@ -4083,7 +4498,7 @@
                                         ← Voltar
                                     </button>
                                 )}
-                                {(step === 1 || (step === 2 && order.apto === 'sim' && servicosDisponiveis.length > 0)) ? (
+                                {(step === 1 || step === 2) ? (
                                     <button className="btn btn-primary" onClick={() => setStep(step + 1)} style={{ marginLeft: 'auto' }}>
                                         Próximo →
                                     </button>
@@ -4532,13 +4947,16 @@
                 cambioAutomaticoMarca: order.cambioAutomaticoMarca || '',
                 cambioAutomaticoQuantidade: order.cambioAutomaticoQuantidade || '',
                 cambioAutomaticoFluidoCarter: order.cambioAutomaticoFluidoCarter || '',
+                difDianteiroMarca: order.difDianteiroMarca || '',
+                difDianteiroQuantidade: order.difDianteiroQuantidade || '',
+                difTraseiroMarca: order.difTraseiroMarca || '',
+                difTraseiroQuantidade: order.difTraseiroQuantidade || '',
+                caixaTransferenciaMarca: order.caixaTransferenciaMarca || '',
+                caixaTransferenciaQuantidade: order.caixaTransferenciaQuantidade || '',
                 palhetasCodigo: order.palhetasCodigo || '',
                 aditivoQual: order.aditivoQual || '',
                 lubrificador: order.lubrificador || '',
                 valorInicial: order.valorInicial || '',
-                apto: order.apto || '',
-                motivoNaoApto: order.motivoNaoApto || '',
-                clienteAptoRecebeuOferta: order.clienteAptoRecebeuOferta || false,
                 // CAMPOS DE RETORNO - v5.0
                 isRetorno: order.retorno?.isRetorno || false,
                 motivoRetorno: order.retorno?.motivo || '',
@@ -4701,6 +5119,42 @@
                                     </div>
                                 </>
                             )}
+                            {order.difDianteiro && (
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Marca Óleo Dif. Dianteiro</label>
+                                        <input type="text" name="difDianteiroMarca" value={formData.difDianteiroMarca} onChange={handleChange} className="form-input" />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Quantidade (L)</label>
+                                        <input type="number" step="0.01" name="difDianteiroQuantidade" value={formData.difDianteiroQuantidade} onChange={handleChange} className="form-input" />
+                                    </div>
+                                </div>
+                            )}
+                            {order.difTraseiro && (
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Marca Óleo Dif. Traseiro</label>
+                                        <input type="text" name="difTraseiroMarca" value={formData.difTraseiroMarca} onChange={handleChange} className="form-input" />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Quantidade (L)</label>
+                                        <input type="number" step="0.01" name="difTraseiroQuantidade" value={formData.difTraseiroQuantidade} onChange={handleChange} className="form-input" />
+                                    </div>
+                                </div>
+                            )}
+                            {order.caixaTransferencia && (
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">Marca Óleo Caixa Transf.</label>
+                                        <input type="text" name="caixaTransferenciaMarca" value={formData.caixaTransferenciaMarca} onChange={handleChange} className="form-input" />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Quantidade (L)</label>
+                                        <input type="number" step="0.01" name="caixaTransferenciaQuantidade" value={formData.caixaTransferenciaQuantidade} onChange={handleChange} className="form-input" />
+                                    </div>
+                                </div>
+                            )}
                             {order.palhetas && (
                                 <div className="form-group">
                                     <label className="form-label">Código Palhetas</label>
@@ -4716,45 +5170,6 @@
                                         <input type="text" name="lubrificador" value={formData.lubrificador} onChange={handleChange} className="form-input" />
                                     </div>
                                 </>
-                            )}
-
-                            {/* NOVA SEÇÃO: Aptidão e Oferta - EDITÁVEL */}
-                            <div className="section-title">📊 Aptidão e Ofertas</div>
-                            <div className="form-group">
-                                <label className="form-label">Cliente Apto para Ofertas?</label>
-                                <select name="apto" value={formData.apto} onChange={handleChange} className="form-select">
-                                    <option value="">Selecione...</option>
-                                    <option value="sim">✅ Sim</option>
-                                    <option value="nao">❌ Não</option>
-                                </select>
-                            </div>
-
-                            {formData.apto === 'nao' && (
-                                <div className="form-group">
-                                    <label className="form-label">Motivo de Não Apto</label>
-                                    <input 
-                                        type="text" 
-                                        name="motivoNaoApto" 
-                                        value={formData.motivoNaoApto} 
-                                        onChange={handleChange} 
-                                        className="form-input"
-                                        placeholder="Ex: Cliente sem tempo, apenas serviço básico"
-                                    />
-                                </div>
-                            )}
-
-                            {formData.apto === 'sim' && (
-                                <div className="checkbox-group" style={{ marginTop: '15px' }}>
-                                    <input 
-                                        type="checkbox" 
-                                        id="editClienteAptoRecebeuOferta"
-                                        checked={formData.clienteAptoRecebeuOferta}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, clienteAptoRecebeuOferta: e.target.checked }))}
-                                    />
-                                    <label htmlFor="editClienteAptoRecebeuOferta" style={{ fontWeight: '600' }}>
-                                        Cliente apto recebeu oferta do lubrificador
-                                    </label>
-                                </div>
                             )}
 
                             {order.valorInicial && (
@@ -4900,6 +5315,43 @@
             const [mesVigente, setMesVigente] = useState(SYSTEM_CONFIG.MES_VIGENTE.mes);
             const [anoVigente, setAnoVigente] = useState(SYSTEM_CONFIG.MES_VIGENTE.ano);
 
+            // Estados de comissão (senhas por lubrificador + ajustes por mês)
+            const [comissaoSenhas, setComissaoSenhas] = useState(() => ({ ...(GLOBAL_COMISSAO.senhas || {}) }));
+            const [comissaoAjustes, setComissaoAjustes] = useState(() => JSON.parse(JSON.stringify(GLOBAL_COMISSAO.ajustes || {})));
+            const [comissaoMesRef, setComissaoMesRef] = useState(() => {
+                const m = String(SYSTEM_CONFIG.MES_VIGENTE.mes).padStart(2, '0');
+                return `${SYSTEM_CONFIG.MES_VIGENTE.ano}-${m}`;
+            });
+
+            const lubrificadoresComissao = Object.keys(SYSTEM_CONFIG.METAS || {});
+
+            const setSenhaLubComissao = (lub, val) => setComissaoSenhas(prev => ({ ...prev, [lub]: val }));
+
+            const addAjusteComissao = (lub) => {
+                const descricao = prompt('Descrição do ajuste (ex: Retorno vazamento, Estorno filtro):');
+                if (!descricao) return;
+                const valorStr = prompt('Valor a DESCONTAR da comissão (R$):');
+                const valor = parseFloat((valorStr || '').replace(',', '.'));
+                if (isNaN(valor) || valor <= 0) { alert('Valor inválido.'); return; }
+                setComissaoAjustes(prev => {
+                    const novo = JSON.parse(JSON.stringify(prev));
+                    if (!novo[comissaoMesRef]) novo[comissaoMesRef] = {};
+                    if (!novo[comissaoMesRef][lub]) novo[comissaoMesRef][lub] = [];
+                    novo[comissaoMesRef][lub].push({ descricao: descricao.trim(), valor });
+                    return novo;
+                });
+            };
+
+            const removeAjusteComissao = (lub, idx) => {
+                setComissaoAjustes(prev => {
+                    const novo = JSON.parse(JSON.stringify(prev));
+                    if (novo[comissaoMesRef] && novo[comissaoMesRef][lub]) {
+                        novo[comissaoMesRef][lub].splice(idx, 1);
+                    }
+                    return novo;
+                });
+            };
+
             const handleLogin = () => {
                 if (senha === SYSTEM_CONFIG.ADMIN_PASSWORD) {
                     setAutenticado(true);
@@ -4920,16 +5372,17 @@
                 localStorage.setItem('alertasEnabled', alertasEnabled);
                 SYSTEM_CONFIG.ALERTAS_ENABLED = alertasEnabled;
 
-                // Salvar fator de ajuste GLOBAL (reflete para TODOS os usuários)
+                // Salvar fator de ajuste + config de comissão GLOBAL (reflete para TODOS os usuários)
                 try {
                     await salvarFatorAjusteGlobal(fatorAjusteLocal);
+                    await salvarComissaoConfig({ senhas: comissaoSenhas, ajustes: comissaoAjustes });
                 } catch (err) {
-                    console.error('Erro ao salvar fator de ajuste global:', err);
-                    alert('⚠️ As metas foram salvas, mas não foi possível salvar o fator de ajuste no servidor. Verifique a conexão e tente novamente.');
+                    console.error('Erro ao salvar config global:', err);
+                    alert('⚠️ As metas foram salvas, mas não foi possível salvar fator de ajuste/comissão no servidor. Verifique a conexão e tente novamente.');
                     return;
                 }
 
-                alert('✅ Configurações salvas com sucesso!\n\nO ajuste de % agora vale para TODOS os usuários.\n📅 Período de avaliação: ' + getNomeMes(mesVigente) + '/' + anoVigente);
+                alert('✅ Configurações salvas com sucesso!\n\nO ajuste de % e as comissões agora valem para TODOS os usuários.\n📅 Período de avaliação: ' + getNomeMes(mesVigente) + '/' + anoVigente);
                 onSave();
             };
 
@@ -5045,6 +5498,20 @@
                                 >
                                     🔧 Avançado
                                 </button>
+                                <button
+                                    onClick={() => setTab('comissoes')}
+                                    style={{
+                                        padding: '10px 20px',
+                                        background: tab === 'comissoes' ? '#667eea' : 'transparent',
+                                        color: tab === 'comissoes' ? 'white' : '#4a5568',
+                                        border: 'none',
+                                        borderBottom: tab === 'comissoes' ? '3px solid #667eea' : 'none',
+                                        cursor: 'pointer',
+                                        fontWeight: 'bold'
+                                    }}
+                                >
+                                    💰 Comissões
+                                </button>
                             </div>
 
                             {/* TAB: METAS */}
@@ -5078,22 +5545,7 @@
                                         }}>
                                             <h4 style={{ marginBottom: '15px', color: '#2d3748' }}>👤 {tecnico}</h4>
                                             
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                                                <div>
-                                                    <label className="form-label">Meta de Ofertas (%)</label>
-                                                    <input 
-                                                        type="number"
-                                                        min="0"
-                                                        max="100"
-                                                        value={metas[tecnico].ofertas}
-                                                        onChange={(e) => handleMetaChange(tecnico, 'ofertas', e.target.value)}
-                                                        className="form-input"
-                                                    />
-                                                    <div style={{ fontSize: '12px', color: '#718096', marginTop: '5px' }}>
-                                                        Clientes aptos devem receber ofertas
-                                                    </div>
-                                                </div>
-                                                
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px' }}>
                                                 <div>
                                                     <label className="form-label">Meta de Upsell (%)</label>
                                                     <input 
@@ -5263,9 +5715,8 @@
                                     }}>
                                         <strong>Tipos de Alertas:</strong>
                                         <div style={{ marginTop: '10px' }}>
-                                            <div>🔴 <strong>CRÍTICO:</strong> 3+ clientes aptos sem oferta nas últimas 10 ordens</div>
-                                            <div style={{ marginTop: '5px' }}>🟡 <strong>ATENÇÃO:</strong> Taxa abaixo da meta</div>
-                                            <div style={{ marginTop: '5px' }}>🟢 <strong>SUCESSO:</strong> Todas as metas atingidas!</div>
+                                            <div>🟡 <strong>ATENÇÃO:</strong> Taxa de upsell abaixo da meta</div>
+                                            <div style={{ marginTop: '5px' }}>🟢 <strong>SUCESSO:</strong> Meta de upsell atingida!</div>
                                         </div>
                                     </div>
                                 </div>
@@ -5328,6 +5779,89 @@
                                             <li>Afeta: Valor Total Upsell, Valor Upsells por lubrificador, Ticket Médio Upsell</li>
                                             <li>NÃO afeta os dados reais salvos no Firebase</li>
                                         </ul>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* TAB: COMISSÕES */}
+                            {tab === 'comissoes' && (
+                                <div>
+                                    <h3 style={{ marginBottom: '10px' }}>💰 Comissões dos Lubrificadores</h3>
+                                    <p style={{ color: '#718096', marginBottom: '20px', fontSize: '14px' }}>
+                                        Defina a <strong>senha individual</strong> (usada por cada um para ver a própria comissão) e lance os
+                                        <strong> ajustes do mês</strong> (retornos, estornos, descontos de fechamento). Os ajustes são subtraídos da comissão.
+                                    </p>
+
+                                    <div style={{ marginBottom: '20px' }}>
+                                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', color: '#4a5568' }}>
+                                            Mês dos ajustes
+                                        </label>
+                                        <input
+                                            type="month"
+                                            value={comissaoMesRef}
+                                            onChange={(e) => setComissaoMesRef(e.target.value)}
+                                            className="form-input"
+                                            style={{ maxWidth: '220px' }}
+                                        />
+                                    </div>
+
+                                    {lubrificadoresComissao.length === 0 && (
+                                        <div className="alert alert-info">Cadastre metas por técnico na aba "Metas" para listar os lubrificadores aqui.</div>
+                                    )}
+
+                                    {lubrificadoresComissao.map(lub => {
+                                        const ajustesLub = ((comissaoAjustes[comissaoMesRef] || {})[lub]) || [];
+                                        const totalAjustesLub = ajustesLub.reduce((s, a) => s + parseFloat(a.valor || 0), 0);
+                                        return (
+                                            <div key={lub} style={{ background: '#f7fafc', borderRadius: '10px', padding: '15px', marginBottom: '15px', border: '1px solid #e2e8f0' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                                                    <div style={{ fontWeight: '700', color: '#2d3748', fontSize: '16px' }}>👤 {lub}</div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <span style={{ fontSize: '13px', color: '#4a5568' }}>🔒 Senha:</span>
+                                                        <input
+                                                            type="text"
+                                                            value={comissaoSenhas[lub] || ''}
+                                                            onChange={(e) => setSenhaLubComissao(lub, e.target.value)}
+                                                            placeholder="sem senha"
+                                                            className="form-input"
+                                                            style={{ maxWidth: '140px', padding: '6px 10px' }}
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <div style={{ marginTop: '12px' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                                        <span style={{ fontSize: '13px', fontWeight: '600', color: '#4a5568' }}>
+                                                            Ajustes do mês {totalAjustesLub > 0 && <span style={{ color: '#f56565' }}>(− R$ {totalAjustesLub.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})</span>}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => addAjusteComissao(lub)}
+                                                            style={{ padding: '5px 12px', background: '#4299e1', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}
+                                                        >
+                                                            + Ajuste
+                                                        </button>
+                                                    </div>
+                                                    {ajustesLub.length === 0 ? (
+                                                        <div style={{ fontSize: '12px', color: '#a0aec0' }}>Nenhum ajuste lançado neste mês.</div>
+                                                    ) : (
+                                                        ajustesLub.map((a, idx) => (
+                                                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white', padding: '8px 12px', borderRadius: '6px', marginBottom: '6px', border: '1px solid #e2e8f0' }}>
+                                                                <span style={{ fontSize: '13px', color: '#2d3748' }}>{a.descricao}</span>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                                    <span style={{ fontSize: '13px', fontWeight: '600', color: '#f56565' }}>− R$ {parseFloat(a.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                                                    <button onClick={() => removeAjusteComissao(lub, idx)} style={{ background: 'none', border: 'none', color: '#f56565', cursor: 'pointer', fontSize: '16px' }}>🗑️</button>
+                                                                </div>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+
+                                    <div style={{ background: '#e6f2ff', padding: '15px', borderRadius: '8px', fontSize: '13px', color: '#2d5ba6' }}>
+                                        <strong>Faixas:</strong> abaixo de R$ 5.000 = 0% · R$ 5.000–7.999 = 3% · R$ 8.000–12.000 = 5% · R$ 12.000+ = 7%.<br/>
+                                        Fluido de câmbio vendido pelo mecânico: teto de comissão de R$ 50,00 por OS.
                                     </div>
                                 </div>
                             )}
