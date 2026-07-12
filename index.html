@@ -2075,10 +2075,21 @@
                             monthAgo.setMonth(monthAgo.getMonth() - 1);
                             return orderDate >= monthAgo;
                         case 'custom':
-                            if (!customDateStart || !customDateEnd) return true;
-                            const start = new Date(customDateStart);
-                            const end = new Date(customDateEnd);
-                            return orderDate >= start && orderDate <= end;
+                            if (!customDateStart && !customDateEnd) return true;
+                            // Parse manual (YYYY-MM-DD) para data LOCAL, evitando o UTC do new Date(string)
+                            const parseLocal = (s) => {
+                                const [a, m, d] = s.split('-').map(Number);
+                                return new Date(a, m - 1, d, 0, 0, 0, 0);
+                            };
+                            if (customDateStart) {
+                                const start = parseLocal(customDateStart);
+                                if (orderDate < start) return false;
+                            }
+                            if (customDateEnd) {
+                                const end = parseLocal(customDateEnd);
+                                if (orderDate > end) return false;
+                            }
+                            return true;
                         default:
                             return true;
                     }
@@ -2319,12 +2330,49 @@
                         >
                             Último Mês
                         </button>
-                        <button 
+                        <button
                             className={`filter-btn ${filterDate === 'all' ? 'active' : ''}`}
                             onClick={() => setFilterDate('all')}
                         >
                             Todos
                         </button>
+                        <button
+                            className={`filter-btn ${filterDate === 'custom' ? 'active' : ''}`}
+                            onClick={() => setFilterDate('custom')}
+                        >
+                            📅 Personalizado
+                        </button>
+                        {filterDate === 'custom' && (
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                <label style={{ display: 'flex', flexDirection: 'column', fontSize: '12px', color: '#4a5568', fontWeight: '600' }}>
+                                    De
+                                    <input
+                                        type="date"
+                                        value={customDateStart}
+                                        onChange={(e) => setCustomDateStart(e.target.value)}
+                                        style={{ padding: '6px 10px', border: '2px solid #e2e8f0', borderRadius: '8px', fontSize: '14px' }}
+                                    />
+                                </label>
+                                <label style={{ display: 'flex', flexDirection: 'column', fontSize: '12px', color: '#4a5568', fontWeight: '600' }}>
+                                    Até
+                                    <input
+                                        type="date"
+                                        value={customDateEnd}
+                                        onChange={(e) => setCustomDateEnd(e.target.value)}
+                                        style={{ padding: '6px 10px', border: '2px solid #e2e8f0', borderRadius: '8px', fontSize: '14px' }}
+                                    />
+                                </label>
+                                {(customDateStart || customDateEnd) && (
+                                    <button
+                                        className="filter-btn"
+                                        onClick={() => { setCustomDateStart(''); setCustomDateEnd(''); }}
+                                        style={{ alignSelf: 'flex-end' }}
+                                    >
+                                        Limpar
+                                    </button>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {loading ? (
