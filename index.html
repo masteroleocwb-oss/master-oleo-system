@@ -2031,12 +2031,22 @@
             const [historicoCompleto, setHistoricoCompleto] = useState(null); // null = ainda não carregado
             const [carregandoHistorico, setCarregandoHistorico] = useState(false);
 
-            // Data de corte da janela em tempo real (ISO, mesmo formato gravado em dataHora)
+            // Data de corte da janela em tempo real (ISO, mesmo formato gravado em dataHora).
+            // A janela SEMPRE cobre o mês vigente configurado, senão os alertas de
+            // performance seriam calculados sobre dados incompletos sem avisar ninguém
+            // (o ADM pode apontar o mês vigente para um mês antigo).
             const inicioJanela = React.useMemo(() => {
-                const d = new Date();
-                d.setDate(d.getDate() - SYSTEM_CONFIG.JANELA_TEMPO_REAL_DIAS);
-                d.setHours(0, 0, 0, 0);
-                return d.toISOString();
+                const porDias = new Date();
+                porDias.setDate(porDias.getDate() - SYSTEM_CONFIG.JANELA_TEMPO_REAL_DIAS);
+                porDias.setHours(0, 0, 0, 0);
+
+                const inicioMesVigente = new Date(
+                    SYSTEM_CONFIG.MES_VIGENTE.ano,
+                    SYSTEM_CONFIG.MES_VIGENTE.mes - 1,
+                    1, 0, 0, 0, 0
+                );
+
+                return new Date(Math.min(porDias.getTime(), inicioMesVigente.getTime())).toISOString();
             }, []);
 
             // 1) Listener em tempo real da janela recente
@@ -2061,6 +2071,21 @@
                     );
                 return () => unsub();
             }, [inicioJanela]);
+
+            // Maior número de ordem já usado — 1 leitura por sessão.
+            // NÃO pode ser deduzido da janela: se a janela vier vazia, a numeração
+            // recomeçaria do 1 e criaria ordens duplicadas.
+            const [maiorNumeroOrdem, setMaiorNumeroOrdem] = useState(null);
+            useEffect(() => {
+                db.collection('orders')
+                    .orderBy('numeroOrdem', 'desc')
+                    .limit(1)
+                    .get()
+                    .then(snap => {
+                        setMaiorNumeroOrdem(snap.empty ? 0 : (snap.docs[0].data().numeroOrdem || 0));
+                    })
+                    .catch(err => console.error('Erro ao obter o maior número de ordem:', err));
+            }, []);
 
             // 2) Histórico completo — uma leitura única, cacheada na sessão
             const carregarHistoricoCompleto = async (forcar = false) => {
@@ -2093,7 +2118,19 @@
             // cacheado precisa ser refeito (e apenas se já tiver sido carregado).
             const loadOrders = async () => {
                 invalidarCacheConcluidos();
-                if (historicoCompleto) await carregarHistoricoCompleto(true);
+                setLoading(true);
+                try {
+                    // A janela recente já vem sozinha pelo listener; aqui revalidamos
+                    // o que ele não cobre, para o botão "Atualizar" não ficar inerte.
+                    const snap = await db.collection('orders')
+                        .orderBy('numeroOrdem', 'desc').limit(1).get();
+                    setMaiorNumeroOrdem(snap.empty ? 0 : (snap.docs[0].data().numeroOrdem || 0));
+                    if (historicoCompleto) await carregarHistoricoCompleto(true);
+                } catch (error) {
+                    console.error('Erro ao atualizar:', error);
+                } finally {
+                    setLoading(false);
+                }
             };
 
             // Recalcular alertas sempre que as ordens mudarem
@@ -2109,15 +2146,18 @@
                 return () => { cancelado = true; };
             }, [orders]);
 
+            // O filtro pede dados anteriores à janela em tempo real?
+            // Sem "De" preenchido o período fica aberto para trás, então também precisa.
+            const filtroExigeHistorico =
+                filterDate === 'all' ||
+                (filterDate === 'custom' && (!customDateStart || customDateStart < inicioJanela.slice(0, 10)));
+
             // Buscar o histórico completo quando a tela exigir dados antigos
             useEffect(() => {
-                const precisaHistorico =
-                    activeTab === 'consulta' ||
-                    activeTab === 'volumetria' ||
-                    filterDate === 'all' ||
-                    (filterDate === 'custom' && customDateStart && customDateStart < inicioJanela.slice(0, 10));
-                if (precisaHistorico) carregarHistoricoCompleto();
-            }, [activeTab, filterDate, customDateStart, inicioJanela]);
+                if (activeTab === 'consulta' || activeTab === 'volumetria' || filtroExigeHistorico) {
+                    carregarHistoricoCompleto();
+                }
+            }, [activeTab, filtroExigeHistorico]);
 
             // Ouvir o fator de ajuste GLOBAL em tempo real (compartilhado entre todos
             // os usuários). Quando o ADM altera o %, todos os apps abertos atualizam.
@@ -2151,10 +2191,7 @@
 
                 // "Todos" e períodos anteriores à janela precisam do histórico completo;
                 // os demais filtros usam a janela em tempo real (mais barata).
-                const base = (filterDate === 'all' ||
-                    (filterDate === 'custom' && customDateStart && customDateStart < inicioJanela.slice(0, 10)))
-                    ? ordersParaAnalise
-                    : orders;
+                const base = filtroExigeHistorico ? ordersParaAnalise : orders;
 
                 return base.filter(order => {
                     if (!order.dataHora) return false;
@@ -2202,9 +2239,12 @@
 
             // Calcular próximo número de ordem
             const getNextOrderNumber = () => {
-                if (orders.length === 0) return 1;
-                const maxNumber = Math.max(...orders.map(o => o.numeroOrdem || 0));
-                return maxNumber + 1;
+                // Combina o maior número do banco com o da janela ao vivo, para não
+                // depender de nenhuma das duas fontes isoladamente.
+                const maxJanela = orders.length
+                    ? Math.max(...orders.map(o => o.numeroOrdem || 0))
+                    : 0;
+                return Math.max(maiorNumeroOrdem || 0, maxJanela) + 1;
             };
 
             // Função para cancelar ordem
@@ -2339,7 +2379,21 @@
                             📊 Volumetria
                         </button>
                     </div>
-                    
+
+                    {carregandoHistorico && (
+                        <div style={{
+                            background: 'rgba(255,255,255,0.95)',
+                            borderRadius: '10px',
+                            padding: '10px 16px',
+                            marginBottom: '15px',
+                            color: '#4a5568',
+                            fontWeight: '600',
+                            fontSize: '14px'
+                        }}>
+                            ⏳ Carregando histórico completo...
+                        </div>
+                    )}
+
                     {activeTab === 'ordens' && (
                         <>
                     {/* BANNER DE ALERTAS */}
