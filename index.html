@@ -719,7 +719,12 @@
             ALERTAS_ENABLED: localStorage.getItem('alertasEnabled') !== 'false',
             
             // NOVO v5.0: Fator de ajuste % para valores de upsell (só ADM vê)
-            FATOR_AJUSTE_UPSELL: parseFloat(localStorage.getItem('fatorAjusteUpsell') || '0')
+            FATOR_AJUSTE_UPSELL: parseFloat(localStorage.getItem('fatorAjusteUpsell') || '0'),
+
+            // Quantos dias a tela principal mantém em tempo real. O histórico mais
+            // antigo é carregado sob demanda (Consulta, Volumetria, filtro "Todos").
+            // Quanto menor, menos leituras o Firestore cobra na abertura do app.
+            JANELA_TEMPO_REAL_DIAS: parseInt(localStorage.getItem('janelaTempoRealDias') || '90')
         };
 
         // Helper: Salvar fator de ajuste
@@ -1043,14 +1048,29 @@
         // FUNÇÕES AUXILIARES - BUSCA DE CLIENTES
         // ============================================
         
+        // Cache das ordens concluídas para a busca de cliente.
+        // Antes, CADA busca relia todas as ordens concluídas do Firestore — inclusive
+        // durante a criação de uma ordem nova. Com o cache, isso passa a acontecer no
+        // máximo uma vez a cada TTL, por sessão.
+        let CACHE_CONCLUIDOS = null;
+        let CACHE_CONCLUIDOS_EM = 0;
+        const CACHE_CONCLUIDOS_TTL_MS = 10 * 60 * 1000; // 10 minutos
+
+        const invalidarCacheConcluidos = () => { CACHE_CONCLUIDOS = null; };
+
         // Buscar histórico completo de um cliente
         const buscarHistoricoCliente = async (termo) => {
             try {
-                const snapshot = await db.collection('orders')
-                    .where('status', '==', 'concluido')
-                    .get();
-                
-                const ordens = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                const agora = Date.now();
+                if (!CACHE_CONCLUIDOS || (agora - CACHE_CONCLUIDOS_EM) > CACHE_CONCLUIDOS_TTL_MS) {
+                    const snapshot = await db.collection('orders')
+                        .where('status', '==', 'concluido')
+                        .get();
+                    CACHE_CONCLUIDOS = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    CACHE_CONCLUIDOS_EM = agora;
+                }
+
+                const ordens = CACHE_CONCLUIDOS;
                 
                 // Filtrar por placa, nome ou telefone
                 const termoLower = termo.toLowerCase();
@@ -1996,36 +2016,108 @@
             const [showEditUpsellModal, setShowEditUpsellModal] = useState(false); // Modal editar upsell
             const [selectedUpsellOrder, setSelectedUpsellOrder] = useState(null); // Ordem selecionada para editar upsell
 
-            // Carregar ordens do Firebase
-            const loadOrders = async () => {
+            // ============================================
+            // CARGA DE ORDENS — ECONOMIA DE LEITURAS FIRESTORE
+            // ============================================
+            // Antes: .get() da coleção INTEIRA a cada 30s, em cada aparelho aberto.
+            // Isso custava (nº de ordens × 120 leituras/hora × aparelhos) por dia e
+            // crescia sozinho conforme o banco aumentava.
+            //
+            // Agora, duas camadas:
+            //  1) TEMPO REAL (onSnapshot) só da janela recente. O Firestore cobra a
+            //     carga inicial e depois SÓ os documentos que mudam.
+            //  2) HISTÓRICO COMPLETO sob demanda, uma única vez por sessão, quando
+            //     alguma tela realmente precisar (Consulta, Volumetria, filtro "Todos").
+            const [historicoCompleto, setHistoricoCompleto] = useState(null); // null = ainda não carregado
+            const [carregandoHistorico, setCarregandoHistorico] = useState(false);
+
+            // Data de corte da janela em tempo real (ISO, mesmo formato gravado em dataHora)
+            const inicioJanela = React.useMemo(() => {
+                const d = new Date();
+                d.setDate(d.getDate() - SYSTEM_CONFIG.JANELA_TEMPO_REAL_DIAS);
+                d.setHours(0, 0, 0, 0);
+                return d.toISOString();
+            }, []);
+
+            // 1) Listener em tempo real da janela recente
+            useEffect(() => {
+                setLoading(true);
+                const unsub = db.collection('orders')
+                    .where('dataHora', '>=', inicioJanela)
+                    .orderBy('dataHora', 'desc')
+                    .onSnapshot(
+                        (snapshot) => {
+                            const ordersData = snapshot.docs
+                                .map(doc => ({ id: doc.id, ...doc.data() }))
+                                .sort((a, b) => (b.numeroOrdem || 0) - (a.numeroOrdem || 0));
+                            setOrders(ordersData);
+                            setLoading(false);
+                        },
+                        (error) => {
+                            console.error('Erro ao ouvir ordens:', error);
+                            setLoading(false);
+                            alert('Erro ao carregar ordens. Verifique o console.');
+                        }
+                    );
+                return () => unsub();
+            }, [inicioJanela]);
+
+            // 2) Histórico completo — uma leitura única, cacheada na sessão
+            const carregarHistoricoCompleto = async (forcar = false) => {
+                if (!forcar && (historicoCompleto || carregandoHistorico)) return;
                 try {
-                    setLoading(true);
+                    setCarregandoHistorico(true);
                     const snapshot = await db.collection('orders').orderBy('numeroOrdem', 'desc').get();
-                    const ordersData = snapshot.docs.map(doc => ({
-                        id: doc.id,
-                        ...doc.data()
-                    }));
-                    setOrders(ordersData);
-                    
-                    // Calcular alertas automaticamente
-                    if (SYSTEM_CONFIG.ALERTAS_ENABLED) {
-                        const alertasCalculados = await calcularAlertas(ordersData);
-                        setAlertas(alertasCalculados);
-                        setAlertasUltimaAtualizacao(new Date()); // Atualizar data/hora
-                    }
+                    setHistoricoCompleto(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                 } catch (error) {
-                    console.error('Erro ao carregar ordens:', error);
-                    alert('Erro ao carregar ordens. Verifique o console.');
+                    console.error('Erro ao carregar histórico completo:', error);
+                    alert('Erro ao carregar o histórico. Verifique o console.');
                 } finally {
-                    setLoading(false);
+                    setCarregandoHistorico(false);
                 }
             };
 
+            // Conjunto usado pelas telas de análise: histórico + janela recente.
+            // As ordens da janela têm prioridade por serem as que estão ao vivo.
+            const ordersParaAnalise = React.useMemo(() => {
+                if (!historicoCompleto) return orders;
+                const mapa = new Map();
+                historicoCompleto.forEach(o => mapa.set(o.id, o));
+                orders.forEach(o => mapa.set(o.id, o));
+                return Array.from(mapa.values())
+                    .sort((a, b) => (b.numeroOrdem || 0) - (a.numeroOrdem || 0));
+            }, [orders, historicoCompleto]);
+
+            // Compatibilidade: vários pontos do app chamam loadOrders() após gravar.
+            // O listener já atualiza a janela recente sozinho; só o histórico
+            // cacheado precisa ser refeito (e apenas se já tiver sido carregado).
+            const loadOrders = async () => {
+                invalidarCacheConcluidos();
+                if (historicoCompleto) await carregarHistoricoCompleto(true);
+            };
+
+            // Recalcular alertas sempre que as ordens mudarem
             useEffect(() => {
-                loadOrders();
-                const interval = setInterval(loadOrders, 30000); // Auto-refresh a cada 30s
-                return () => clearInterval(interval);
-            }, []);
+                if (!SYSTEM_CONFIG.ALERTAS_ENABLED) return;
+                let cancelado = false;
+                (async () => {
+                    const alertasCalculados = await calcularAlertas(orders);
+                    if (cancelado) return;
+                    setAlertas(alertasCalculados);
+                    setAlertasUltimaAtualizacao(new Date());
+                })();
+                return () => { cancelado = true; };
+            }, [orders]);
+
+            // Buscar o histórico completo quando a tela exigir dados antigos
+            useEffect(() => {
+                const precisaHistorico =
+                    activeTab === 'consulta' ||
+                    activeTab === 'volumetria' ||
+                    filterDate === 'all' ||
+                    (filterDate === 'custom' && customDateStart && customDateStart < inicioJanela.slice(0, 10));
+                if (precisaHistorico) carregarHistoricoCompleto();
+            }, [activeTab, filterDate, customDateStart, inicioJanela]);
 
             // Ouvir o fator de ajuste GLOBAL em tempo real (compartilhado entre todos
             // os usuários). Quando o ADM altera o %, todos os apps abertos atualizam.
@@ -2057,7 +2149,14 @@
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
 
-                return orders.filter(order => {
+                // "Todos" e períodos anteriores à janela precisam do histórico completo;
+                // os demais filtros usam a janela em tempo real (mais barata).
+                const base = (filterDate === 'all' ||
+                    (filterDate === 'custom' && customDateStart && customDateStart < inicioJanela.slice(0, 10)))
+                    ? ordersParaAnalise
+                    : orders;
+
+                return base.filter(order => {
                     if (!order.dataHora) return false;
 
                     const orderDate = new Date(order.dataHora);
@@ -2472,7 +2571,7 @@
                     {/* ABA CONSULTA */}
                     {activeTab === 'consulta' && (
                         <ConsultaTab
-                            orders={orders}
+                            orders={ordersParaAnalise}
                             onVer={(order) => {
                                 setSelectedOrder(order);
                                 setShowDetailsModal(true);
@@ -2483,7 +2582,7 @@
                     {/* ABA VOLUMETRIA */}
                     {activeTab === 'volumetria' && (
                         <VolumetriaTab
-                            orders={orders}
+                            orders={ordersParaAnalise}
                             dataInicio={volumetriaDataInicio}
                             dataFim={volumetriaDataFim}
                             lubrificadorFiltro={volumetriaLubrificador}
