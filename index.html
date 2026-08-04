@@ -897,6 +897,40 @@
             });
         };
 
+        // ============================================
+        // SENHA DIÁRIA DE ACESSO (rotativa)
+        // ============================================
+        // Formato: "master" + DDMMAAAA (ex.: master04082026).
+        // A senha "vira" todo dia às 5h da manhã, horário de Brasília — antes das 5h
+        // ainda vale a senha do dia anterior. É pedida uma vez por dia, por aparelho.
+        const getSenhaInfo = () => {
+            // Extrai dia/mês/ano/hora já no fuso de Brasília, independente do fuso do aparelho.
+            const partes = {};
+            new Intl.DateTimeFormat('en-GB', {
+                timeZone: 'America/Sao_Paulo',
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', hour12: false
+            }).formatToParts(new Date()).forEach(p => { partes[p.type] = p.value; });
+
+            let ano = parseInt(partes.year, 10);
+            let mes = parseInt(partes.month, 10);
+            let dia = parseInt(partes.day, 10);
+            let hora = parseInt(partes.hour, 10) % 24; // meia-noite pode vir como "24"
+
+            // Usa UTC só como calendário puro (sem influência de fuso) para subtrair 1 dia.
+            const d = new Date(Date.UTC(ano, mes - 1, dia));
+            if (hora < 5) d.setUTCDate(d.getUTCDate() - 1);
+
+            const dd = String(d.getUTCDate()).padStart(2, '0');
+            const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const yyyy = d.getUTCFullYear();
+
+            return {
+                senha: `master${dd}${mm}${yyyy}`,
+                chaveDia: `${yyyy}-${mm}-${dd}` // identificador do "dia de senha" atual
+            };
+        };
+
         // Função para formatar data/hora para input
         const formatDateTimeForInput = () => {
             const now = new Date();
@@ -2030,6 +2064,10 @@
             //     alguma tela realmente precisar (Consulta, Volumetria, filtro "Todos").
             const [historicoCompleto, setHistoricoCompleto] = useState(null); // null = ainda não carregado
             const [carregandoHistorico, setCarregandoHistorico] = useState(false);
+            // Refs (e não state) porque precisam ser lidos de forma síncrona dentro
+            // de funções async, sem esperar re-render.
+            const historicoDesatualizado = React.useRef(false); // gravação invalidou o cache?
+            const carregandoHistoricoRef = React.useRef(false); // trava contra carga duplicada
 
             // Data de corte da janela em tempo real (ISO, mesmo formato gravado em dataHora).
             // A janela SEMPRE cobre o mês vigente configurado, senão os alertas de
@@ -2048,6 +2086,16 @@
 
                 return new Date(Math.min(porDias.getTime(), inicioMesVigente.getTime())).toISOString();
             }, []);
+
+            // O filtro pede dados anteriores à janela em tempo real?
+            // Sem "De" preenchido o período fica aberto para trás, então também precisa.
+            const filtroExigeHistorico =
+                filterDate === 'all' ||
+                (filterDate === 'custom' && (!customDateStart || customDateStart < inicioJanela.slice(0, 10)));
+
+            // A tela que está à mostra agora depende do histórico completo?
+            const telaUsaHistorico =
+                activeTab === 'consulta' || activeTab === 'volumetria' || filtroExigeHistorico;
 
             // 1) Listener em tempo real da janela recente
             useEffect(() => {
@@ -2089,15 +2137,21 @@
 
             // 2) Histórico completo — uma leitura única, cacheada na sessão
             const carregarHistoricoCompleto = async (forcar = false) => {
-                if (!forcar && (historicoCompleto || carregandoHistorico)) return;
+                // Trava síncrona: sem ela, dois efeitos disparados no mesmo ciclo
+                // leriam a coleção inteira duas vezes.
+                if (carregandoHistoricoRef.current) return;
+                if (!forcar && historicoCompleto && !historicoDesatualizado.current) return;
                 try {
+                    carregandoHistoricoRef.current = true;
                     setCarregandoHistorico(true);
                     const snapshot = await db.collection('orders').orderBy('numeroOrdem', 'desc').get();
                     setHistoricoCompleto(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    historicoDesatualizado.current = false;
                 } catch (error) {
                     console.error('Erro ao carregar histórico completo:', error);
                     alert('Erro ao carregar o histórico. Verifique o console.');
                 } finally {
+                    carregandoHistoricoRef.current = false;
                     setCarregandoHistorico(false);
                 }
             };
@@ -2118,6 +2172,11 @@
             // cacheado precisa ser refeito (e apenas se já tiver sido carregado).
             const loadOrders = async () => {
                 invalidarCacheConcluidos();
+                // Marca o histórico como desatualizado em vez de reler as milhares de
+                // ordens na hora. Edições em ordens recentes já aparecem sozinhas pelo
+                // listener (a janela tem prioridade no merge); o histórico só é
+                // recarregado quando uma tela que o usa for realmente aberta.
+                historicoDesatualizado.current = true;
                 setLoading(true);
                 try {
                     // A janela recente já vem sozinha pelo listener; aqui revalidamos
@@ -2125,7 +2184,10 @@
                     const snap = await db.collection('orders')
                         .orderBy('numeroOrdem', 'desc').limit(1).get();
                     setMaiorNumeroOrdem(snap.empty ? 0 : (snap.docs[0].data().numeroOrdem || 0));
-                    if (historicoCompleto) await carregarHistoricoCompleto(true);
+                    // Só recarrega na hora se o histórico estiver sendo exibido agora.
+                    if (historicoCompleto && telaUsaHistorico) {
+                        await carregarHistoricoCompleto(true);
+                    }
                 } catch (error) {
                     console.error('Erro ao atualizar:', error);
                 } finally {
@@ -2146,18 +2208,11 @@
                 return () => { cancelado = true; };
             }, [orders]);
 
-            // O filtro pede dados anteriores à janela em tempo real?
-            // Sem "De" preenchido o período fica aberto para trás, então também precisa.
-            const filtroExigeHistorico =
-                filterDate === 'all' ||
-                (filterDate === 'custom' && (!customDateStart || customDateStart < inicioJanela.slice(0, 10)));
-
-            // Buscar o histórico completo quando a tela exigir dados antigos
+            // Buscar o histórico quando a tela exigir dados antigos. Se alguma gravação
+            // o marcou como desatualizado, esta é a hora de recarregá-lo.
             useEffect(() => {
-                if (activeTab === 'consulta' || activeTab === 'volumetria' || filtroExigeHistorico) {
-                    carregarHistoricoCompleto();
-                }
-            }, [activeTab, filtroExigeHistorico]);
+                if (telaUsaHistorico) carregarHistoricoCompleto();
+            }, [telaUsaHistorico]);
 
             // Ouvir o fator de ajuste GLOBAL em tempo real (compartilhado entre todos
             // os usuários). Quando o ADM altera o %, todos os apps abertos atualizam.
@@ -6598,10 +6653,85 @@
             }
         }
 
+        // ============================================
+        // PORTÃO DE SENHA DIÁRIA
+        // ============================================
+        // Bloqueia o app até o operador digitar a senha do dia. Depois de liberado,
+        // grava o "dia de senha" no aparelho e não pede de novo até a próxima virada (5h).
+        const CHAVE_ACESSO = 'acessoLiberadoDia';
+
+        function PortaoDeSenha({ onLiberado }) {
+            const [valor, setValor] = React.useState('');
+            const [erro, setErro] = React.useState('');
+
+            const tentar = (e) => {
+                if (e) e.preventDefault();
+                const { senha, chaveDia } = getSenhaInfo();
+                if (valor.trim().toLowerCase() === senha.toLowerCase()) {
+                    localStorage.setItem(CHAVE_ACESSO, chaveDia);
+                    onLiberado();
+                } else {
+                    setErro('Senha incorreta. Confira a senha do dia com o responsável.');
+                    setValor('');
+                }
+            };
+
+            return (
+                <div style={{
+                    minHeight: '100vh', display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', padding: '20px'
+                }}>
+                    <form onSubmit={tentar} style={{
+                        background: 'white', borderRadius: '18px', padding: '40px 32px',
+                        boxShadow: '0 15px 40px rgba(0,0,0,0.25)', width: '100%', maxWidth: '380px',
+                        textAlign: 'center'
+                    }}>
+                        <div style={{ fontSize: '46px', marginBottom: '8px' }}>🔒</div>
+                        <h2 style={{ margin: '0 0 6px 0', color: '#2d3748' }}>Master Óleo Curitiba</h2>
+                        <p style={{ margin: '0 0 22px 0', color: '#718096', fontSize: '14px' }}>
+                            Digite a senha do dia para acessar o sistema.
+                        </p>
+                        <input
+                            type="password"
+                            value={valor}
+                            autoFocus
+                            onChange={(e) => { setValor(e.target.value); if (erro) setErro(''); }}
+                            placeholder="Senha do dia"
+                            style={{
+                                width: '100%', padding: '12px 14px', fontSize: '16px',
+                                border: '2px solid ' + (erro ? '#e53e3e' : '#e2e8f0'),
+                                borderRadius: '10px', boxSizing: 'border-box', marginBottom: '12px'
+                            }}
+                        />
+                        {erro && (
+                            <div style={{ color: '#e53e3e', fontSize: '13px', marginBottom: '12px' }}>
+                                {erro}
+                            </div>
+                        )}
+                        <button type="submit" className="btn btn-primary" style={{
+                            width: '100%', padding: '12px', fontSize: '16px', fontWeight: 'bold',
+                            border: 'none', borderRadius: '10px', cursor: 'pointer',
+                            background: 'linear-gradient(135deg, #E31B23 0%, #0066CC 100%)', color: 'white'
+                        }}>
+                            Entrar
+                        </button>
+                    </form>
+                </div>
+            );
+        }
+
+        function RaizComSenha() {
+            const [liberado, setLiberado] = React.useState(
+                () => localStorage.getItem(CHAVE_ACESSO) === getSenhaInfo().chaveDia
+            );
+            if (!liberado) return <PortaoDeSenha onLiberado={() => setLiberado(true)} />;
+            return <App />;
+        }
+
         // Renderizar aplicação (com proteção contra falha de montagem)
         try {
             ReactDOM.render(
-                <ErrorBoundary><App /></ErrorBoundary>,
+                <ErrorBoundary><RaizComSenha /></ErrorBoundary>,
                 document.getElementById('root')
             );
             if (window.__appWatchdog) clearTimeout(window.__appWatchdog);
