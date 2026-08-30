@@ -705,7 +705,6 @@
             // Leo não tem meta, por isso não está na lista
             METAS: JSON.parse(localStorage.getItem('metasTecnicos') || JSON.stringify({
                 'Caio': { upsell: 45 },
-                'Luis': { upsell: 45 },
                 'Pedro': { upsell: 45 }
             })),
             
@@ -726,6 +725,11 @@
             // Quanto menor, menos leituras o Firestore cobra na abertura do app.
             JANELA_TEMPO_REAL_DIAS: parseInt(localStorage.getItem('janelaTempoRealDias') || '90')
         };
+
+        // Lubrificadores desativados (saíram da equipe): não aparecem em novas ordens
+        // nem nos alertas. O histórico deles é preservado (ordens passadas seguem contando).
+        const LUBRIFICADORES_INATIVOS = ['Luis'];
+        LUBRIFICADORES_INATIVOS.forEach(nome => { delete SYSTEM_CONFIG.METAS[nome]; });
 
         // Helper: Salvar fator de ajuste
         const salvarFatorAjuste = (fator) => {
@@ -4412,11 +4416,12 @@
                                                 <option value="">Selecione...</option>
                                                 <option value="Leo">Leo</option>
                                                 <option value="Caio">Caio</option>
-                                                <option value="Luis">Luis</option>
                                                 <option value="Pedro">Pedro</option>
                                                 {(() => {
                                                     const customLubs = JSON.parse(localStorage.getItem('customLubrificadores') || '[]');
-                                                    return customLubs.map(lub => (
+                                                    return customLubs
+                                                        .filter(lub => !LUBRIFICADORES_INATIVOS.includes(lub))
+                                                        .map(lub => (
                                                         <option key={lub} value={lub}>{lub}</option>
                                                     ));
                                                 })()}
