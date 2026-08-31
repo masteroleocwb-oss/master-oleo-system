@@ -1364,7 +1364,11 @@
                 // Normalizar nome do lubrificador e filtrar Bruno
                 const lubNormalizado = normalizarLubrificador(order.lubrificador);
                 if (!lubNormalizado) return false;
-                
+
+                // Ignorar lubrificadores desativados (saíram da equipe): não contam
+                // nas métricas/upsell do sistema, mesmo tendo histórico no banco.
+                if (LUBRIFICADORES_INATIVOS.includes(lubNormalizado)) return false;
+
                 if (lubrificadorFiltro !== 'todos' && lubNormalizado !== lubrificadorFiltro) {
                     return false;
                 }
@@ -1411,11 +1415,12 @@
             totais.ticketMedio = totais.ordens > 0 ? (totais.faturamento / totais.ordens) : 0;
             totais.ticketMedioUpsell = totais.upsells > 0 ? (totais.valorUpsells / totais.upsells) : 0;
             
-            // Lista de lubrificadores únicos (normalizados, sem Bruno)
+            // Lista de lubrificadores únicos (normalizados, sem Bruno e sem inativos)
             const lubrificadores = [...new Set(
                 orders
                     .map(o => normalizarLubrificador(o.lubrificador))
                     .filter(Boolean) // Remove null (Bruno)
+                    .filter(l => !LUBRIFICADORES_INATIVOS.includes(l)) // Remove desativados
             )].sort();
             
             return (
@@ -2773,7 +2778,7 @@
                                 loadOrders(); // Recarregar para recalcular alertas
                             }}
                             onAdminAuth={(isAdm) => setIsAdmin(isAdm)}
-                            lubrificadores={[...new Set(orders.map(o => normalizarLubrificador(o.lubrificador)).filter(Boolean))].sort()}
+                            lubrificadores={[...new Set(orders.map(o => normalizarLubrificador(o.lubrificador)).filter(Boolean))].sort().filter(l => !LUBRIFICADORES_INATIVOS.includes(l))}
                         />
                     )}
                     
@@ -3009,7 +3014,7 @@
 
             // Listas únicas para os dropdowns (a partir dos concluídos).
             // Lubrificador é normalizado para agrupar variações de nome (ex: Tiago/Thiago).
-            const lubrificadores = [...new Set(concluidos.map(o => normalizarLubrificador(o.lubrificador)).filter(Boolean))].sort();
+            const lubrificadores = [...new Set(concluidos.map(o => normalizarLubrificador(o.lubrificador)).filter(Boolean))].sort().filter(l => !LUBRIFICADORES_INATIVOS.includes(l));
             const vendedores = [...new Set(concluidos.map(o => o.vendedor).filter(Boolean))].sort();
 
             const dataDe = dataInicio ? new Date(dataInicio + 'T00:00:00') : null;
