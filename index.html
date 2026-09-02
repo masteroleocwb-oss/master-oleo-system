@@ -5535,6 +5535,20 @@
                                         <button className="btn btn-primary" onClick={() => setEditMode(true)}>
                                             ✏️ Editar
                                         </button>
+                                        {isAdmin && (
+                                            <button className="btn" style={{ background: '#c0392b', color: 'white' }}
+                                                onClick={async () => {
+                                                    if (!confirm(`Excluir PERMANENTEMENTE a ordem #${order.numeroOrdem} — ${order.placa || ''} · ${order.cliente || ''} (${normalizarLubrificador(order.lubrificador) || order.lubrificador || '—'})?\n\nEssa ação não pode ser desfeita.`)) return;
+                                                    try {
+                                                        await db.collection('orders').doc(order.id).delete();
+                                                        alert('Ordem excluída.');
+                                                        if (onUpdate) onUpdate();
+                                                        onClose();
+                                                    } catch (e) { console.error('Erro ao excluir ordem:', e); alert('Erro ao excluir a ordem.'); }
+                                                }}>
+                                                🗑️ Excluir ordem
+                                            </button>
+                                        )}
                                     </>
                                 )}
                             </div>
