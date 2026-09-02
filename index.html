@@ -799,6 +799,31 @@
             );
         };
 
+        // ============================================
+        // METAS DE UPSELL POR ITEM (painel Meta Upsell)
+        // ============================================
+        // Meta mensal de quantas unidades de cada item vender. Compartilhada via
+        // Firestore (config/global.metasUpsell); o ADM edita no painel.
+        const METAS_UPSELL_DEFAULT = {
+            cambioAutomatico: 10, aditivo: 70, fluidoFreio: 49, cambioManual: 15,
+            flush: 40, oleoMotor: 20, arMotor: 80, militec: 20, caixaTransferencia: 9,
+            filtroCombustivel: 80, arCondicionado: 80, difDianteiro: 8, difTraseiro: 5,
+            palhetas: 20, filtroOleo: 17, higienizacaoAC: 2
+        };
+        let GLOBAL_METAS_UPSELL = (() => {
+            try { return { ...METAS_UPSELL_DEFAULT, ...JSON.parse(localStorage.getItem('metasUpsell') || '{}') }; }
+            catch (e) { return { ...METAS_UPSELL_DEFAULT }; }
+        })();
+
+        const salvarMetasUpsell = async (metas) => {
+            GLOBAL_METAS_UPSELL = { ...metas };
+            localStorage.setItem('metasUpsell', JSON.stringify(GLOBAL_METAS_UPSELL)); // cache local
+            await db.collection('config').doc('global').set(
+                { metasUpsell: GLOBAL_METAS_UPSELL, metasUpsellAtualizadoEm: firebase.firestore.FieldValue.serverTimestamp() },
+                { merge: true }
+            );
+        };
+
         // Faixas de comissão por volume individual de upsell no mês
         const FAIXAS_COMISSAO = [
             { min: 0,     max: 4999.99,  pct: 0, label: 'Abaixo de R$ 5.000' },
@@ -1299,6 +1324,163 @@
             // Capitalizar primeira letra para outros nomes
             return nome.charAt(0).toUpperCase() + nome.slice(1).toLowerCase();
         };
+
+        // ============================================
+        // COMPONENTE: ABA META UPSELL (tempo real)
+        // ============================================
+        function MetaUpsellTab({ orders, metasUpsell, isAdmin, onSalvarMetas }) {
+            const [detalheItem, setDetalheItem] = React.useState(null); // key do item aberto
+            const [metasEdit, setMetasEdit] = React.useState(metasUpsell || METAS_UPSELL_DEFAULT);
+            React.useEffect(() => { setMetasEdit(metasUpsell || METAS_UPSELL_DEFAULT); }, [metasUpsell]);
+
+            const mes = SYSTEM_CONFIG.MES_VIGENTE.mes;
+            const ano = SYSTEM_CONFIG.MES_VIGENTE.ano;
+
+            const dataDaOrdem = (o) => {
+                let d = null;
+                if (o.fim) d = (typeof o.fim === 'string') ? converterDataBrasileira(o.fim) : (o.fim.toDate ? o.fim.toDate() : new Date(o.fim));
+                if ((!d || isNaN(d)) && o.dataHora) d = new Date(o.dataHora);
+                return (d && !isNaN(d)) ? d : null;
+            };
+            // Ordens concluídas do mês vigente (tempo real, a partir da janela ao vivo)
+            const ordensMes = orders.filter(o => {
+                if (o.status !== 'concluido') return false;
+                const d = dataDaOrdem(o);
+                return d && d.getMonth() + 1 === mes && d.getFullYear() === ano;
+            });
+            const carrosMes = ordensMes.length;
+            const recebeu = (o, k) => { const u = (o.upsells || {})[k]; return !!(u && u.aceito === 'sim'); };
+
+            const linhas = Object.keys(SERVICO_LABELS).map(k => {
+                const recebidos = ordensMes.filter(o => recebeu(o, k));
+                const realizado = recebidos.length;
+                const meta = parseInt((metasEdit && metasEdit[k]) || 0) || 0;
+                // ticket médio: valor real vendido do item no mês (fallback: histórico da janela)
+                let soma = 0, n = 0;
+                recebidos.forEach(o => { const v = parseFloat(((o.upsells || {})[k] || {}).valor); if (!isNaN(v)) { soma += v; n++; } });
+                if (n === 0) orders.forEach(o => { if (recebeu(o, k)) { const v = parseFloat(((o.upsells || {})[k] || {}).valor); if (!isNaN(v)) { soma += v; n++; } } });
+                const ticket = n ? soma / n : 0;
+                const pctCarros = carrosMes ? (realizado / carrosMes * 100) : 0;
+                const pctMeta = meta ? (realizado / meta * 100) : 0;
+                return { k, nome: SERVICO_LABELS[k], ticket, realizado, meta, pctCarros, pctMeta };
+            }).sort((a, b) => b.meta - a.meta);
+
+            const salvarMeta = (k, valor) => {
+                const novas = { ...metasEdit, [k]: parseInt(valor) || 0 };
+                setMetasEdit(novas);
+            };
+            const commitMetas = () => { if (onSalvarMetas) onSalvarMetas(metasEdit); };
+
+            const brl = n => 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            // Dados do modal de detalhe
+            const detalhe = detalheItem ? (() => {
+                const receberam = ordensMes.filter(o => recebeu(o, detalheItem))
+                    .sort((a, b) => (b.numeroOrdem || 0) - (a.numeroOrdem || 0));
+                const naoReceberam = ordensMes.filter(o => !recebeu(o, detalheItem))
+                    .sort((a, b) => (b.numeroOrdem || 0) - (a.numeroOrdem || 0));
+                return { receberam, naoReceberam };
+            })() : null;
+
+            return (
+                <div>
+                    {/* Cabeçalho: carros atendidos no mês */}
+                    <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '20px' }}>
+                        <div style={{ background: 'white', borderRadius: '12px', padding: '18px 22px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
+                            <div style={{ fontSize: '12px', color: '#718096', fontWeight: '600' }}>🚗 CARROS ATENDIDOS · {getNomeMes(mes)}/{ano}</div>
+                            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#2d3748' }}>{carrosMes}</div>
+                        </div>
+                        <div style={{ background: 'white', borderRadius: '12px', padding: '18px 22px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
+                            <div style={{ fontSize: '12px', color: '#718096', fontWeight: '600' }}>🎯 META UPSELL EM TEMPO REAL</div>
+                            <div style={{ fontSize: '14px', color: '#a0aec0', marginTop: '4px' }}>Clique num item para ver os carros que receberam e os que não receberam.</div>
+                        </div>
+                    </div>
+
+                    <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '640px' }}>
+                            <thead>
+                                <tr style={{ background: '#f7fafc', borderBottom: '2px solid #e2e8f0' }}>
+                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', color: '#718096', textTransform: 'uppercase' }}>Item de upsell</th>
+                                    <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: '12px', color: '#718096', textTransform: 'uppercase' }}>Ticket</th>
+                                    <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: '12px', color: '#718096', textTransform: 'uppercase' }}>Realizado</th>
+                                    <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: '12px', color: '#718096', textTransform: 'uppercase' }}>Meta</th>
+                                    <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: '12px', color: '#718096', textTransform: 'uppercase' }}>% dos carros</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {linhas.map(l => {
+                                    const bateu = l.meta > 0 && l.realizado >= l.meta;
+                                    return (
+                                        <tr key={l.k} onClick={() => setDetalheItem(l.k)}
+                                            style={{ borderBottom: '1px solid #edf2f7', cursor: 'pointer' }}
+                                            onMouseEnter={e => e.currentTarget.style.background = '#f7fafc'}
+                                            onMouseLeave={e => e.currentTarget.style.background = 'white'}>
+                                            <td style={{ padding: '12px 16px', fontWeight: '600', color: '#2d3748' }}>{l.nome}</td>
+                                            <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: 'monospace', color: '#718096' }}>{brl(l.ticket)}</td>
+                                            <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: bateu ? '#2e7d63' : '#2d3748' }}>
+                                                {l.realizado}<span style={{ color: '#a0aec0', fontWeight: '500' }}> / {l.meta}</span>
+                                                <div style={{ height: '4px', background: '#edf2f7', borderRadius: '3px', marginTop: '4px' }}>
+                                                    <div style={{ height: '100%', width: Math.min(100, l.pctMeta) + '%', background: bateu ? '#2e7d63' : '#667eea', borderRadius: '3px' }}></div>
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '12px 16px', textAlign: 'right' }} onClick={e => { if (isAdmin) e.stopPropagation(); }}>
+                                                {isAdmin ? (
+                                                    <input type="number" min="0" value={l.meta}
+                                                        onChange={e => salvarMeta(l.k, e.target.value)}
+                                                        onBlur={commitMetas}
+                                                        style={{ width: '64px', padding: '5px 7px', textAlign: 'right', fontFamily: 'monospace', border: '2px solid #e2e8f0', borderRadius: '6px' }} />
+                                                ) : (
+                                                    <span style={{ fontFamily: 'monospace', fontWeight: '600', color: '#667eea' }}>{l.meta}</span>
+                                                )}
+                                            </td>
+                                            <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: l.pctCarros >= 15 ? '#2e7d63' : '#4a5568' }}>{l.pctCarros.toFixed(0)}%</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                    {isAdmin && <div style={{ fontSize: '12px', color: '#a0aec0', marginTop: '10px' }}>Você é ADM: edite a coluna Meta e o valor é salvo para todos.</div>}
+
+                    {/* MODAL DE DETALHE POR ITEM */}
+                    {detalhe && (
+                        <div onClick={() => setDetalheItem(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+                            <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: '14px', width: '100%', maxWidth: '820px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+                                <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                        <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#2d3748' }}>{SERVICO_LABELS[detalheItem]}</div>
+                                        <div style={{ fontSize: '13px', color: '#718096' }}>{getNomeMes(mes)}/{ano} · {detalhe.receberam.length} receberam · {detalhe.naoReceberam.length} não receberam (de {carrosMes} carros)</div>
+                                    </div>
+                                    <button onClick={() => setDetalheItem(null)} style={{ background: '#edf2f7', border: 'none', borderRadius: '8px', padding: '8px 14px', cursor: 'pointer', fontSize: '16px' }}>✕</button>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0', overflow: 'hidden', flex: 1 }}>
+                                    <div style={{ borderRight: '1px solid #e2e8f0', overflowY: 'auto', maxHeight: '65vh' }}>
+                                        <div style={{ padding: '12px 20px', position: 'sticky', top: 0, background: '#e9f7f0', fontWeight: '700', color: '#2e7d63', fontSize: '13px' }}>✅ Receberam ({detalhe.receberam.length})</div>
+                                        {detalhe.receberam.map(o => (
+                                            <div key={o.id} style={{ padding: '10px 20px', borderBottom: '1px solid #f1f5f9', fontSize: '13px' }}>
+                                                <div style={{ fontWeight: '600', color: '#2d3748' }}>{o.placa || '—'} · {o.cliente || '—'}</div>
+                                                <div style={{ color: '#718096', fontSize: '12px' }}>{normalizarLubrificador(o.lubrificador) || o.lubrificador || '—'} · {brl(parseFloat(((o.upsells || {})[detalheItem] || {}).valor) || 0)}</div>
+                                            </div>
+                                        ))}
+                                        {detalhe.receberam.length === 0 && <div style={{ padding: '16px 20px', color: '#a0aec0', fontSize: '13px' }}>Nenhum ainda neste mês.</div>}
+                                    </div>
+                                    <div style={{ overflowY: 'auto', maxHeight: '65vh' }}>
+                                        <div style={{ padding: '12px 20px', position: 'sticky', top: 0, background: '#fef3f2', fontWeight: '700', color: '#c0392b', fontSize: '13px' }}>⚪ Não receberam — oportunidade ({detalhe.naoReceberam.length})</div>
+                                        {detalhe.naoReceberam.map(o => (
+                                            <div key={o.id} style={{ padding: '10px 20px', borderBottom: '1px solid #f1f5f9', fontSize: '13px' }}>
+                                                <div style={{ fontWeight: '600', color: '#2d3748' }}>{o.placa || '—'} · {o.cliente || '—'}</div>
+                                                <div style={{ color: '#718096', fontSize: '12px' }}>{normalizarLubrificador(o.lubrificador) || o.lubrificador || '—'}</div>
+                                            </div>
+                                        ))}
+                                        {detalhe.naoReceberam.length === 0 && <div style={{ padding: '16px 20px', color: '#a0aec0', fontSize: '13px' }}>Todos receberam 🎉</div>}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
 
         // ============================================
         // COMPONENTE: ABA VOLUMETRIA
@@ -2054,6 +2236,7 @@
                 return parseFloat(localStorage.getItem('fatorAjuste') || '0');
             }); // Fator % ajuste valores (só ADM)
             const [comissaoConfig, setComissaoConfig] = useState(GLOBAL_COMISSAO); // Senhas + ajustes de comissão (global)
+            const [metasUpsell, setMetasUpsell] = useState(GLOBAL_METAS_UPSELL); // Metas de upsell por item (global)
             const [showEditHorarioModal, setShowEditHorarioModal] = useState(false); // Modal editar horários
             const [showEditUpsellModal, setShowEditUpsellModal] = useState(false); // Modal editar upsell
             const [selectedUpsellOrder, setSelectedUpsellOrder] = useState(null); // Ordem selecionada para editar upsell
@@ -2241,6 +2424,14 @@
                         GLOBAL_COMISSAO = comissao;
                         localStorage.setItem('comissaoConfig', JSON.stringify(comissao));
                         setComissaoConfig(comissao);
+
+                        // Metas de upsell por item (global)
+                        if (data.metasUpsell) {
+                            const mu = { ...METAS_UPSELL_DEFAULT, ...data.metasUpsell };
+                            GLOBAL_METAS_UPSELL = mu;
+                            localStorage.setItem('metasUpsell', JSON.stringify(mu));
+                            setMetasUpsell(mu);
+                        }
                     },
                     (err) => console.error('Erro ao ouvir configuração global:', err)
                 );
@@ -2440,6 +2631,24 @@
                             }}
                         >
                             📊 Volumetria
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('metaupsell')}
+                            style={{
+                                flex: 1,
+                                padding: '12px 20px',
+                                border: 'none',
+                                borderRadius: '8px',
+                                fontSize: '15px',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                background: activeTab === 'metaupsell' ? 'linear-gradient(135deg, #E31B23 0%, #0066CC 100%)' : 'transparent',
+                                color: activeTab === 'metaupsell' ? 'white' : '#4a5568',
+                                transition: 'all 0.3s',
+                                boxShadow: activeTab === 'metaupsell' ? '0 4px 12px rgba(227, 27, 35, 0.3)' : 'none'
+                            }}
+                        >
+                            🎯 Meta Upsell
                         </button>
                     </div>
 
@@ -2715,6 +2924,15 @@
                             }}
                             loadOrders={loadOrders}
                             comissaoConfig={comissaoConfig}
+                        />
+                    )}
+
+                    {activeTab === 'metaupsell' && (
+                        <MetaUpsellTab
+                            orders={orders}
+                            metasUpsell={metasUpsell}
+                            isAdmin={isAdmin}
+                            onSalvarMetas={(m) => { setMetasUpsell(m); salvarMetasUpsell(m); }}
                         />
                     )}
 
