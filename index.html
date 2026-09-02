@@ -1140,10 +1140,13 @@
                     const placa = (ordem.placa || '').toLowerCase();
                     const cliente = (ordem.cliente || '').toLowerCase();
                     const tel = (ordem.tel || '').toLowerCase();
-                    
-                    return placa.includes(termoLower) || 
-                           cliente.includes(termoLower) || 
-                           tel.includes(termoLower);
+                    const numOrdem = String(ordem.numeroOrdem || '');
+                    const termoNum = termoLower.replace('#', '');
+
+                    return placa.includes(termoLower) ||
+                           cliente.includes(termoLower) ||
+                           tel.includes(termoLower) ||
+                           (termoNum !== '' && numOrdem === termoNum);
                 });
                 
                 // Agrupar por cliente/placa
@@ -2664,24 +2667,6 @@
                             🔎 Consulta
                         </button>
                         <button
-                            onClick={() => setActiveTab('volumetria')}
-                            style={{
-                                flex: 1,
-                                padding: '12px 20px',
-                                border: 'none',
-                                borderRadius: '8px',
-                                fontSize: '15px',
-                                fontWeight: '600',
-                                cursor: 'pointer',
-                                background: activeTab === 'volumetria' ? 'linear-gradient(135deg, #E31B23 0%, #0066CC 100%)' : 'transparent',
-                                color: activeTab === 'volumetria' ? 'white' : '#4a5568',
-                                transition: 'all 0.3s',
-                                boxShadow: activeTab === 'volumetria' ? '0 4px 12px rgba(227, 27, 35, 0.3)' : 'none'
-                            }}
-                        >
-                            📊 Volumetria
-                        </button>
-                        <button
                             onClick={() => setActiveTab('metaupsell')}
                             style={{
                                 flex: 1,
@@ -2698,6 +2683,24 @@
                             }}
                         >
                             🎯 Meta Upsell
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('volumetria')}
+                            style={{
+                                flex: 1,
+                                padding: '12px 20px',
+                                border: 'none',
+                                borderRadius: '8px',
+                                fontSize: '15px',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                background: activeTab === 'volumetria' ? 'linear-gradient(135deg, #E31B23 0%, #0066CC 100%)' : 'transparent',
+                                color: activeTab === 'volumetria' ? 'white' : '#4a5568',
+                                transition: 'all 0.3s',
+                                boxShadow: activeTab === 'volumetria' ? '0 4px 12px rgba(227, 27, 35, 0.3)' : 'none'
+                            }}
+                        >
+                            📊 Volumetria
                         </button>
                     </div>
 
@@ -3291,7 +3294,7 @@
             const resultados = concluidos.filter(o => {
                 // Texto: placa, cliente ou telefone
                 if (termoLower) {
-                    const alvo = `${o.placa || ''} ${o.cliente || ''} ${o.tel || ''}`.toLowerCase();
+                    const alvo = `${o.placa || ''} ${o.cliente || ''} ${o.tel || ''} ${o.numeroOrdem || ''} #${o.numeroOrdem || ''}`.toLowerCase();
                     if (!alvo.includes(termoLower)) return false;
                 }
                 if (lubFiltro !== 'todos' && normalizarLubrificador(o.lubrificador) !== lubFiltro) return false;
@@ -3327,7 +3330,7 @@
                     <div style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '25px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
                         <h3 style={{ margin: '0 0 15px 0', color: '#2d3748', fontSize: '18px' }}>🔎 Consultar Carros Concluídos</h3>
                         <div style={{ marginBottom: '15px' }}>
-                            <label style={labelStyle}>Buscar (placa, cliente ou telefone)</label>
+                            <label style={labelStyle}>Buscar (placa, cliente, telefone ou nº da OS)</label>
                             <input type="text" value={termo} onChange={(e) => setTermo(e.target.value)} placeholder="Ex: ABC1D23, João, 41999..." style={inputStyle} autoFocus />
                         </div>
                         <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -6755,7 +6758,7 @@
                                     value={termo}
                                     onChange={(e) => setTermo(e.target.value)}
                                     onKeyPress={(e) => e.key === 'Enter' && handleBuscar()}
-                                    placeholder="Digite placa, nome ou telefone..."
+                                    placeholder="Digite placa, nome, telefone ou nº da OS..."
                                     className="form-input"
                                     style={{ flex: 1 }}
                                     autoFocus
