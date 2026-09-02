@@ -1362,6 +1362,20 @@
             // SÓ UPSELL: item aceito 'sim' E que NÃO é venda de balcão (o campo-base da OS,
             // ou seja, o item que já nasce na ordem de serviço, tem o.<item> === true).
             const recebeu = (o, k) => { const u = (o.upsells || {})[k]; return !!(u && u.aceito === 'sim') && o[k] !== true; };
+            // Carro que já tem o item (por upsell OU balcão) — não é oportunidade.
+            const temItem = (o, k) => recebeu(o, k) || o[k] === true;
+
+            // PROJEÇÃO "no ritmo atual" — só faz sentido no mês em andamento.
+            const ehMesAtual = mesSel === mesAtualKey;
+            const diaHoje = (() => {
+                const p = {};
+                new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Sao_Paulo', day: '2-digit' })
+                    .formatToParts(new Date()).forEach(x => { p[x.type] = x.value; });
+                return parseInt(p.day, 10);
+            })();
+            const diasNoMes = new Date(parseInt(mesSel.slice(0, 4)), parseInt(mesSel.slice(5, 7)), 0).getDate();
+            const fatorProj = (ehMesAtual && diaHoje > 0) ? (diasNoMes / diaHoje) : 1;
+            const carrosProj = ehMesAtual ? Math.round(carrosMes * fatorProj) : carrosMes;
 
             const linhas = Object.keys(SERVICO_LABELS).map(k => {
                 const recebidos = ordensMes.filter(o => recebeu(o, k));
@@ -1374,7 +1388,8 @@
                 const ticket = n ? soma / n : 0;
                 const pctCarros = carrosMes ? (realizado / carrosMes * 100) : 0;
                 const pctMeta = meta ? (realizado / meta * 100) : 0;
-                return { k, nome: SERVICO_LABELS[k], ticket, realizado, meta, pctCarros, pctMeta };
+                const projetado = ehMesAtual ? Math.round(realizado * fatorProj) : realizado;
+                return { k, nome: SERVICO_LABELS[k], ticket, realizado, meta, pctCarros, pctMeta, projetado };
             }).sort((a, b) => b.meta - a.meta);
 
             const salvarMeta = (k, valor) => {
@@ -1389,7 +1404,7 @@
             const detalhe = detalheItem ? (() => {
                 const receberam = ordensMes.filter(o => recebeu(o, detalheItem))
                     .sort((a, b) => (b.numeroOrdem || 0) - (a.numeroOrdem || 0));
-                const naoReceberam = ordensMes.filter(o => !recebeu(o, detalheItem))
+                const naoReceberam = ordensMes.filter(o => !temItem(o, detalheItem))
                     .sort((a, b) => (b.numeroOrdem || 0) - (a.numeroOrdem || 0));
                 return { receberam, naoReceberam };
             })() : null;
@@ -1408,10 +1423,15 @@
                         <div style={{ background: 'white', borderRadius: '12px', padding: '18px 22px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
                             <div style={{ fontSize: '12px', color: '#718096', fontWeight: '600' }}>🚗 CARROS ATENDIDOS</div>
                             <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#2d3748' }}>{carrosMes}</div>
+                            {ehMesAtual && <div style={{ fontSize: '12px', color: '#a0aec0', marginTop: '2px' }}>projeção: ~{carrosProj} no mês</div>}
                         </div>
                         <div style={{ background: 'white', borderRadius: '12px', padding: '18px 22px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', flex: 1, minWidth: '220px' }}>
                             <div style={{ fontSize: '12px', color: '#718096', fontWeight: '600' }}>🎯 META UPSELL EM TEMPO REAL</div>
-                            <div style={{ fontSize: '14px', color: '#a0aec0', marginTop: '4px' }}>Só conta upsell (venda de balcão não entra). Clique num item para ver quem recebeu e quem não recebeu.</div>
+                            <div style={{ fontSize: '14px', color: '#a0aec0', marginTop: '4px' }}>
+                                {ehMesAtual
+                                    ? `Projeção "no ritmo atual" = realizado ÷ ${diaHoje} dias × ${diasNoMes} dias do mês. Só conta upsell (balcão não entra).`
+                                    : 'Mês fechado. Só conta upsell (venda de balcão não entra).'}
+                            </div>
                         </div>
                     </div>
 
@@ -1422,6 +1442,7 @@
                                     <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', color: '#718096', textTransform: 'uppercase' }}>Item de upsell</th>
                                     <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: '12px', color: '#718096', textTransform: 'uppercase' }}>Ticket</th>
                                     <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: '12px', color: '#718096', textTransform: 'uppercase' }}>Realizado</th>
+                                    <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: '12px', color: '#718096', textTransform: 'uppercase' }}>Projeção fim do mês</th>
                                     <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: '12px', color: '#718096', textTransform: 'uppercase' }}>Meta</th>
                                     <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: '12px', color: '#718096', textTransform: 'uppercase' }}>% dos carros</th>
                                 </tr>
@@ -1441,6 +1462,15 @@
                                                 <div style={{ height: '4px', background: '#edf2f7', borderRadius: '3px', marginTop: '4px' }}>
                                                     <div style={{ height: '100%', width: Math.min(100, l.pctMeta) + '%', background: bateu ? '#2e7d63' : '#667eea', borderRadius: '3px' }}></div>
                                                 </div>
+                                            </td>
+                                            <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700' }}>
+                                                {ehMesAtual ? (
+                                                    <span style={{ color: (l.meta > 0 && l.projetado >= l.meta) ? '#2e7d63' : '#c0392b' }}>
+                                                        {l.projetado}{l.meta > 0 && l.projetado >= l.meta ? ' ✓' : ''}
+                                                    </span>
+                                                ) : (
+                                                    <span style={{ color: '#a0aec0', fontWeight: '500' }}>mês fechado</span>
+                                                )}
                                             </td>
                                             <td style={{ padding: '12px 16px', textAlign: 'right' }} onClick={e => { if (isAdmin) e.stopPropagation(); }}>
                                                 {isAdmin ? (
