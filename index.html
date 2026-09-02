@@ -1333,23 +1333,35 @@
             const [metasEdit, setMetasEdit] = React.useState(metasUpsell || METAS_UPSELL_DEFAULT);
             React.useEffect(() => { setMetasEdit(metasUpsell || METAS_UPSELL_DEFAULT); }, [metasUpsell]);
 
-            const mes = SYSTEM_CONFIG.MES_VIGENTE.mes;
-            const ano = SYSTEM_CONFIG.MES_VIGENTE.ano;
+            // Mês de referência: 'AAAA-MM'. Default = mês atual (fuso de Brasília).
+            const mesAtualKey = (() => {
+                const p = {};
+                new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' })
+                    .formatToParts(new Date()).forEach(x => { p[x.type] = x.value; });
+                return `${p.year}-${p.month}`;
+            })();
+            const [mesSel, setMesSel] = React.useState(mesAtualKey);
 
-            const dataDaOrdem = (o) => {
-                let d = null;
-                if (o.fim) d = (typeof o.fim === 'string') ? converterDataBrasileira(o.fim) : (o.fim.toDate ? o.fim.toDate() : new Date(o.fim));
-                if ((!d || isNaN(d)) && o.dataHora) d = new Date(o.dataHora);
-                return (d && !isNaN(d)) ? d : null;
+            // Chave de mês da ordem (pela data de conclusão)
+            const mesKeyDe = (o) => {
+                if (o.fim && /^\d{2}\/\d{2}\/\d{4}/.test(o.fim)) { const p = o.fim.slice(0, 10).split('/'); return `${p[2]}-${p[1]}`; }
+                if (o.dataHora) return String(o.dataHora).slice(0, 7);
+                return null;
             };
-            // Ordens concluídas do mês vigente (tempo real, a partir da janela ao vivo)
-            const ordensMes = orders.filter(o => {
-                if (o.status !== 'concluido') return false;
-                const d = dataDaOrdem(o);
-                return d && d.getMonth() + 1 === mes && d.getFullYear() === ano;
-            });
+            const nomeMesKey = (mk) => `${getNomeMes(parseInt(mk.slice(5, 7)))}/${mk.slice(0, 4)}`;
+
+            const concluidas = orders.filter(o => o.status === 'concluido');
+            // Meses disponíveis para o seletor (garante o mês atual mesmo sem ordens ainda)
+            const mesesDisp = Array.from(new Set(concluidas.map(mesKeyDe).filter(Boolean)));
+            if (!mesesDisp.includes(mesAtualKey)) mesesDisp.push(mesAtualKey);
+            mesesDisp.sort().reverse();
+
+            const ordensMes = concluidas.filter(o => mesKeyDe(o) === mesSel);
             const carrosMes = ordensMes.length;
-            const recebeu = (o, k) => { const u = (o.upsells || {})[k]; return !!(u && u.aceito === 'sim'); };
+
+            // SÓ UPSELL: item aceito 'sim' E que NÃO é venda de balcão (o campo-base da OS,
+            // ou seja, o item que já nasce na ordem de serviço, tem o.<item> === true).
+            const recebeu = (o, k) => { const u = (o.upsells || {})[k]; return !!(u && u.aceito === 'sim') && o[k] !== true; };
 
             const linhas = Object.keys(SERVICO_LABELS).map(k => {
                 const recebidos = ordensMes.filter(o => recebeu(o, k));
@@ -1384,15 +1396,22 @@
 
             return (
                 <div>
-                    {/* Cabeçalho: carros atendidos no mês */}
-                    <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '20px' }}>
+                    {/* Cabeçalho: seletor de mês + carros atendidos */}
+                    <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '20px', alignItems: 'stretch' }}>
                         <div style={{ background: 'white', borderRadius: '12px', padding: '18px 22px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
-                            <div style={{ fontSize: '12px', color: '#718096', fontWeight: '600' }}>🚗 CARROS ATENDIDOS · {getNomeMes(mes)}/{ano}</div>
-                            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#2d3748' }}>{carrosMes}</div>
+                            <div style={{ fontSize: '12px', color: '#718096', fontWeight: '600', marginBottom: '6px' }}>📅 MÊS</div>
+                            <select value={mesSel} onChange={e => setMesSel(e.target.value)}
+                                style={{ padding: '8px 12px', fontSize: '15px', fontWeight: '600', border: '2px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer' }}>
+                                {mesesDisp.map(mk => <option key={mk} value={mk}>{nomeMesKey(mk)}{mk === mesAtualKey ? ' (atual)' : ''}</option>)}
+                            </select>
                         </div>
                         <div style={{ background: 'white', borderRadius: '12px', padding: '18px 22px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
+                            <div style={{ fontSize: '12px', color: '#718096', fontWeight: '600' }}>🚗 CARROS ATENDIDOS</div>
+                            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#2d3748' }}>{carrosMes}</div>
+                        </div>
+                        <div style={{ background: 'white', borderRadius: '12px', padding: '18px 22px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', flex: 1, minWidth: '220px' }}>
                             <div style={{ fontSize: '12px', color: '#718096', fontWeight: '600' }}>🎯 META UPSELL EM TEMPO REAL</div>
-                            <div style={{ fontSize: '14px', color: '#a0aec0', marginTop: '4px' }}>Clique num item para ver os carros que receberam e os que não receberam.</div>
+                            <div style={{ fontSize: '14px', color: '#a0aec0', marginTop: '4px' }}>Só conta upsell (venda de balcão não entra). Clique num item para ver quem recebeu e quem não recebeu.</div>
                         </div>
                     </div>
 
@@ -1449,7 +1468,7 @@
                                 <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <div>
                                         <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#2d3748' }}>{SERVICO_LABELS[detalheItem]}</div>
-                                        <div style={{ fontSize: '13px', color: '#718096' }}>{getNomeMes(mes)}/{ano} · {detalhe.receberam.length} receberam · {detalhe.naoReceberam.length} não receberam (de {carrosMes} carros)</div>
+                                        <div style={{ fontSize: '13px', color: '#718096' }}>{nomeMesKey(mesSel)} · {detalhe.receberam.length} receberam · {detalhe.naoReceberam.length} não receberam (de {carrosMes} carros)</div>
                                     </div>
                                     <button onClick={() => setDetalheItem(null)} style={{ background: '#edf2f7', border: 'none', borderRadius: '8px', padding: '8px 14px', cursor: 'pointer', fontSize: '16px' }}>✕</button>
                                 </div>
@@ -2286,7 +2305,7 @@
 
             // A tela que está à mostra agora depende do histórico completo?
             const telaUsaHistorico =
-                activeTab === 'consulta' || activeTab === 'volumetria' || filtroExigeHistorico;
+                activeTab === 'consulta' || activeTab === 'volumetria' || activeTab === 'metaupsell' || filtroExigeHistorico;
 
             // 1) Listener em tempo real da janela recente
             useEffect(() => {
@@ -2929,7 +2948,7 @@
 
                     {activeTab === 'metaupsell' && (
                         <MetaUpsellTab
-                            orders={orders}
+                            orders={ordersParaAnalise}
                             metasUpsell={metasUpsell}
                             isAdmin={isAdmin}
                             onSalvarMetas={(m) => { setMetasUpsell(m); salvarMetasUpsell(m); }}
