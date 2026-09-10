@@ -2819,6 +2819,7 @@
                     {/* PAINEL DO RODÍZIO */}
                     <RodizioPainel
                         info={rodizioInfo}
+                        orders={orders}
                         rodizio={rodizio}
                         onSetStatus={setStatusMec}
                         chefeAutorizado={chefeAutorizado}
@@ -3210,9 +3211,31 @@
         // ============================================
         // COMPONENTE: PAINEL DO RODÍZIO (topo das Ordens)
         // ============================================
-        function RodizioPainel({ info, onSetStatus, chefeAutorizado, onAutorizarChefe, onSairChefe }) {
+        function RodizioPainel({ info, orders = [], onSetStatus, chefeAutorizado, onAutorizarChefe, onSairChefe }) {
             const { dados, fila } = info;
+            const [periodo, setPeriodo] = React.useState('diario'); // diario / semanal / mensal
             const brl = n => 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            // Faturamento por operador no período selecionado (diário/semanal/mensal)
+            const porOperador = React.useMemo(() => {
+                const hoje = hojeKeyBR();
+                const [ay, am, ad] = hoje.split('-').map(Number);
+                const base = new Date(ay, am - 1, ad);
+                const inicioSemana = new Date(base); inicioSemana.setDate(base.getDate() - ((base.getDay() + 6) % 7)); // segunda
+                const iniSemanaKey = `${inicioSemana.getFullYear()}-${String(inicioSemana.getMonth() + 1).padStart(2, '0')}-${String(inicioSemana.getDate()).padStart(2, '0')}`;
+                const mesKey = hoje.slice(0, 7);
+                const noPeriodo = (dk) => {
+                    if (!dk) return false;
+                    if (periodo === 'diario') return dk === hoje;
+                    if (periodo === 'semanal') return dk >= iniSemanaKey && dk <= hoje;
+                    return dk.slice(0, 7) === mesKey; // mensal
+                };
+                return dados.map(m => {
+                    const doOp = orders.filter(o => normalizarLubrificador(o.lubrificador) === m.nome
+                        && (o.status === 'concluido' || o.status === 'andamento') && noPeriodo(diaKeyBR(o)));
+                    return { nome: m.nome, status: m.status, carros: doOp.length, fat: doOp.reduce((s, o) => s + (parseFloat(o.valorTotal) || 0), 0) };
+                }).sort((a, b) => b.fat - a.fat);
+            }, [dados, orders, periodo]);
             const badge = (m) => {
                 if (m.emAndamento) return ['🔵 Em atendimento', '#2f6fb016', '#2F6FB0'];
                 if (m.status === 'almoco') return ['🍴 Almoço', '#c6841e1c', '#C6841E'];
@@ -3263,28 +3286,36 @@
                     <div style={{ marginTop: '14px', borderTop: '1px solid #edf2f7', paddingTop: '12px' }}>
                         {!chefeAutorizado ? (
                             <button onClick={onAutorizarChefe} style={{ fontSize: '13px', fontWeight: '600', color: '#718096', background: '#f7fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 14px', cursor: 'pointer' }}>
-                                🔒 Painel do chefe (carros e faturamento)
+                                🔒 Painel do chefe
                             </button>
                         ) : (
                             <div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                    <span style={{ fontWeight: '700', color: '#2d3748' }}>👑 Painel do chefe</span>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                                    <span style={{ fontWeight: '700', color: '#2d3748' }}>👑 Painel do chefe · faturamento por operador</span>
                                     <button onClick={onSairChefe} style={{ fontSize: '12px', color: '#718096', background: 'none', border: 'none', cursor: 'pointer' }}>fechar</button>
+                                </div>
+                                <div style={{ display: 'inline-flex', border: '2px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden', marginBottom: '12px' }}>
+                                    {[['diario', 'Diário'], ['semanal', 'Semanal'], ['mensal', 'Mensal']].map(([v, lbl]) => (
+                                        <button key={v} onClick={() => setPeriodo(v)}
+                                            style={{ fontSize: '13px', fontWeight: '600', padding: '7px 16px', border: 'none', cursor: 'pointer', background: periodo === v ? '#2F6FB0' : 'white', color: periodo === v ? '#fff' : '#718096' }}>
+                                            {lbl}
+                                        </button>
+                                    ))}
                                 </div>
                                 <div style={{ overflowX: 'auto' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '480px' }}>
                                         <thead><tr style={{ background: '#f7fafc' }}>
-                                            <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: '11px', color: '#718096', textTransform: 'uppercase' }}>Mecânico</th>
-                                            <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: '11px', color: '#718096', textTransform: 'uppercase' }}>Carros hoje</th>
+                                            <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: '11px', color: '#718096', textTransform: 'uppercase' }}>Operador</th>
+                                            <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: '11px', color: '#718096', textTransform: 'uppercase' }}>Carros</th>
                                             <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: '11px', color: '#718096', textTransform: 'uppercase' }}>Faturou (tocou)</th>
                                             <th style={{ textAlign: 'center', padding: '8px 12px', fontSize: '11px', color: '#718096', textTransform: 'uppercase' }}>Ausente</th>
                                         </tr></thead>
                                         <tbody>
-                                            {dados.map(m => (
+                                            {porOperador.map(m => (
                                                 <tr key={m.nome} style={{ borderBottom: '1px solid #edf2f7' }}>
                                                     <td style={{ padding: '9px 12px', fontWeight: '600' }}>{m.nome}</td>
-                                                    <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600' }}>{m.carrosHoje}</td>
-                                                    <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#2e7d63', fontWeight: '600' }}>{brl(m.fatHoje)}</td>
+                                                    <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600' }}>{m.carros}</td>
+                                                    <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#2e7d63', fontWeight: '600' }}>{brl(m.fat)}</td>
                                                     <td style={{ padding: '9px 12px', textAlign: 'center' }}>
                                                         <button onClick={() => onSetStatus(m.nome, m.status === 'ausente' ? 'disponivel' : 'ausente')}
                                                             style={{ fontSize: '12px', fontWeight: '600', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', background: m.status === 'ausente' ? '#c0392b' : '#f7fafc', color: m.status === 'ausente' ? '#fff' : '#718096' }}>
@@ -3293,6 +3324,12 @@
                                                     </td>
                                                 </tr>
                                             ))}
+                                            <tr style={{ background: '#f7fafc', fontWeight: '700' }}>
+                                                <td style={{ padding: '9px 12px' }}>Total</td>
+                                                <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{porOperador.reduce((s, m) => s + m.carros, 0)}</td>
+                                                <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#2e7d63' }}>{brl(porOperador.reduce((s, m) => s + m.fat, 0))}</td>
+                                                <td></td>
+                                            </tr>
                                         </tbody>
                                     </table>
                                 </div>
