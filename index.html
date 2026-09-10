@@ -824,6 +824,43 @@
             );
         };
 
+        // ============================================
+        // RODÍZIO DE ATENDIMENTO
+        // ============================================
+        // Quem NÃO entra no rodízio: gestão (Italo = chefe, Leo = dono) e inativos.
+        const RODIZIO_EXCLUIDOS = ['Italo', 'Leo', 'Luis', 'Pedro', 'Bruno', 'Sem lubrificador', '—'];
+        const RODIZIO_SENHA_CHEFE = 'italo123';
+
+        // Data (AAAA-MM-DD) no fuso de Brasília a partir de uma string 'DD/MM/AAAA...' ou ISO.
+        const diaKeyBR = (o) => {
+            if (o && o.fim && /^\d{2}\/\d{2}\/\d{4}/.test(o.fim)) { const p = o.fim.slice(0, 10).split('/'); return `${p[2]}-${p[1]}-${p[0]}`; }
+            if (o && o.dataHora) return String(o.dataHora).slice(0, 10);
+            return null;
+        };
+        const hojeKeyBR = () => {
+            const p = {};
+            new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' })
+                .formatToParts(new Date()).forEach(x => { p[x.type] = x.value; });
+            return `${p.year}-${p.month}-${p.day}`;
+        };
+
+        // Estado do rodízio (compartilhado via Firestore): status e "filaSince" por mecânico,
+        // com um marcador de dia para zerar tudo a cada dia.
+        let GLOBAL_RODIZIO = (() => {
+            try { return JSON.parse(localStorage.getItem('rodizio') || '{}'); } catch (e) { return {}; }
+        })();
+        if (!GLOBAL_RODIZIO.status) GLOBAL_RODIZIO.status = {};
+        if (!GLOBAL_RODIZIO.filaSince) GLOBAL_RODIZIO.filaSince = {};
+
+        const salvarRodizio = async (r) => {
+            GLOBAL_RODIZIO = { status: r.status || {}, filaSince: r.filaSince || {}, dia: r.dia || hojeKeyBR() };
+            localStorage.setItem('rodizio', JSON.stringify(GLOBAL_RODIZIO));
+            await db.collection('config').doc('global').set(
+                { rodizio: GLOBAL_RODIZIO, rodizioAtualizadoEm: firebase.firestore.FieldValue.serverTimestamp() },
+                { merge: true }
+            );
+        };
+
         // Faixas de comissão por volume individual de upsell no mês
         const FAIXAS_COMISSAO = [
             { min: 0,     max: 4999.99,  pct: 0, label: 'Abaixo de R$ 5.000' },
@@ -2289,6 +2326,8 @@
             }); // Fator % ajuste valores (só ADM)
             const [comissaoConfig, setComissaoConfig] = useState(GLOBAL_COMISSAO); // Senhas + ajustes de comissão (global)
             const [metasUpsell, setMetasUpsell] = useState(GLOBAL_METAS_UPSELL); // Metas de upsell por item (global)
+            const [rodizio, setRodizio] = useState(GLOBAL_RODIZIO); // Estado do rodízio (global)
+            const [chefeAutorizado, setChefeAutorizado] = useState(false); // Painel do chefe desbloqueado
             const [showEditHorarioModal, setShowEditHorarioModal] = useState(false); // Modal editar horários
             const [showEditUpsellModal, setShowEditUpsellModal] = useState(false); // Modal editar upsell
             const [selectedUpsellOrder, setSelectedUpsellOrder] = useState(null); // Ordem selecionada para editar upsell
@@ -2484,6 +2523,13 @@
                             localStorage.setItem('metasUpsell', JSON.stringify(mu));
                             setMetasUpsell(mu);
                         }
+
+                        // Rodízio (global). Zera se o dia gravado não é hoje.
+                        let rod = data.rodizio || { status: {}, filaSince: {} };
+                        if (rod.dia !== hojeKeyBR()) rod = { status: {}, filaSince: {}, dia: hojeKeyBR() };
+                        GLOBAL_RODIZIO = { status: rod.status || {}, filaSince: rod.filaSince || {}, dia: rod.dia || hojeKeyBR() };
+                        localStorage.setItem('rodizio', JSON.stringify(GLOBAL_RODIZIO));
+                        setRodizio(GLOBAL_RODIZIO);
                     },
                     (err) => console.error('Erro ao ouvir configuração global:', err)
                 );
@@ -2568,19 +2614,69 @@
             };
 
             // Função para iniciar atendimento (muda status para andamento)
-            const handleIniciarAtendimento = async (order) => {
+            const handleIniciarAtendimento = async (order, mecNome) => {
                 try {
-                    await db.collection('orders').doc(order.id).update({
-                        status: 'andamento',
-                        inicio: getBrasilDateTime()
-                    });
-                    
-                    alert('Atendimento iniciado! Carro movido para "Em Andamento".');
+                    const upd = { status: 'andamento', inicio: getBrasilDateTime() };
+                    if (mecNome) upd.lubrificador = mecNome; // registra quem pegou (rodízio)
+                    await db.collection('orders').doc(order.id).update(upd);
                     loadOrders();
                 } catch (error) {
                     console.error('Erro ao iniciar atendimento:', error);
                     alert('Erro ao iniciar atendimento.');
                 }
+            };
+
+            // ---- RODÍZIO: cálculo da fila (tempo real) ----
+            const rodizioInfo = React.useMemo(() => {
+                const hoje = hojeKeyBR();
+                // último dia com movimento (para o desempate "ontem")
+                const diasComOrdem = [...new Set(orders.map(o => diaKeyBR(o)).filter(Boolean))].sort();
+                const diaOntem = diasComOrdem.filter(d => d < hoje).pop() || null;
+                // pool de mecânicos do rodízio: ativos recentes, menos exclusões
+                const pool = [...new Set(orders
+                    .map(o => normalizarLubrificador(o.lubrificador))
+                    .filter(Boolean))]
+                    .filter(l => !RODIZIO_EXCLUIDOS.includes(l) && !LUBRIFICADORES_INATIVOS.includes(l))
+                    .sort();
+                const fimMillis = (fim) => { const m = fim && fim.match(/(\d{2})\/(\d{2})\/(\d{4}),?\s+(\d{2}):(\d{2}):(\d{2})/); return m ? new Date(+m[3], +m[2] - 1, +m[1], +m[4], +m[5], +m[6]).getTime() : 0; };
+                const dados = pool.map(nome => {
+                    const doDia = orders.filter(o => normalizarLubrificador(o.lubrificador) === nome && diaKeyBR(o) === hoje);
+                    const carrosHoje = doDia.filter(o => o.status === 'andamento' || o.status === 'concluido').length;
+                    const fatHoje = doDia.reduce((s, o) => s + (parseFloat(o.valorTotal) || 0), 0);
+                    // "Em atendimento" só conta OS iniciada HOJE (OS esquecida aberta de outro dia não trava).
+                    const emAndamento = orders.some(o => {
+                        if (normalizarLubrificador(o.lubrificador) !== nome || o.status !== 'andamento') return false;
+                        const dk = (o.inicio && /^\d{2}\/\d{2}\/\d{4}/.test(o.inicio)) ? o.inicio.slice(0, 10).split('/').reverse().join('-') : diaKeyBR(o);
+                        return dk === hoje;
+                    });
+                    const carrosOntem = diaOntem ? orders.filter(o => normalizarLubrificador(o.lubrificador) === nome && diaKeyBR(o) === diaOntem && (o.status === 'concluido' || o.status === 'andamento')).length : 0;
+                    const status = (rodizio.status && rodizio.status[nome]) || 'disponivel';
+                    // "ficou disponível primeiro" = o mais recente entre: voltou do almoço/ausência (filaSince)
+                    // e concluiu o último carro do dia. Quem não pegou nada = 0 (esperando desde o início).
+                    const ultimaConclusao = Math.max(0, ...doDia.filter(o => o.status === 'concluido').map(o => fimMillis(o.fim)));
+                    const dispDesde = Math.max((rodizio.filaSince && rodizio.filaSince[nome]) || 0, ultimaConclusao);
+                    const disponivel = status === 'disponivel' && !emAndamento;
+                    return { nome, carrosHoje, fatHoje, emAndamento, carrosOntem, status, dispDesde, disponivel };
+                });
+                const fila = dados.filter(m => m.disponivel).sort((a, b) => {
+                    if (a.dispDesde !== b.dispDesde) return a.dispDesde - b.dispDesde; // ficou disponível primeiro
+                    if (a.carrosOntem !== b.carrosOntem) return a.carrosOntem - b.carrosOntem; // menos carros ontem
+                    return a.nome.localeCompare(b.nome); // alfabético
+                });
+                return { dados, fila, diaOntem };
+            }, [orders, rodizio]);
+
+            // Marca status de um mecânico (almoço/ausente/disponível). Ao voltar a
+            // ficar disponível, vai pro fim da fila (filaSince = agora).
+            const setStatusMec = (nome, st) => {
+                const novo = {
+                    status: { ...(rodizio.status || {}), [nome]: st },
+                    filaSince: { ...(rodizio.filaSince || {}) },
+                    dia: hojeKeyBR()
+                };
+                if (st === 'disponivel') novo.filaSince[nome] = Date.now();
+                setRodizio(novo);
+                salvarRodizio(novo);
             };
 
             return (
@@ -2720,6 +2816,20 @@
 
                     {activeTab === 'ordens' && (
                         <>
+                    {/* PAINEL DO RODÍZIO */}
+                    <RodizioPainel
+                        info={rodizioInfo}
+                        rodizio={rodizio}
+                        onSetStatus={setStatusMec}
+                        chefeAutorizado={chefeAutorizado}
+                        onAutorizarChefe={() => {
+                            const s = prompt('Senha do chefe de oficina:');
+                            if (s === RODIZIO_SENHA_CHEFE) setChefeAutorizado(true);
+                            else if (s !== null) alert('Senha incorreta.');
+                        }}
+                        onSairChefe={() => setChefeAutorizado(false)}
+                    />
+
                     {/* BANNER DE ALERTAS */}
                     {SYSTEM_CONFIG.ALERTAS_ENABLED && alertas.length > 0 && showAlertas && (
                         <div style={{
@@ -2865,11 +2975,13 @@
                                     </h2>
                                     <div className="cards-container">
                                         {aguardando.map((order, index) => (
-                                            <CardAguardando 
-                                                key={order.id} 
-                                                order={order} 
+                                            <CardAguardando
+                                                key={order.id}
+                                                order={order}
                                                 position={index + 1}
-                                                onIniciar={() => handleIniciarAtendimento(order)}
+                                                recomendado={rodizioInfo.fila[index] ? rodizioInfo.fila[index].nome : (rodizioInfo.fila[0] ? rodizioInfo.fila[0].nome : null)}
+                                                mecanicos={rodizioInfo.dados}
+                                                onIniciar={(mec) => handleIniciarAtendimento(order, mec)}
                                                 onCancelar={() => cancelarOrdem(order.id)}
                                                 onVerDados={() => {
                                                     setSelectedOrder(order);
@@ -3095,8 +3207,106 @@
             );
         }
 
-        function CardAguardando({ order, position, onIniciar, onCancelar, onVerDados, onEditar }) {
+        // ============================================
+        // COMPONENTE: PAINEL DO RODÍZIO (topo das Ordens)
+        // ============================================
+        function RodizioPainel({ info, onSetStatus, chefeAutorizado, onAutorizarChefe, onSairChefe }) {
+            const { dados, fila } = info;
+            const brl = n => 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const badge = (m) => {
+                if (m.emAndamento) return ['🔵 Em atendimento', '#2f6fb016', '#2F6FB0'];
+                if (m.status === 'almoco') return ['🍴 Almoço', '#c6841e1c', '#C6841E'];
+                if (m.status === 'ausente') return ['🔴 Ausente', '#c0392b14', '#C0392B'];
+                return ['🟢 Disponível', '#2e7d6316', '#2E7D63'];
+            };
+            return (
+                <div style={{ background: 'white', borderRadius: '15px', boxShadow: '0 5px 15px rgba(0,0,0,0.1)', padding: '20px', marginBottom: '20px' }}>
+                    {/* Fila */}
+                    <div style={{ background: 'linear-gradient(135deg,#2F6FB0,#0066CC)', borderRadius: '12px', padding: '16px 20px', color: '#fff', marginBottom: '16px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '.08em', opacity: .9, marginBottom: '8px' }}>🎯 PRÓXIMOS A ATENDER</div>
+                        {fila.length === 0 ? (
+                            <div style={{ fontSize: '15px' }}>Ninguém disponível — todos ocupados, no almoço ou ausentes.</div>
+                        ) : (
+                            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                                {fila.slice(0, 3).map((m, i) => (
+                                    <div key={m.nome} style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                                        <span style={{ fontWeight: '800', opacity: .8 }}>{i + 1}º</span>
+                                        <span style={{ fontFamily: 'Archivo, sans-serif', fontWeight: '700', fontSize: '20px' }}>{m.nome}</span>
+                                        <span style={{ fontSize: '12px', opacity: .8 }}>({m.carrosHoje} hoje)</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Status — qualquer mecânico marca o próprio almoço */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                        {dados.map(m => {
+                            const [txt, bg, cor] = badge(m);
+                            return (
+                                <div key={m.nome} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontWeight: '700', color: '#2d3748' }}>{m.nome}</span>
+                                    <span style={{ fontSize: '11px', fontWeight: '600', padding: '2px 8px', borderRadius: '20px', background: bg, color: cor }}>{txt}</span>
+                                    {!m.emAndamento && (
+                                        m.status === 'almoco'
+                                            ? <button onClick={() => onSetStatus(m.nome, 'disponivel')} style={{ fontSize: '11px', fontWeight: '600', border: '1px solid #e2e8f0', borderRadius: '6px', background: '#f7fafc', padding: '3px 8px', cursor: 'pointer' }}>voltar</button>
+                                            : m.status === 'disponivel'
+                                                ? <button onClick={() => onSetStatus(m.nome, 'almoco')} style={{ fontSize: '13px', border: '1px solid #e2e8f0', borderRadius: '6px', background: '#f7fafc', padding: '3px 7px', cursor: 'pointer' }} title="marcar almoço">🍴</button>
+                                                : null
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Painel do chefe (senha) */}
+                    <div style={{ marginTop: '14px', borderTop: '1px solid #edf2f7', paddingTop: '12px' }}>
+                        {!chefeAutorizado ? (
+                            <button onClick={onAutorizarChefe} style={{ fontSize: '13px', fontWeight: '600', color: '#718096', background: '#f7fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 14px', cursor: 'pointer' }}>
+                                🔒 Painel do chefe (carros e faturamento)
+                            </button>
+                        ) : (
+                            <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                    <span style={{ fontWeight: '700', color: '#2d3748' }}>👑 Painel do chefe</span>
+                                    <button onClick={onSairChefe} style={{ fontSize: '12px', color: '#718096', background: 'none', border: 'none', cursor: 'pointer' }}>fechar</button>
+                                </div>
+                                <div style={{ overflowX: 'auto' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '480px' }}>
+                                        <thead><tr style={{ background: '#f7fafc' }}>
+                                            <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: '11px', color: '#718096', textTransform: 'uppercase' }}>Mecânico</th>
+                                            <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: '11px', color: '#718096', textTransform: 'uppercase' }}>Carros hoje</th>
+                                            <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: '11px', color: '#718096', textTransform: 'uppercase' }}>Faturou (tocou)</th>
+                                            <th style={{ textAlign: 'center', padding: '8px 12px', fontSize: '11px', color: '#718096', textTransform: 'uppercase' }}>Ausente</th>
+                                        </tr></thead>
+                                        <tbody>
+                                            {dados.map(m => (
+                                                <tr key={m.nome} style={{ borderBottom: '1px solid #edf2f7' }}>
+                                                    <td style={{ padding: '9px 12px', fontWeight: '600' }}>{m.nome}</td>
+                                                    <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '600' }}>{m.carrosHoje}</td>
+                                                    <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#2e7d63', fontWeight: '600' }}>{brl(m.fatHoje)}</td>
+                                                    <td style={{ padding: '9px 12px', textAlign: 'center' }}>
+                                                        <button onClick={() => onSetStatus(m.nome, m.status === 'ausente' ? 'disponivel' : 'ausente')}
+                                                            style={{ fontSize: '12px', fontWeight: '600', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', background: m.status === 'ausente' ? '#c0392b' : '#f7fafc', color: m.status === 'ausente' ? '#fff' : '#718096' }}>
+                                                            {m.status === 'ausente' ? 'ausente' : 'marcar'}
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        function CardAguardando({ order, position, onIniciar, onCancelar, onVerDados, onEditar, recomendado, mecanicos = [] }) {
             const servicos = getServicosDetalhados(order);
+            const [mecSel, setMecSel] = React.useState(recomendado || '');
+            React.useEffect(() => { setMecSel(recomendado || ''); }, [recomendado]);
 
             return (
                 <div className="card card-aguardando">
@@ -3137,6 +3347,20 @@
                             ))}
                         </div>
                     )}
+                    <div style={{ background: '#f7fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px', margin: '10px 0' }}>
+                        <div style={{ fontSize: '11px', color: '#718096', fontWeight: '600', marginBottom: '6px' }}>
+                            🎯 RECOMENDADO PELO RODÍZIO{recomendado ? '' : ' — ninguém disponível'}
+                        </div>
+                        <select value={mecSel} onChange={e => setMecSel(e.target.value)}
+                            style={{ width: '100%', padding: '8px 10px', border: '2px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', fontWeight: '600' }}>
+                            <option value="">Selecione o mecânico...</option>
+                            {mecanicos.map(m => (
+                                <option key={m.nome} value={m.nome}>
+                                    {m.nome}{m.emAndamento ? ' (ocupado)' : m.status === 'almoco' ? ' (almoço)' : m.status === 'ausente' ? ' (ausente)' : ''}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
                     <div className="card-actions">
                         <button className="btn btn-secondary" onClick={onVerDados} style={{ flex: 1 }}>
                             📋 Ver Dados
@@ -3144,7 +3368,7 @@
                         <button className="btn btn-secondary" onClick={onEditar} style={{ flex: 1 }}>
                             ✏️ Editar
                         </button>
-                        <button className="btn btn-success" onClick={onIniciar} style={{ flex: 1 }}>
+                        <button className="btn btn-success" onClick={() => { if (!mecSel) { alert('Selecione o mecânico que vai fazer.'); return; } onIniciar(mecSel); }} style={{ flex: 1 }}>
                             ▶️ Iniciar
                         </button>
                     </div>
