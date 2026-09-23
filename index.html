@@ -1356,13 +1356,29 @@
                 return 'Thiago';
             }
 
+            // Agrupar Maciel (inclui sobrenome e variações de espaço)
+            if (nomeNormalizado.includes('maciel')) {
+                return 'Maciel';
+            }
+
+            // Agrupar Jackson / Jakson (inclui sobrenome)
+            if (nomeNormalizado.includes('jackson') || nomeNormalizado.includes('jakson')) {
+                return 'Jackson';
+            }
+
+            // Agrupar Italo / Ítalo (inclui sobrenome)
+            if (nomeNormalizado.includes('italo') || nomeNormalizado.includes('ítalo')) {
+                return 'Italo';
+            }
+
             // Remover Bruno
             if (nomeNormalizado === 'bruno') {
                 return null; // Retorna null para ser filtrado
             }
-            
-            // Capitalizar primeira letra para outros nomes
-            return nome.charAt(0).toUpperCase() + nome.slice(1).toLowerCase();
+
+            // Capitalizar primeira letra para outros nomes (sempre a partir do nome sem espaços)
+            const limpo = nome.trim();
+            return limpo.charAt(0).toUpperCase() + limpo.slice(1).toLowerCase();
         };
 
         // ============================================
