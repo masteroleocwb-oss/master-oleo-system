@@ -1318,6 +1318,14 @@
             return new Date(dataStr);
         };
 
+        // KM registrado na finalização da OS, formatado (ex.: "45.000 km").
+        // Aceita número ou texto com/sem separador ("45000", "45.000").
+        const formatarKm = (km) => {
+            if (km === undefined || km === null || String(km).trim() === '') return 'não registrado';
+            const n = parseInt(String(km).replace(/\D/g, ''), 10);
+            return isNaN(n) ? String(km) : n.toLocaleString('pt-BR') + ' km';
+        };
+
         // ============================================
         // FUNÇÃO: Normalizar nome de lubrificador
         // ============================================
@@ -3514,6 +3522,10 @@
                             <span>{order.motor || 'N/A'}</span>
                         </div>
                         <div className="info-row">
+                            <span className="info-label">KM na troca:</span>
+                            <span style={{ fontWeight: '600' }}>{formatarKm(order.km)}</span>
+                        </div>
+                        <div className="info-row">
                             <span className="info-label">Lubrificador:</span>
                             <span>{order.lubrificador}</span>
                         </div>
@@ -5457,6 +5469,10 @@
                             <div className="info-row">
                                 <span className="info-label">Combustível:</span>
                                 <span>{order.combustivel}</span>
+                            </div>
+                            <div className="info-row">
+                                <span className="info-label">KM na troca:</span>
+                                <span style={{ fontWeight: '600' }}>{formatarKm(order.km)}</span>
                             </div>
                             <div className="info-row">
                                 <span className="info-label">Vendedor:</span>
