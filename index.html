@@ -825,6 +825,35 @@
         };
 
         // ============================================
+        // NÚMERO DA OS — gerado no momento de salvar
+        // ============================================
+        // Antes o número era calculado no aparelho ao abrir "Nova Ordem" (maior + 1).
+        // Dois vendedores abrindo ao mesmo tempo pegavam o mesmo número. Agora um
+        // contador único (config/contadores) é incrementado dentro de uma transação
+        // junto com a criação da OS: dois saves simultâneos nunca recebem o mesmo nº.
+        const criarOrdemComNumero = async (orderData) => {
+            // Maior número já usado: garante que o contador nunca fique para trás
+            // (ex.: aparelho ainda com a versão antiga criando OS na transição).
+            let maiorExistente = 0;
+            try {
+                const s = await db.collection('orders').orderBy('numeroOrdem', 'desc').limit(1).get();
+                if (!s.empty) maiorExistente = parseInt(s.docs[0].data().numeroOrdem, 10) || 0;
+            } catch (e) { console.warn('Não foi possível ler o maior nº de OS:', e); }
+
+            const contadorRef = db.collection('config').doc('contadores');
+            const novaRef = db.collection('orders').doc();
+            const numero = await db.runTransaction(async (t) => {
+                const snap = await t.get(contadorRef);
+                const atual = snap.exists ? (parseInt(snap.data().numeroOrdem, 10) || 0) : 0;
+                const proximo = Math.max(atual, maiorExistente) + 1;
+                t.set(contadorRef, { numeroOrdem: proximo, numeroOrdemAtualizadoEm: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                t.set(novaRef, { ...orderData, numeroOrdem: proximo });
+                return proximo;
+            });
+            return { id: novaRef.id, numero };
+        };
+
+        // ============================================
         // RODÍZIO DE ATENDIMENTO
         // ============================================
         // Quem NÃO entra no rodízio: gestão (Italo = chefe, Leo = dono) e inativos.
@@ -3924,9 +3953,10 @@
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     };
                     
-                    const docRef = await db.collection('orders').add(orderData);
-                    
-                    alert('Ordem criada com sucesso!');
+                    // Número definitivo é atribuído agora, no salvamento (sem duplicar)
+                    const { numero } = await criarOrdemComNumero(orderData);
+
+                    alert(`Ordem #${numero} criada com sucesso!`);
                     onSuccess();
                 } catch (error) {
                     console.error('Erro ao criar ordem:', error);
@@ -3978,7 +4008,12 @@
                 <div className="modal">
                     <div className="modal-content">
                         <div className="modal-header">
-                            <div className="modal-title">Nova Ordem #{nextOrderNumber}</div>
+                            <div className="modal-title">
+                                Nova Ordem
+                                <span style={{ fontSize: '13px', fontWeight: '500', color: '#a0aec0', marginLeft: '8px' }}>
+                                    nº previsto #{nextOrderNumber} · confirmado ao salvar
+                                </span>
+                            </div>
                             <button className="close-btn" onClick={onClose}>✕</button>
                         </div>
                         
