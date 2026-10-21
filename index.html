@@ -859,6 +859,33 @@
         // Quem NÃO entra no rodízio: gestão (Italo = chefe, Leo = dono) e inativos.
         const RODIZIO_EXCLUIDOS = ['Italo', 'Leo', 'Luis', 'Pedro', 'Bruno', 'Sem lubrificador', '—'];
         const RODIZIO_SENHA_CHEFE = 'italo123';
+        // Senha operacional: marcar/desmarcar almoço e remover OS em andamento.
+        const SENHA_OPERACIONAL = 'master123';
+
+        // ============================================
+        // HORA DO SERVIDOR (igual em todos os aparelhos)
+        // ============================================
+        // O relógio de cada celular/computador pode estar errado (ou ser alterado).
+        // Medimos a diferença para o relógio do servidor uma vez ao abrir o app e
+        // usamos "agoraServidor()" em tudo que define dia, fila e horários gravados.
+        let OFFSET_SERVIDOR_MS = 0;
+        const agoraServidor = () => new Date(Date.now() + OFFSET_SERVIDOR_MS);
+        const sincronizarRelogio = async () => {
+            try {
+                const ref = db.collection('config').doc('relogio');
+                const t0 = Date.now();
+                await ref.set({ agora: firebase.firestore.FieldValue.serverTimestamp() });
+                const snap = await ref.get({ source: 'server' });
+                const t1 = Date.now();
+                const servidor = snap.data().agora.toMillis();
+                OFFSET_SERVIDOR_MS = servidor - (t0 + t1) / 2;
+                if (Math.abs(OFFSET_SERVIDOR_MS) > 60000) console.warn(`Relógio deste aparelho está ${Math.round(OFFSET_SERVIDOR_MS / 1000)}s diferente do servidor — corrigido.`);
+                return true;
+            } catch (e) {
+                console.warn('Não foi possível sincronizar com a hora do servidor:', e);
+                return false;
+            }
+        };
 
         // Data (AAAA-MM-DD) no fuso de Brasília a partir de uma string 'DD/MM/AAAA...' ou ISO.
         const diaKeyBR = (o) => {
@@ -866,28 +893,42 @@
             if (o && o.dataHora) return String(o.dataHora).slice(0, 10);
             return null;
         };
-        const hojeKeyBR = () => {
+        const diaKeyBRDe = (data) => {
             const p = {};
             new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' })
-                .formatToParts(new Date()).forEach(x => { p[x.type] = x.value; });
+                .formatToParts(data).forEach(x => { p[x.type] = x.value; });
             return `${p.year}-${p.month}-${p.day}`;
         };
+        const hojeKeyBR = () => diaKeyBRDe(agoraServidor());
 
-        // Estado do rodízio (compartilhado via Firestore): status e "filaSince" por mecânico,
+        // Estado do rodízio (compartilhado via Firestore): status por mecânico,
         // com um marcador de dia para zerar tudo a cada dia.
         let GLOBAL_RODIZIO = (() => {
             try { return JSON.parse(localStorage.getItem('rodizio') || '{}'); } catch (e) { return {}; }
         })();
         if (!GLOBAL_RODIZIO.status) GLOBAL_RODIZIO.status = {};
-        if (!GLOBAL_RODIZIO.filaSince) GLOBAL_RODIZIO.filaSince = {};
 
-        const salvarRodizio = async (r) => {
-            GLOBAL_RODIZIO = { status: r.status || {}, filaSince: r.filaSince || {}, dia: r.dia || hojeKeyBR() };
-            localStorage.setItem('rodizio', JSON.stringify(GLOBAL_RODIZIO));
-            await db.collection('config').doc('global').set(
-                { rodizio: GLOBAL_RODIZIO, rodizioAtualizadoEm: firebase.firestore.FieldValue.serverTimestamp() },
-                { merge: true }
-            );
+        // Grava o status de UM mecânico, sem sobrescrever o dos outros (dois aparelhos
+        // mexendo ao mesmo tempo não perdem a alteração um do outro). Na virada do dia
+        // o rodízio inteiro é substituído, para não "ressuscitar" status de ontem.
+        const salvarStatusRodizio = async (nome, st) => {
+            const ref = db.collection('config').doc('global');
+            const hoje = hojeKeyBR();
+            await db.runTransaction(async (t) => {
+                const snap = await t.get(ref);
+                const rod = snap.exists ? snap.data().rodizio : null;
+                if (!rod || rod.dia !== hoje) {
+                    t.update(ref, {
+                        rodizio: { dia: hoje, status: { [nome]: st } },
+                        rodizioAtualizadoEm: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } else {
+                    t.update(ref,
+                        new firebase.firestore.FieldPath('rodizio', 'status', nome), st,
+                        'rodizioAtualizadoEm', firebase.firestore.FieldValue.serverTimestamp()
+                    );
+                }
+            });
         };
 
         // Faixas de comissão por volume individual de upsell no mês
@@ -980,7 +1021,7 @@
 
         // Função para obter data/hora no horário de Brasília
         const getBrasilDateTime = () => {
-            return new Date().toLocaleString('pt-BR', {
+            return agoraServidor().toLocaleString('pt-BR', {
                 timeZone: 'America/Sao_Paulo',
                 year: 'numeric',
                 month: '2-digit',
@@ -1004,7 +1045,7 @@
                 timeZone: 'America/Sao_Paulo',
                 year: 'numeric', month: '2-digit', day: '2-digit',
                 hour: '2-digit', hour12: false
-            }).formatToParts(new Date()).forEach(p => { partes[p.type] = p.value; });
+            }).formatToParts(agoraServidor()).forEach(p => { partes[p.type] = p.value; });
 
             let ano = parseInt(partes.year, 10);
             let mes = parseInt(partes.month, 10);
@@ -1027,7 +1068,7 @@
 
         // Função para formatar data/hora para input
         const formatDateTimeForInput = () => {
-            const now = new Date();
+            const now = agoraServidor();
             const year = now.getFullYear();
             const month = String(now.getMonth() + 1).padStart(2, '0');
             const day = String(now.getDate()).padStart(2, '0');
@@ -1430,7 +1471,7 @@
             const mesAtualKey = (() => {
                 const p = {};
                 new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' })
-                    .formatToParts(new Date()).forEach(x => { p[x.type] = x.value; });
+                    .formatToParts(agoraServidor()).forEach(x => { p[x.type] = x.value; });
                 return `${p.year}-${p.month}`;
             })();
             const [mesSel, setMesSel] = React.useState(mesAtualKey);
@@ -1463,7 +1504,7 @@
             const diaHoje = (() => {
                 const p = {};
                 new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Sao_Paulo', day: '2-digit' })
-                    .formatToParts(new Date()).forEach(x => { p[x.type] = x.value; });
+                    .formatToParts(agoraServidor()).forEach(x => { p[x.type] = x.value; });
                 return parseInt(p.day, 10);
             })();
             const diasNoMes = new Date(parseInt(mesSel.slice(0, 4)), parseInt(mesSel.slice(5, 7)), 0).getDate();
@@ -2578,9 +2619,9 @@
                         }
 
                         // Rodízio (global). Zera se o dia gravado não é hoje.
-                        let rod = data.rodizio || { status: {}, filaSince: {} };
-                        if (rod.dia !== hojeKeyBR()) rod = { status: {}, filaSince: {}, dia: hojeKeyBR() };
-                        GLOBAL_RODIZIO = { status: rod.status || {}, filaSince: rod.filaSince || {}, dia: rod.dia || hojeKeyBR() };
+                        let rod = data.rodizio || { status: {} };
+                        if (rod.dia !== hojeKeyBR()) rod = { status: {}, dia: hojeKeyBR() };
+                        GLOBAL_RODIZIO = { status: rod.status || {}, dia: rod.dia || hojeKeyBR() };
                         localStorage.setItem('rodizio', JSON.stringify(GLOBAL_RODIZIO));
                         setRodizio(GLOBAL_RODIZIO);
                     },
@@ -2589,9 +2630,18 @@
                 return () => unsub();
             }, []);
 
+            // Sincroniza com a hora do servidor ao abrir; recalcula fila/dia em seguida.
+            const [relogioSync, setRelogioSync] = useState(0);
+            useEffect(() => {
+                sincronizarRelogio().then(() => setRelogioSync(x => x + 1));
+                // Ressincroniza a cada 30 min (aparelho aberto o dia todo)
+                const iv = setInterval(() => sincronizarRelogio().then(() => setRelogioSync(x => x + 1)), 30 * 60 * 1000);
+                return () => clearInterval(iv);
+            }, []);
+
             // Filtrar ordens por data
             const getFilteredOrders = () => {
-                const today = new Date();
+                const today = agoraServidor();
                 today.setHours(0, 0, 0, 0);
 
                 // "Todos" e períodos anteriores à janela precisam do histórico completo;
@@ -2638,8 +2688,14 @@
             };
 
             const filteredOrders = getFilteredOrders();
-            const aguardando = filteredOrders.filter(o => o.status === 'aguardando');
-            const emAndamento = filteredOrders.filter(o => o.status === 'andamento');
+            // Fila ativa (aguardando / em andamento): IGUAL em todos os aparelhos — não
+            // depende do filtro de data escolhido em cada um. Só OS registradas hoje
+            // (hora do servidor), em ordem fixa (nº da OS, depois id).
+            const hojeFila = hojeKeyBR();
+            const ordemFixa = (a, b) => ((b.numeroOrdem || 0) - (a.numeroOrdem || 0)) || String(a.id).localeCompare(String(b.id));
+            const ehDeHoje = (o) => !!o.dataHora && diaKeyBRDe(new Date(o.dataHora)) === hojeFila;
+            const aguardando = orders.filter(o => o.status === 'aguardando' && ehDeHoje(o)).sort(ordemFixa);
+            const emAndamento = orders.filter(o => o.status === 'andamento' && ehDeHoje(o)).sort(ordemFixa);
             const concluidos = filteredOrders.filter(o => o.status === 'concluido');
 
             // Calcular próximo número de ordem
@@ -2685,8 +2741,11 @@
                 // último dia com movimento (para o desempate "ontem")
                 const diasComOrdem = [...new Set(orders.map(o => diaKeyBR(o)).filter(Boolean))].sort();
                 const diaOntem = diasComOrdem.filter(d => d < hoje).pop() || null;
-                // pool de mecânicos do rodízio: ativos recentes, menos exclusões
+                // pool de mecânicos do rodízio: quem trabalhou nos últimos 30 dias, menos
+                // exclusões. Período fixo => mesma lista em todos os aparelhos.
+                const limite30 = diaKeyBRDe(new Date(agoraServidor().getTime() - 30 * 24 * 3600 * 1000));
                 const pool = [...new Set(orders
+                    .filter(o => { const dk = diaKeyBR(o); return dk && dk >= limite30; })
                     .map(o => normalizarLubrificador(o.lubrificador))
                     .filter(Boolean))]
                     .filter(l => !RODIZIO_EXCLUIDOS.includes(l) && !LUBRIFICADORES_INATIVOS.includes(l))
@@ -2704,10 +2763,11 @@
                     });
                     const carrosOntem = diaOntem ? orders.filter(o => normalizarLubrificador(o.lubrificador) === nome && diaKeyBR(o) === diaOntem && (o.status === 'concluido' || o.status === 'andamento')).length : 0;
                     const status = (rodizio.status && rodizio.status[nome]) || 'disponivel';
-                    // "ficou disponível primeiro" = o mais recente entre: voltou do almoço/ausência (filaSince)
-                    // e concluiu o último carro do dia. Quem não pegou nada = 0 (esperando desde o início).
+                    // "ficou disponível primeiro" = hora em que concluiu o último carro do dia.
+                    // Quem não pegou nada = 0 (esperando desde o início). Almoço/ausência NÃO
+                    // mexem na posição: marcar almoço e voltar não reordena (antes dava pra burlar).
                     const ultimaConclusao = Math.max(0, ...doDia.filter(o => o.status === 'concluido').map(o => fimMillis(o.fim)));
-                    const dispDesde = Math.max((rodizio.filaSince && rodizio.filaSince[nome]) || 0, ultimaConclusao);
+                    const dispDesde = ultimaConclusao;
                     const disponivel = status === 'disponivel' && !emAndamento;
                     return { nome, carrosHoje, fatHoje, emAndamento, carrosOntem, status, dispDesde, disponivel };
                 });
@@ -2717,19 +2777,42 @@
                     return a.nome.localeCompare(b.nome); // alfabético
                 });
                 return { dados, fila, diaOntem };
-            }, [orders, rodizio]);
+            }, [orders, rodizio, relogioSync]);
 
-            // Marca status de um mecânico (almoço/ausente/disponível). Ao voltar a
-            // ficar disponível, vai pro fim da fila (filaSince = agora).
-            const setStatusMec = (nome, st) => {
-                const novo = {
-                    status: { ...(rodizio.status || {}), [nome]: st },
-                    filaSince: { ...(rodizio.filaSince || {}) },
-                    dia: hojeKeyBR()
-                };
-                if (st === 'disponivel') novo.filaSince[nome] = Date.now();
-                setRodizio(novo);
-                salvarRodizio(novo);
+            // Marca status de um mecânico (almoço/ausente/disponível). Não mexe na
+            // posição da fila. Grava só o status desse mecânico (sem sobrescrever os outros).
+            const setStatusMec = async (nome, st) => {
+                setRodizio(prev => ({ ...prev, status: { ...(prev.status || {}), [nome]: st } })); // otimista
+                try {
+                    await salvarStatusRodizio(nome, st);
+                } catch (e) {
+                    console.error('Erro ao salvar status do rodízio:', e);
+                    alert('Não foi possível salvar o status. Verifique a conexão e tente de novo.');
+                }
+            };
+
+            // Almoço: marcar e desmarcar exige a senha operacional.
+            const alterarAlmoco = (nome, st) => {
+                const s = prompt(st === 'almoco' ? `Senha para marcar ${nome} no almoço:` : `Senha para tirar ${nome} do almoço:`);
+                if (s === null) return;
+                if (s !== SENHA_OPERACIONAL) { alert('Senha incorreta.'); return; }
+                setStatusMec(nome, st);
+            };
+
+            // Remover OS em andamento (exige senha operacional + confirmação).
+            const removerOrdemEmAndamento = async (order) => {
+                const s = prompt(`Senha para remover a OS #${order.numeroOrdem} (em andamento):`);
+                if (s === null) return;
+                if (s !== SENHA_OPERACIONAL) { alert('Senha incorreta.'); return; }
+                if (!confirm(`Remover PERMANENTEMENTE a OS #${order.numeroOrdem} — ${order.placa || ''} · ${order.cliente || ''}?\n\nEssa ação não pode ser desfeita.`)) return;
+                try {
+                    await db.collection('orders').doc(order.id).delete();
+                    alert('Ordem removida.');
+                    loadOrders();
+                } catch (e) {
+                    console.error('Erro ao remover ordem:', e);
+                    alert('Erro ao remover a ordem.');
+                }
             };
 
             return (
@@ -2875,6 +2958,7 @@
                         orders={orders}
                         rodizio={rodizio}
                         onSetStatus={setStatusMec}
+                        onAlmoco={alterarAlmoco}
                         chefeAutorizado={chefeAutorizado}
                         onAutorizarChefe={() => {
                             const s = prompt('Senha do chefe de oficina:');
@@ -3058,9 +3142,10 @@
                                     </h2>
                                     <div className="cards-container">
                                         {emAndamento.map(order => (
-                                            <CardEmAndamento 
-                                                key={order.id} 
+                                            <CardEmAndamento
+                                                key={order.id}
                                                 order={order}
+                                                onRemover={() => removerOrdemEmAndamento(order)}
                                                 onVerDados={() => {
                                                     setSelectedOrder(order);
                                                     setShowDetailsModal(true);
@@ -3264,7 +3349,7 @@
         // ============================================
         // COMPONENTE: PAINEL DO RODÍZIO (topo das Ordens)
         // ============================================
-        function RodizioPainel({ info, orders = [], onSetStatus, chefeAutorizado, onAutorizarChefe, onSairChefe }) {
+        function RodizioPainel({ info, orders = [], onSetStatus, onAlmoco, chefeAutorizado, onAutorizarChefe, onSairChefe }) {
             const { dados, fila } = info;
             const [periodo, setPeriodo] = React.useState('diario'); // diario / semanal / mensal
             const brl = n => 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -3325,9 +3410,9 @@
                                     <span style={{ fontSize: '11px', fontWeight: '600', padding: '2px 8px', borderRadius: '20px', background: bg, color: cor }}>{txt}</span>
                                     {!m.emAndamento && (
                                         m.status === 'almoco'
-                                            ? <button onClick={() => onSetStatus(m.nome, 'disponivel')} style={{ fontSize: '11px', fontWeight: '600', border: '1px solid #e2e8f0', borderRadius: '6px', background: '#f7fafc', padding: '3px 8px', cursor: 'pointer' }}>voltar</button>
+                                            ? <button onClick={() => onAlmoco(m.nome, 'disponivel')} style={{ fontSize: '11px', fontWeight: '600', border: '1px solid #e2e8f0', borderRadius: '6px', background: '#f7fafc', padding: '3px 8px', cursor: 'pointer' }} title="voltar do almoço (senha)">🔒 voltar</button>
                                             : m.status === 'disponivel'
-                                                ? <button onClick={() => onSetStatus(m.nome, 'almoco')} style={{ fontSize: '13px', border: '1px solid #e2e8f0', borderRadius: '6px', background: '#f7fafc', padding: '3px 7px', cursor: 'pointer' }} title="marcar almoço">🍴</button>
+                                                ? <button onClick={() => onAlmoco(m.nome, 'almoco')} style={{ fontSize: '13px', border: '1px solid #e2e8f0', borderRadius: '6px', background: '#f7fafc', padding: '3px 7px', cursor: 'pointer' }} title="marcar almoço (senha)">🔒🍴</button>
                                                 : null
                                     )}
                                 </div>
@@ -3467,7 +3552,7 @@
         }
 
         // Componente Card Em Andamento
-        function CardEmAndamento({ order, onVerDados, onEditar, onFinalizar }) {
+        function CardEmAndamento({ order, onVerDados, onEditar, onFinalizar, onRemover }) {
             const servicos = getServicosDetalhados(order);
 
             return (
@@ -3476,6 +3561,9 @@
                     <div className="card-header">
                         <span className="order-number">#{order.numeroOrdem}</span>
                         <span className="badge" style={{ background: '#4299e1', color: 'white' }}>🔵 Em Atendimento</span>
+                        {onRemover && (
+                            <button className="close-btn" onClick={onRemover} title="Remover OS (senha)" style={{ color: '#f56565' }}>✕</button>
+                        )}
                     </div>
                     <div className="card-title">{order.placa}</div>
                     <div className="card-info">
