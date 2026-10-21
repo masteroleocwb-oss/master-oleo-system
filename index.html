@@ -2650,6 +2650,9 @@
 
                 return base.filter(order => {
                     if (!order.dataHora) return false;
+                    // OS encerradas (antigas presas, fechadas em massa) ficam só como histórico:
+                    // não aparecem nas listas nem entram nos totais.
+                    if (order.status === 'encerrada') return false;
 
                     const orderDate = new Date(order.dataHora);
                     orderDate.setHours(0, 0, 0, 0);
