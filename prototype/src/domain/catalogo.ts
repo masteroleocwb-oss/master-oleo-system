@@ -53,17 +53,15 @@ export const CATALOGO_INICIAL: ItemInspecaoDef[] = [
 
   item({ id: 'oleo_motor', grupo: 'Motor', nome: 'Óleo do motor (nível e aspecto)', tipo: 'visual', fonte: 'playbook_fase1', servicoRelacionado: 'oleoMotor', regraIntervaloId: 'r_oleo_motor',
     instrucao: 'Com o motor desligado, confira nível na vareta e aspecto (cor, borra, cheiro de combustível).', fotoObrigatoriaEm: ['prioritario'] }),
-  item({ id: 'vazamento_motor', grupo: 'Motor', nome: 'Vazamentos no motor', tipo: 'visual', fonte: 'playbook_fase1',
-    instrucao: 'Com o carro no elevador, procure óleo no cárter, tampa de válvulas e retentores.', fotoObrigatoriaEm: ['atencao', 'prioritario'], permiteRecomendacao: true }),
   item({ id: 'arrefecimento', grupo: 'Motor', nome: 'Líquido de arrefecimento', tipo: 'visual', fonte: 'playbook_fase1', servicoRelacionado: 'aditivo',
     instrucao: 'Motor frio: confira nível no reservatório e cor do líquido.', fotoObrigatoriaEm: ['prioritario'] }),
-  item({ id: 'trocador_calor', grupo: 'Motor', nome: 'Trocador de calor', tipo: 'visual', fonte: 'pedido_direcao',
-    instrucao: 'Verifique sinais de vazamento e mistura óleo/água no trocador e mangueiras.', fotoObrigatoriaEm: ['atencao', 'prioritario'] }),
 
   item({ id: 'fluido_cambio', grupo: 'Câmbio', nome: 'Fluido do câmbio (nível e aspecto)', tipo: 'visual', fonte: 'playbook_fase1', servicoRelacionado: 'cambioAutomatico', regraIntervaloId: 'r_cambio_auto',
     aplicavelA: { cambio: 'automatico' }, instrucao: 'Confira nível e cor do fluido conforme o procedimento do modelo.', fotoObrigatoriaEm: ['atencao', 'prioritario'] }),
   item({ id: 'oleo_cambio_manual', grupo: 'Câmbio', nome: 'Óleo do câmbio manual', tipo: 'visual', fonte: 'playbook_fase1', servicoRelacionado: 'cambioManual',
     aplicavelA: { cambio: 'manual' }, instrucao: 'Verifique vazamentos e, se acessível, o nível pelo bujão.', fotoObrigatoriaEm: ['prioritario'] }),
+  item({ id: 'trocador_calor', grupo: 'Câmbio', nome: 'Trocador de calor do câmbio', tipo: 'visual', fonte: 'pedido_direcao',
+    aplicavelA: { cambio: 'automatico' }, instrucao: 'Quando o câmbio tiver trocador: verifique vazamento e mistura óleo/água no trocador e nas mangueiras.', fotoObrigatoriaEm: ['atencao', 'prioritario'] }),
   item({ id: 'coxim_cambio', grupo: 'Câmbio', nome: 'Coxim do câmbio', tipo: 'visual', fonte: 'pedido_direcao',
     instrucao: 'Com o carro no elevador, verifique rachaduras e folga na borracha do coxim.', fotoObrigatoriaEm: ['atencao', 'prioritario'] }),
 
@@ -85,8 +83,8 @@ export const CATALOGO_INICIAL: ItemInspecaoDef[] = [
  * nenhum documento da Master Óleo define intervalos (ver OPEN_DECISIONS).
  */
 export const REGRAS_INICIAIS: RegraIntervalo[] = [
-  { id: 'r_oleo_motor', nome: 'Óleo de motor', servicoKey: 'oleoMotor', km: 10000, meses: 12, origem: 'interna', validada: true, validadaPor: 'u_dir',
-    fonte: 'Regra interna FICTÍCIA de demonstração — substituir pela regra aprovada pela direção', ativo: true },
+  { id: 'r_oleo_motor', nome: 'Óleo de motor', servicoKey: 'oleoMotor', opcoesKm: [5000, 7000, 10000], meses: 6, origem: 'interna', validada: true, validadaPor: 'u_dir',
+    fonte: 'Regra Master Óleo (direção, 27/10/2026): 5, 7 ou 10 mil km conforme o óleo aplicado, ou 6 meses — o que vier primeiro', ativo: true },
   { id: 'r_fluido_freio', nome: 'Fluido de freio', servicoKey: 'fluidoFreio', meses: 24, origem: 'fabricante', validada: true, validadaPor: 'u_dir',
     fonte: 'Exemplo de recomendação de fabricante (dado fictício de demonstração)', ativo: true },
   { id: 'r_ar_motor', nome: 'Filtro de ar do motor', servicoKey: 'arMotor', km: 15000, origem: 'interna', validada: true, validadaPor: 'u_dir',
@@ -101,4 +99,26 @@ export const ORIGEM_LABEL: Record<RegraIntervalo['origem'], { rotulo: string; cl
   profissional: { rotulo: 'Recomendação do profissional', cliente: 'Recomendação do nosso técnico' },
   estimativa: { rotulo: 'Estimativa pelo histórico', cliente: 'Estimativa pelo uso do veículo' },
   nao_confirmada: { rotulo: 'Não confirmada — acompanhar', cliente: 'Acompanhar na próxima visita' },
+};
+
+/**
+ * Adicionais que o mecânico oferece na bancada. `itemRelacionado` liga a oferta ao item do
+ * checklist que a justifica (ex.: líquido de arrefecimento em Atenção → aditivo).
+ */
+export const ADICIONAIS: { key: ServicoKey; rotulo: string; itemRelacionado?: string; aplicavelA?: { cambio?: 'manual' | 'automatico' } }[] = [
+  { key: 'militec', rotulo: 'Militec/Nano no motor', itemRelacionado: 'oleo_motor' },
+  { key: 'aditivo', rotulo: 'Aditivo no radiador', itemRelacionado: 'arrefecimento' },
+  { key: 'flush', rotulo: 'Flush do câmbio', itemRelacionado: 'fluido_cambio', aplicavelA: { cambio: 'automatico' } },
+  { key: 'higienizacaoAC', rotulo: 'Higienização do ar-condicionado', itemRelacionado: 'filtro_cabine' },
+  { key: 'palhetas', rotulo: 'Palhetas do limpador', itemRelacionado: 'palhetas' },
+];
+
+/** Serviços que fazem sentido para o câmbio do veículo (manual não vê fluido de automático e vice-versa). */
+export const servicoAplicavel = (k: ServicoKey, cambio?: 'manual' | 'automatico') =>
+  !cambio || !((k === 'cambioManual' && cambio === 'automatico') || ((k === 'cambioAutomatico' || k === 'flush') && cambio === 'manual'));
+
+export const MOTIVO_PAUSA: Record<'peca' | 'aprovacao_cliente' | 'outro', string> = {
+  peca: 'Aguardando peça',
+  aprovacao_cliente: 'Aguardando aprovação do cliente',
+  outro: 'Outro motivo',
 };

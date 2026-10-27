@@ -37,7 +37,7 @@ export interface Veiculo {
   kmAtualEm?: string;
 }
 
-export type StatusOS = 'aguardando' | 'andamento' | 'concluido' | 'cancelada' | 'encerrada';
+export type StatusOS = 'aguardando' | 'andamento' | 'pausada' | 'concluido' | 'cancelada' | 'encerrada';
 
 /** Chaves dos 16 serviços do sistema atual (preservadas). */
 export type ServicoKey =
@@ -50,12 +50,46 @@ export interface ServicoOS {
   marca?: string;
   quantidade?: string;
   codigo?: string;
-  /** balcao = vendido na abertura; checklist = identificado na inspeção e aceito pelo cliente. */
-  origem: 'balcao' | 'checklist';
+  /**
+   * balcao = vendido na abertura; checklist = identificado na inspeção e aceito pelo cliente;
+   * adicional = oferecido pelo mecânico na bancada (militec, aditivo, flush…) e aceito pelo cliente.
+   */
+  origem: 'balcao' | 'checklist' | 'adicional';
   executado: boolean;
   quantidadeExecutada?: string;
   valor?: number;
   oportunidadeId?: string;
+  /** Óleo de motor: intervalo escolhido pelo mecânico conforme o óleo aplicado (5, 7 ou 10 mil km). */
+  intervaloKm?: number;
+  adicionadoPor?: string;
+}
+
+/** Oferta de adicional feita na bancada (aceita ou recusada) — base da taxa de oferta. */
+export interface OfertaAdicional {
+  key: ServicoKey;
+  resultado: 'aceito' | 'recusado';
+  por: string;
+  em: string;
+}
+
+export interface Pausa {
+  inicio: string;
+  fim?: string;
+  motivo: 'peca' | 'aprovacao_cliente' | 'outro';
+  detalhe?: string;
+  por: string;
+  retomadaPor?: string;
+}
+
+/** OS de retorno: foco no problema relatado, sem refazer o checklist completo. */
+export interface AtendimentoRetorno {
+  problemaRelatado: string;
+  diagnostico?: string;
+  /** Classificação interna: o problema tem relação com o serviço anterior? */
+  relacaoServicoAnterior?: 'sim' | 'nao' | 'nao_identificado';
+  solucao?: string;
+  avisoCliente?: string;
+  semFotoDepois?: string;
 }
 
 export interface OrdemServico {
@@ -80,6 +114,11 @@ export interface OrdemServico {
   /** Locação/frota com instrução de não oferecer (playbook). */
   naoOferecer?: { alinhadoCom: string; marcadoPor: string; em: string };
   retornoDeOsId?: string;
+  retorno?: AtendimentoRetorno;
+  pausas?: Pausa[];
+  ofertas?: OfertaAdicional[];
+  /** Mecânico que assumiu fora da ordem prevista (motivo fica no evento). */
+  foraDaOrdem?: { previsto?: string; motivo: string };
   checklistId?: string;
   canceladaMotivo?: string;
   criadaPor: string;
@@ -102,9 +141,20 @@ export interface ItemInspecaoDef {
   regraIntervaloId?: string;
   /** Só aparece quando a condição bate (ex.: câmbio automático). */
   aplicavelA?: { cambio?: Cambio };
+  /** Veículos em que o item não é mostrado (decisão da direção a partir do uso — muitos "Não se aplica"). */
+  ocultarPara?: OcultarItem[];
   ativo: boolean;
   versao: number;
   fonte: 'playbook_fase1' | 'pedido_direcao' | 'catalogo_atual';
+}
+
+export interface OcultarItem {
+  marca: string;
+  modelo: string;
+  motor?: string;
+  motivo: string;
+  por: string;
+  em: string;
 }
 
 export interface RegistroHistorico {
@@ -158,8 +208,12 @@ export interface Evidencia {
   id: string;
   osId: string;
   veiculoId: string;
-  checklistId: string;
+  /** Vazio nas fotos de OS de retorno (que não têm checklist). */
+  checklistId?: string;
+  /** Item do checklist, ou "retorno" nas fotos do atendimento de retorno. */
   itemDefId: string;
+  /** Fotos de retorno: antes (o problema) ou depois (a solução). */
+  etapa?: 'antes' | 'depois';
   url: string;
   demo: boolean;
   legenda?: string;
@@ -195,6 +249,8 @@ export interface RegraIntervalo {
   servicoKey?: ServicoKey;
   itemDefId?: string;
   km?: number;
+  /** Quando o intervalo depende do produto aplicado (ex.: óleo 5, 7 ou 10 mil km), o mecânico escolhe. */
+  opcoesKm?: number[];
   meses?: number;
   origem: OrigemIntervalo;
   fonte: string;

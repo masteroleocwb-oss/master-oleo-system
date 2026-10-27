@@ -12,7 +12,8 @@ const ROTEIRO: Record<Role, string> = {
   direcao: 'Aprova metas e políticas, decide ocorrências, simula remuneração e administra o sistema.',
 };
 
-const ORDEM: Role[] = ['mecanico', 'lider', 'direcao', 'vendedor', 'comercial'];
+// O perfil Comercial fica para o futuro: hoje o balcão (vendedor) trata as recomendações.
+const ORDEM: Role[] = ['mecanico', 'lider', 'direcao', 'vendedor'];
 
 export function Login() {
   const db = useDB();

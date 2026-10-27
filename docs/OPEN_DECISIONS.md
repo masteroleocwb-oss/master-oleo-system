@@ -19,12 +19,12 @@ Legenda de bloqueio:
 | D-02 | Fechar o acesso aberto à base atual (Firestore/Storage) | Direção + responsável técnico | **Urgente**, independente do protótipo |
 | D-03 | Forma de login individual | Direção | **Bloqueia** |
 | D-04 | Critérios técnicos do checklist e quando a foto é obrigatória | Direção + liderança técnica | Bloqueia a etapa 3 |
-| D-05 | Tabela de intervalos de manutenção | Direção técnica | Bloqueia a etapa 4 (só o cálculo de km/data) |
+| D-05 | Tabela de intervalos de manutenção (óleo de motor já definido) | Direção técnica | Bloqueia a etapa 4 só para os demais serviços |
 | D-06 | Política de remuneração do playbook | Direção | Bloqueia a etapa 7 |
 | D-07 | "Comissão por upsell acabou" × regra vigente | Direção | Bloqueia a etapa 7 |
 | D-08 | Valor da meta "X%" de itens | Direção | Não bloqueia |
 | D-09 | Divergências do playbook (N7/N8, melhoria, descontos do score) | Direção | Bloqueia a etapa 7 |
-| D-10 | O que o relatório do cliente mostra (valores, nome do técnico) | Direção + comercial | Não bloqueia |
+| D-10 | O que o relatório do cliente mostra (valores, nome do técnico) | Direção | Não bloqueia |
 | D-11 | Referência de % de checklists auditados pela liderança | Direção | Não bloqueia |
 | D-12 | Identidade visual (cores, fonte, tema) | Direção / marketing | Não bloqueia |
 | D-13 | Números de OS duplicados no legado | Direção | Não bloqueia |
@@ -32,8 +32,13 @@ Legenda de bloqueio:
 | D-15 | Onde hospedar o protótipo e os documentos | Responsável técnico | Bloqueia qualquer merge na `main` |
 | D-16 | Integração com o Tiny ERP | Direção | Não bloqueia |
 | D-17 | Dia de exceção e "não oferecer" (frota): quem decide e limites | Direção + liderança | Não bloqueia |
-| D-18 | Validade padrão do link do cliente | Comercial | Não bloqueia |
+| D-18 | Validade padrão do link do cliente | Direção | Não bloqueia |
 | D-19 | Backtest da política com faturamento real | Direção | Bloqueia a etapa 7 |
+| D-20 | Retorno: a classificação "relação com o serviço anterior" afeta métricas ou remuneração? | Direção | Não bloqueia |
+| D-21 | Adicionais (Militec, aditivo, flush…): quem define o preço e se entram na remuneração | Direção | Bloqueia a etapa 7 |
+| D-22 | Ocultar itens por modelo: limites (3 inspeções, 80%) e se o ano entra na regra | Direção + liderança técnica | Não bloqueia |
+| D-23 | Lista de marcas e modelos da Nova OS | Liderança | Não bloqueia |
+| D-24 | Motivos de pausa e de "assumir fora da vez" | Liderança | Não bloqueia |
 
 ---
 
@@ -71,7 +76,8 @@ Legenda de bloqueio:
 
 ## D-05 — Intervalos de manutenção
 
-- **Estado atual**: nenhum documento recebido traz intervalos. Os do protótipo são **fictícios** e marcados como tal: óleo 10.000 km/12 meses, fluido de freio 24 meses, filtro de ar 15.000 km. O câmbio automático aparece sem intervalo validado.
+- **Decidido em 27/10/2026 (direção)**: óleo de motor = 5, 7 ou 10 mil km conforme o óleo aplicado, ou 6 meses, o que vier primeiro. Implementado no protótipo: o mecânico escolhe o intervalo na finalização. Pendente: tabela de qual óleo leva a qual intervalo (hoje o mecânico decide).
+- **Estado dos demais**: nenhum documento recebido traz intervalos. Os do protótipo são **fictícios** e marcados como tal: fluido de freio 24 meses, filtro de ar 15.000 km. O câmbio automático aparece sem intervalo validado.
 - **Alternativas**: (a) tabela interna Master Óleo por serviço (e por tipo de óleo/motor quando fizer diferença); (b) intervalo do fabricante cadastrado por modelo; (c) começar sem km/data, com tudo como "acompanhar", e cadastrar regras aos poucos.
 - **Impacto**: um intervalo errado exposto ao cliente vira promessa da marca.
 - **Recomendação**: (c) no lançamento, mais (a) para óleo de motor e filtros assim que a direção aprovar os números. O sistema só calcula km/data para regras com `validada = true`.
@@ -119,7 +125,7 @@ Legenda de bloqueio:
 - **Alternativas**: (a) manter; (b) mostrar o valor total pago; (c) mostrar o orçamento das recomendações.
 - **Impacto**: valores no link facilitam o "fecha depois", mas um link encaminhado expõe o preço praticado.
 - **Recomendação**: (a) no lançamento; reavaliar (c) com o comercial.
-- **Aprovador**: direção + comercial. Não bloqueia.
+- **Aprovador**: direção (o perfil Comercial fica para o futuro). Não bloqueia.
 
 ## D-11 — Referência de auditoria da liderança
 
@@ -176,10 +182,40 @@ Legenda de bloqueio:
 
 - **Estado atual**: escolha entre 7, 30 e 90 dias; padrão de 30. O link pode ser revogado a qualquer momento.
 - **Recomendação**: manter 30 dias. O histórico interno não expira.
-- **Aprovador**: comercial. Não bloqueia.
+- **Aprovador**: direção (o perfil Comercial fica para o futuro). Não bloqueia.
 
 ## D-19 — Backtest da política com dados reais
 
 - **Estado atual**: o volume da base de demonstração fica abaixo da primeira faixa da proposta (55k). Por isso o simulador tem botões de cenário (60k/90k/140k). Não usei dados reais de faturamento: o protótipo não pode conter dados reais.
 - **Recomendação**: exportar, só para leitura e de forma anonimizada (mecânico A, B, C…), o faturamento mensal por mecânico de 6 meses e rodar o simulador fora do protótipo. Os resultados vão para a direção.
 - **Aprovador**: direção. Bloqueia a etapa 7.
+
+## D-20 — Classificação do retorno
+
+- **Estado atual**: o mecânico registra se o problema tem relação com o serviço anterior (sim / não / não deu para saber). A liderança vê a classificação; o cliente não.
+- **Pergunta**: um retorno "sim" deve pesar no índice de retorno do mecânico, e um "não" deve sair da conta? Quem revisa a classificação feita pelo próprio mecânico?
+- **Recomendação**: contar todos os retornos no índice por enquanto, e a liderança revisar os marcados "não" antes de qualquer efeito em métrica.
+- **Aprovador**: direção. Não bloqueia.
+
+## D-21 — Adicionais vendidos na bancada
+
+- **Estado atual**: o mecânico registra oferta aceita ou recusada; aceito vira serviço com origem `adicional`, com valor opcional. Os adicionais aparecem no "Meu mês" e na liderança.
+- **Pergunta**: o valor vem de uma tabela de preços (Tiny?) ou o mecânico digita? O adicional entra na comissão/remuneração? A lista (Militec, aditivo, flush, higienização, palhetas) está completa?
+- **Aprovador**: direção. Bloqueia a etapa 7 (remuneração).
+
+## D-22 — Ocultar itens que "não se aplicam" por modelo
+
+- **Estado atual**: sugestão automática quando ≥ 3 inspeções e ≥ 80% "Não se aplica" para a mesma marca + modelo + motor. A direção confirma e pode desfazer.
+- **Pergunta**: os limites estão bons? O ano deve entrar (mesmo modelo muda de geração)? Com dados reais, a base fica mais rica e a regra pode exigir mais inspeções.
+- **Aprovador**: direção + liderança técnica. Não bloqueia.
+
+## D-23 — Marcas e modelos da Nova OS
+
+- **Estado atual**: lista com 19 marcas e os modelos mais comuns no Brasil, mais "Outra marca/Outro modelo" para digitar. Feita a partir de conhecimento geral, **não validada** com o histórico da oficina.
+- **Recomendação**: na Fase B, gerar a lista a partir das marcas/modelos já cadastrados no sistema atual (leitura) e revisar com a liderança.
+- **Aprovador**: liderança. Não bloqueia.
+
+## D-24 — Motivos de pausa e de assumir fora da vez
+
+- **Estado atual**: pausa = aguardando peça / aguardando aprovação do cliente / outro; fora da vez = sugestões rápidas (previsto no almoço, previsto em outro carro, pedido da liderança…) ou texto livre.
+- **Aprovador**: liderança. Não bloqueia.

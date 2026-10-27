@@ -4,10 +4,13 @@ import { adicionarEvidencia, concluirChecklist, enviarCorrecao, registrarItemChe
 import { ESTADOS, ESTADOS_ORDEM, GRUPOS } from '../domain/catalogo';
 import { fotosAtivasDoItem, pendenciasParaConcluir, progresso, validarItem, type DadosItem } from '../domain/checklist';
 import type { Checklist as TChecklist, DB, EstadoItem, ItemInspecaoDef, Usuario } from '../domain/types';
-import { fmtDataHora, primeiroNome } from '../domain/util';
+import { fmtData, fmtDataHora, fmtKm, primeiroNome } from '../domain/util';
+import { ORIGEM_LABEL } from '../domain/catalogo';
+import { textoPrevisto } from '../domain/manutencao';
 import { Alerta, Badge, Btn, Empty, Field, Placa, Progress, SaveIndicator, Segmented, Sheet, useAcao, useDB, type SaveState } from '../ui/components';
 import { PhotoCapture } from '../ui/PhotoCapture';
 import { EstadoBadge } from './common';
+import { PausarBotao } from './Pausa';
 
 type Modo = 'lista' | 'compacto';
 
@@ -15,7 +18,7 @@ export function Checklist({ u, osId, foco }: { u: Usuario; osId: string; foco: s
   const db = useDB();
   const os = db.os.find(o => o.id === osId);
   const c = os && db.checklists.find(x => x.id === os.checklistId);
-  const [modo, setModo] = useState<Modo>(() => (localStorage.getItem('mo-proto:modo-ck') as Modo) || 'lista');
+  const [modo, setModo] = useState<Modo>(() => { try { return (localStorage.getItem('mo-proto:modo-ck') as Modo) || 'lista'; } catch { return 'lista'; } });
   const [aberto, setAberto] = useState<string | null>(foco);
   const [soPendentes, setSoPendentes] = useState(false);
   const [destaque, setDestaque] = useState<string[]>([]);
@@ -30,7 +33,7 @@ export function Checklist({ u, osId, foco }: { u: Usuario; osId: string; foco: s
   const souExecutor = os.mecanicoId === u.id;
   const correcao = c.correcaoSolicitada && !c.correcaoSolicitada.resolvidaEm ? c.correcaoSolicitada : undefined;
   const fechado = c.status === 'concluido' || c.status === 'excecao_autorizada';
-  const editavel = (defId: string) => souExecutor && (!fechado || !!correcao?.itens.includes(defId));
+  const editavel = (defId: string) => souExecutor && os.status !== 'pausada' && (!fechado || !!correcao?.itens.includes(defId));
   const pr = progresso(c, db.evidencias);
   const pend = pendenciasParaConcluir(c, db.evidencias);
   const excPendente = c.solicitacaoExcecao?.status === 'pendente';
@@ -56,8 +59,12 @@ export function Checklist({ u, osId, foco }: { u: Usuario; osId: string; foco: s
           <h1>Checklist técnico</h1>
           <div className="row" style={{ marginTop: 6 }}><Placa placa={v.placa} /><span className="strong">{v.marca} {v.modelo} {v.ano}</span><span className="small muted">câmbio {v.cambio}</span></div>
         </div>
-        <Segmented rotulo="Modo de visualização" valor={modo} onChange={setModo} opcoes={[{ v: 'lista', r: 'Lista' }, { v: 'compacto', r: 'Compacto' }]} />
+        <div className="row">
+          <Segmented rotulo="Modo de visualização" valor={modo} onChange={setModo} opcoes={[{ v: 'lista', r: 'Lista' }, { v: 'compacto', r: 'Compacto' }]} />
+          <PausarBotao u={u} os={os} />
+        </div>
       </div>
+      {os.status === 'pausada' && <div style={{ marginBottom: 10 }}><Alerta tipo="warn">OS pausada. Retome na Operação para continuar o checklist.</Alerta></div>}
 
       {(os.naoFazerTesteFreio || os.naoFazerTesteCambio) && (
         <div style={{ marginBottom: 10 }}><Alerta tipo="crit" icone="!"><b>{[os.naoFazerTesteFreio && 'FREIO', os.naoFazerTesteCambio && 'CÂMBIO'].filter(Boolean).join(' E ')}: NÃO FAZER TESTE — SÓ EXECUTAR.</b> Registre o aspecto visual, sem teste.</Alerta></div>
@@ -243,6 +250,7 @@ function ItemEditor({ db, c, def, u, editavel, emCorrecao, onSalvo }: { db: DB; 
   return (
     <div>
       <div className="ck-instr"><b>Como verificar:</b> {def.instrucao}</div>
+      <ReferenciaManutencao db={db} c={c} def={def} />
       <div className="estados" role="radiogroup" aria-label={`Condição de ${def.nome}`}>
         {ESTADOS_ORDEM.filter(e => def.estadosPermitidos.includes(e)).map(e => (
           <button key={e} role="radio" aria-checked={estado === e} disabled={!editavel} className={`estado-btn ${ESTADOS[e].tom} ${estado === e ? 'on' : ''}`} onClick={() => escolher(e)} data-estado={e}>
@@ -305,6 +313,24 @@ function ItemEditor({ db, c, def, u, editavel, emCorrecao, onSalvo }: { db: DB; 
         <PhotoCapture itemId={def.id} itemNome={def.nome} ocupado={fotoAcao.ocupado} onClose={() => setCamera(false)}
           onConfirmar={async f => { if (await fotoAcao.executar(() => adicionarEvidencia(u, c.id, def.id, f), 'Foto salva no item.')) setCamera(false); }} />
       )}
+    </div>
+  );
+}
+
+/** Última troca e próxima prevista do serviço ligado ao item (ex.: óleo: 5, 7 ou 10 mil km ou 6 meses, o que vier primeiro). */
+function ReferenciaManutencao({ db, c, def }: { db: DB; c: TChecklist; def: ItemInspecaoDef }) {
+  if (!def.servicoRelacionado) return null;
+  const m = db.manutencoes.filter(x => x.veiculoId === c.veiculoId && x.servicoKey === def.servicoRelacionado && !x.concluidaPorOsId)
+    .sort((a, b) => b.registradoEm.localeCompare(a.registradoEm))[0];
+  const regra = db.regrasIntervalo.find(r => r.id === def.regraIntervaloId);
+  if (!m && !regra?.validada) return null;
+  return (
+    <div className="ck-instr" style={{ background: 'var(--blue-50)' }}>
+      <b>Referência:</b>{' '}
+      {m ? <>última troca {m.ultimaExecucao ? `${fmtData(m.ultimaExecucao.data)}${m.ultimaExecucao.km ? ` com ${fmtKm(m.ultimaExecucao.km)}` : ''}` : 'sem registro'}
+        {(m.kmPrevisto || m.dataPrevista) && <> · próxima prevista <b>{textoPrevisto(m.kmPrevisto, m.dataPrevista, fmtKm, fmtData)}</b></>}
+        {' '}({ORIGEM_LABEL[m.origem].rotulo.toLowerCase()})</> : 'sem troca registrada nesta oficina.'}
+      {regra?.validada && regra.opcoesKm && <div className="small" style={{ marginTop: 4 }}>Regra: {regra.opcoesKm.map(x => `${x / 1000} mil`).join(', ')} km conforme o óleo, ou {regra.meses} meses — o que vier primeiro. Se passou, recomende a troca.</div>}
     </div>
   );
 }

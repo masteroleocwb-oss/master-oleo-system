@@ -38,15 +38,18 @@ Caminho do Chrome diferente do padrão do macOS: `CHROME_PATH=/caminho/do/chrome
 
 ## Usuários de demonstração
 
+O perfil Comercial fica para o futuro e não aparece na demonstração.
+
 A tela inicial mostra os cartões dos usuários; um toque entra com o perfil (não há senha no protótipo — o login real é decisão da Fase B).
 
 | Usuário | Perfil | Para demonstrar |
 | --- | --- | --- |
-| André Costa | Mecânico (N3) | Assumir pela vez do rodízio, checklist, fotos, finalizar, Meu mês |
-| Rafael Moura, Diego Ramos, Eduardo Pires, Marcos Lima | Mecânicos | Rodízio e comparação na liderança |
+| André Costa | Mecânico (N3) | Fila com mecânico previsto, assumir (ou fora da vez com motivo), checklist, fotos, adicionais, pausar, finalizar, Meu mês |
+| Rafael Moura | Mecânico | Atender o retorno reservado a ele (fotos antes/depois, solução, aviso ao cliente) |
+| Eduardo Pires | Mecânico | Tem uma OS pausada aguardando peça; retomar |
+| Diego Ramos, Marcos Lima | Mecânicos | Rodízio e comparação na liderança |
 | Paulo Souza | Mecânico **inativo** | Não consegue entrar |
 | Igor Martins, Juliana Prado | Vendedor | Nova OS, busca por placa, gerar link |
-| Helena Duarte | Comercial | Recomendações |
 | Fernanda Alves | Liderança | Auditoria, exceções, ocorrências, propor metas, simular políticas, designar fora da vez |
 | Gustavo Reis | Direção / ADM | Aprovar metas, decidir ocorrências, catálogo, intervalos, usuários, histórico, links |
 

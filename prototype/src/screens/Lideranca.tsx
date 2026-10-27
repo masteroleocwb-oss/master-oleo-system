@@ -381,8 +381,12 @@ function Retornos() {
         return (
           <a key={o.id} className="li" href={`#/os/${o.id}`}>
             <Placa placa={v.placa} />
-            <div className="grow"><div className="ttl">OS #{o.numero} ← retorno da #{orig?.numero}</div><div className="meta">{fmtData(o.abertaEm)} · serviço original de {nomeDe(db, orig?.mecanicoId)} · {o.obsInterna}</div></div>
-            <Badge tom="critico">Retorno</Badge>
+            <div className="grow"><div className="ttl">OS #{o.numero} ← retorno da #{orig?.numero}</div><div className="meta">{fmtData(o.abertaEm)} · serviço original de {nomeDe(db, orig?.mecanicoId)} · {o.retorno?.problemaRelatado || o.obsInterna}</div>
+              {o.retorno?.solucao && <div className="meta">Feito: {o.retorno.solucao}</div>}</div>
+            {o.retorno?.relacaoServicoAnterior === 'sim' ? <Badge tom="critico">Ligado ao serviço</Badge>
+              : o.retorno?.relacaoServicoAnterior === 'nao' ? <Badge tom="ok">Não ligado ao serviço</Badge>
+                : o.retorno?.relacaoServicoAnterior ? <Badge tom="muted">Causa não identificada</Badge>
+                  : <Badge tom="atencao">{o.status === 'concluido' ? 'Retorno' : 'Em aberto'}</Badge>}
           </a>
         );
       })}
@@ -434,7 +438,20 @@ function Gestao() {
         <Kpi rotulo="Conversas com prazo vencido" valor={g.planosVencidos} dica={`${g.planosAbertos} em aberto`} alerta={g.planosVencidos > 0} />
         <Kpi rotulo="Ocorrências paradas em rascunho" valor={g.ocorrenciasParadas} />
         <Kpi rotulo="Metas sem comunicação ao time" valor={g.metasSemComunicar} />
+        <Kpi rotulo="OS assumidas fora da ordem no mês" valor={g.foraDaOrdem.length} explicacao={{ formula: 'OS em que o mecânico (ou a liderança) saiu da previsão da fila, sempre com motivo.', porque: 'Permite assumir quando o previsto está indisponível, sem perder a transparência do rodízio.' }} />
+        <Kpi rotulo="OS pausadas agora" valor={g.pausadas.length} dica="Aguardando peça ou aprovação" />
       </div>
+      {g.foraDaOrdem.length > 0 && (
+        <Card titulo="Fora da ordem — motivos registrados">
+          <div className="list">
+            {g.foraDaOrdem.slice(0, 12).map(o => (
+              <a key={o.id} className="li" href={`#/os/${o.id}`}>
+                <div className="grow"><div className="ttl">OS #{o.numero} · {nomeDe(db, o.mecanicoId)}{o.foraDaOrdem!.previsto ? ` (previsto: ${nomeDe(db, o.foraDaOrdem!.previsto)})` : ''}</div><div className="meta">{fmtDataHora(o.iniciadaEm)} · {o.foraDaOrdem!.motivo}</div></div>
+              </a>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

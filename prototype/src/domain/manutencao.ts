@@ -27,24 +27,34 @@ export interface Sugestao {
   dataPrevista?: string;
   confirmavel: boolean;
   motivo: string;
+  /** A regra depende do produto: o mecânico precisa escolher o intervalo em km. */
+  opcoesKm?: number[];
 }
 
-export const sugerirProxima = (servico: ServicoKey, nome: string, regras: RegraIntervalo[], v: Pick<Veiculo, 'cambio'>, dataISO: string, km?: number): Sugestao => {
+export const sugerirProxima = (servico: ServicoKey, nome: string, regras: RegraIntervalo[], v: Pick<Veiculo, 'cambio'>, dataISO: string, km?: number, intervaloKm?: number): Sugestao => {
   const regra = regraPara(regras, servico, v);
   if (!regra) return { servicoKey: servico, descricao: nome, confirmavel: false, motivo: 'Sem regra de intervalo cadastrada' };
-  if (!regra.validada || (!regra.km && !regra.meses)) {
+  if (!regra.validada || (!regra.km && !regra.meses && !regra.opcoesKm?.length)) {
     return { servicoKey: servico, descricao: nome, regra, confirmavel: false, motivo: 'Regra sem intervalo validado — registrar só acompanhamento' };
   }
+  // Intervalo por produto: só vale um dos valores permitidos pela regra.
+  const kmRegra = regra.opcoesKm?.length ? (intervaloKm && regra.opcoesKm.includes(intervaloKm) ? intervaloKm : undefined) : regra.km;
   return {
     servicoKey: servico,
     descricao: nome,
     regra,
-    kmPrevisto: regra.km && km != null ? km + regra.km : undefined,
+    kmPrevisto: kmRegra && km != null ? km + kmRegra : undefined,
     dataPrevista: regra.meses ? addMeses(dataISO, regra.meses) : undefined,
     confirmavel: true,
-    motivo: [regra.km ? `${regra.km.toLocaleString('pt-BR')} km` : null, regra.meses ? `${regra.meses} meses` : null].filter(Boolean).join(' ou ') + ', o que vier primeiro',
+    opcoesKm: regra.opcoesKm,
+    motivo: [kmRegra ? `${kmRegra.toLocaleString('pt-BR')} km` : regra.opcoesKm ? `${regra.opcoesKm.map(x => x / 1000).join(', ')} mil km (conforme o óleo)` : null, regra.meses ? `${regra.meses} meses` : null].filter(Boolean).join(' ou ') + ', o que vier primeiro',
   };
 };
+
+/** Texto único para "próxima": km ou data, o que vier primeiro. */
+export const textoPrevisto = (kmPrevisto: number | undefined, dataPrevista: string | undefined, fmtKm: (n?: number) => string, fmtData: (s?: string) => string) =>
+  kmPrevisto && dataPrevista ? `${fmtKm(kmPrevisto)} ou ${fmtData(dataPrevista)}, o que vier primeiro`
+    : kmPrevisto ? fmtKm(kmPrevisto) : dataPrevista ? fmtData(dataPrevista) : '';
 
 export const statusManutencao = (m: ManutencaoPrevista, kmAtual: number | undefined, hojeISO: string): StatusManutencao => {
   if (m.concluidaPorOsId) return 'concluida';

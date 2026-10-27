@@ -1,4 +1,4 @@
-import { ESTADOS, SERVICOS } from '../domain/catalogo';
+import { ESTADOS, MOTIVO_PAUSA, SERVICOS } from '../domain/catalogo';
 import { progresso, STATUS_CHECKLIST_LABEL } from '../domain/checklist';
 import type { Checklist, DB, EstadoItem, OrdemServico, StatusOS } from '../domain/types';
 import { diffMin, fmtHora, fmtMin, agoraISO, primeiroNome } from '../domain/util';
@@ -7,6 +7,7 @@ import { Badge, Placa, Progress, type Tom } from '../ui/components';
 export const STATUS_OS: Record<StatusOS, { r: string; tom: Tom }> = {
   aguardando: { r: 'Aguardando', tom: 'atencao' },
   andamento: { r: 'Em andamento', tom: 'info' },
+  pausada: { r: 'Pausada', tom: 'atencao' },
   concluido: { r: 'Concluída', tom: 'ok' },
   cancelada: { r: 'Cancelada', tom: 'muted' },
   encerrada: { r: 'Encerrada (sem execução)', tom: 'muted' },
@@ -26,28 +27,45 @@ export const ChecklistBadge = ({ c }: { c?: Checklist }) => c
 export const nomeServicos = (os: OrdemServico, soExecutados = false) =>
   os.servicos.filter(s => !soExecutados || s.executado).map(s => SERVICOS[s.key].nome).join(' · ');
 
-export function OSCard({ db, os, mostrarMecanico = true }: { db: DB; os: OrdemServico; mostrarMecanico?: boolean }) {
+export function OSCard({ db, os, mostrarMecanico = true, previsto, euId }: {
+  db: DB; os: OrdemServico; mostrarMecanico?: boolean;
+  /** Fila aguardando: posição e mecânico previsto (só informação). */
+  previsto?: { posicao: number; mecanicoId?: string };
+  euId?: string;
+}) {
   const v = db.veiculos.find(x => x.id === os.veiculoId)!;
   const c = db.checklists.find(x => x.id === os.checklistId);
   const mec = db.usuarios.find(x => x.id === os.mecanicoId);
   const p = c ? progresso(c, db.evidencias) : null;
   const espera = os.status === 'aguardando' ? diffMin(os.abertaEm, agoraISO()) : null;
+  const pausa = os.status === 'pausada' ? os.pausas?.at(-1) : undefined;
+  const prevMec = previsto?.mecanicoId ? db.usuarios.find(x => x.id === previsto.mecanicoId) : undefined;
   return (
-    <a className={`os-card ${os.retornoDeOsId ? 'retorno' : ''}`} href={`#/os/${os.id}`} data-os={os.numero}>
+    <a className={`os-card ${os.retornoDeOsId ? 'retorno' : ''} ${previsto && previsto.mecanicoId && previsto.mecanicoId === euId ? 'minha-vez' : ''}`} href={`#/os/${os.id}`} data-os={os.numero}>
       <div className="row between nowrap">
         <div className="row">
+          {previsto && <span className="fila-pos" title="Posição na fila">{previsto.posicao}º</span>}
           <Placa placa={v.placa} />
           <span className="strong">{v.marca} {v.modelo}</span>
         </div>
         <span className="small muted mono">#{os.numero}</span>
       </div>
-      <div className="small muted" style={{ marginTop: 6 }}>{nomeServicos(os)}</div>
+      {mostrarMecanico && mec && (os.status === 'andamento' || os.status === 'pausada') && (
+        <div className="com-mecanico">Com: <b>{mec.nome}</b></div>
+      )}
+      {previsto && os.status === 'aguardando' && (
+        <div className="com-mecanico previsto">
+          {prevMec ? <>Previsto: <b>{prevMec.id === euId ? 'você' : prevMec.nome}</b>{os.retornoDeOsId ? ' (retorno)' : ''}</> : 'Aguardando mecânico livre'}
+        </div>
+      )}
+      {pausa && <div className="small" style={{ marginTop: 6, color: 'var(--warn)' }}><b>Pausada:</b> {MOTIVO_PAUSA[pausa.motivo]}{pausa.detalhe ? ` — ${pausa.detalhe}` : ''} · desde {fmtHora(pausa.inicio)}</div>}
+      <div className="small muted" style={{ marginTop: 6 }}>{os.retorno ? `Problema relatado: ${os.retorno.problemaRelatado}` : nomeServicos(os)}</div>
       <div className="row" style={{ marginTop: 8 }}>
         {os.retornoDeOsId && <Badge tom="critico" icone="↺">Retorno</Badge>}
         {os.naoOferecer && <Badge tom="muted">Frota · não oferecer</Badge>}
         {(os.naoFazerTesteFreio || os.naoFazerTesteCambio) && <Badge tom="atencao">Não fazer teste{os.naoFazerTesteFreio && os.naoFazerTesteCambio ? '' : os.naoFazerTesteFreio ? ' (freio)' : ' (câmbio)'}</Badge>}
-        {os.status !== 'aguardando' && <ChecklistBadge c={c} />}
-        {mostrarMecanico && mec && <span className="small muted">{primeiroNome(mec.nome)}</span>}
+        {os.status !== 'aguardando' && !os.retornoDeOsId && <ChecklistBadge c={c} />}
+        {mostrarMecanico && mec && os.status === 'concluido' && <span className="small muted">{primeiroNome(mec.nome)}</span>}
         {espera != null && <span className="small muted">Aberta às {fmtHora(os.abertaEm)} · espera {fmtMin(espera)}</span>}
         {os.status === 'andamento' && <span className="small muted">Início {fmtHora(os.iniciadaEm)}</span>}
         {os.status === 'concluido' && <span className="small muted">Concluída {fmtHora(os.concluidaEm)}</span>}

@@ -53,6 +53,8 @@ export function Performance({ u }: { u: Usuario }) {
         <Kpi rotulo="Carros atendidos" valor={ind.carros} explicacao={DEFINICOES.carros} />
         <Kpi rotulo="Itens identificados" valor={ind.identificados} explicacao={DEFINICOES.identificados} />
         <Kpi rotulo="Aceite das recomendações" valor={fmtPct(ind.conversaoPct)} explicacao={DEFINICOES.conversao} />
+        <Kpi rotulo="Adicionais vendidos" valor={ind.adicionais} dica={`${ind.ofertasAdicionais} oferta(s) registradas`} explicacao={DEFINICOES.adicionais} />
+        <Kpi rotulo="Assumidas fora da ordem" valor={ind.foraDaOrdem} explicacao={DEFINICOES.foraDaOrdem} />
         <Kpi rotulo="Retornos" valor={ind.retornos} explicacao={DEFINICOES.retornos} alerta={ind.retornos > 0} />
         <Kpi rotulo="Tempo médio por OS" valor={fmtMin(ind.tempoMedioMin)} dica={`Checklist: ${fmtMin(ind.tempoChecklistMin)}`} explicacao={DEFINICOES.tempo} />
         <Kpi rotulo="Score de execução" valor={ind.score} dica={ind.descontoChecklist ? `−${ind.descontoChecklist} pelo checklist` : 'Sem desconto do checklist'} explicacao={DEFINICOES.score} />

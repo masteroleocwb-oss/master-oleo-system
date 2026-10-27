@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ir } from '../app/nav';
-import { buscarVeiculosEClientes, estadoLink, nomeDe, revogarLink, salvarItemCatalogo, salvarRegraIntervalo, salvarUsuario } from '../data/api';
+import { buscarVeiculosEClientes, estadoLink, nomeDe, ocultarItemPara, revogarLink, salvarItemCatalogo, salvarRegraIntervalo, salvarUsuario, voltarAMostrarItem } from '../data/api';
+import { sugestoesOcultar } from '../domain/checklist';
 import { ESTADOS, ESTADOS_ORDEM, GRUPOS, ORIGEM_LABEL, SERVICO_KEYS, SERVICOS } from '../domain/catalogo';
 import { ROLE_LABEL } from '../domain/permissions';
 import type { EstadoItem, ItemInspecaoDef, RegraIntervalo, Role, ServicoKey, Usuario } from '../domain/types';
@@ -49,6 +50,7 @@ function Catalogo({ u }: { u: Usuario }) {
   return (
     <div>
       <Alerta tipo="info">Mudanças valem só para checklists novos. Inspeções já feitas guardam a versão do item usada na época. Critérios de condição (o que é OK, Atenção ou Prioritário em cada item) ainda não foram definidos no Playbook: as instruções abaixo são proposta.</Alerta>
+      <SugestoesOcultar u={u} />
       <div style={{ margin: '12px 0' }}><Btn onClick={() => setEd({ id: `item_${Date.now().toString(36)}`, grupo: 'Demais itens', nome: '', instrucao: '', tipo: 'visual', estadosPermitidos: [...ESTADOS_ORDEM], fotoObrigatoriaEm: ['atencao', 'prioritario'], permiteRecomendacao: true, ativo: true, versao: 0, fonte: 'pedido_direcao' })}>Novo item</Btn></div>
       {GRUPOS.map(g => (
         <div key={g}>
@@ -58,6 +60,7 @@ function Catalogo({ u }: { u: Usuario }) {
               <button key={d.id} className="li" onClick={() => setEd(d)}>
                 <div className="grow">
                   <div className="ttl">{d.nome} {!d.ativo && <Badge tom="muted">Inativo</Badge>}</div>
+                  {(d.ocultarPara || []).length > 0 && <div className="meta">Não aparece para: {d.ocultarPara!.map(o => `${o.marca} ${o.modelo}${o.motor ? ` ${o.motor}` : ''}`).join(', ')}</div>}
                   <div className="meta">Foto obrigatória: {d.fotoObrigatoriaEm.length ? d.fotoObrigatoriaEm.map(e => ESTADOS[e].curto).join(', ') : 'nunca'}{d.aplicavelA?.cambio ? ` · só câmbio ${d.aplicavelA.cambio}` : ''}{d.servicoRelacionado ? ` · serviço: ${SERVICOS[d.servicoRelacionado].nome}` : ''} · v{d.versao} · {d.fonte === 'playbook_fase1' ? 'Playbook fase 1' : d.fonte === 'pedido_direcao' ? 'pedido da direção' : 'catálogo atual'}</div>
                 </div>
                 <span className="chev">›</span>
@@ -68,6 +71,39 @@ function Catalogo({ u }: { u: Usuario }) {
       ))}
       {ed && <ItemSheet u={u} def={ed} onClose={() => setEd(null)} />}
     </div>
+  );
+}
+
+/** Itens que viram "Não se aplica" quase sempre num modelo: a direção decide não mostrar mais para o mecânico. */
+function SugestoesOcultar({ u }: { u: Usuario }) {
+  const db = useDB();
+  const acao = useAcao();
+  const sug = sugestoesOcultar(db.checklists, db.veiculos, db.catalogo);
+  const ocultos = db.catalogo.flatMap(d => (d.ocultarPara || []).map((o, i) => ({ d, o, i })));
+  return (
+    <Card titulo="Itens que quase nunca se aplicam" className="" acao={<Badge tom="info">{sug.length} sugestão(ões)</Badge>}>
+      <p className="small muted" style={{ marginBottom: 8 }}>O sistema observa os checklists: quando um item é marcado “Não se aplica” em pelo menos 80% de 3 ou mais inspeções do mesmo modelo e motor, ele sugere deixar de mostrar o item para esse modelo. Só some depois que a direção confirma. Inspeções antigas não mudam.</p>
+      {sug.length === 0 && <p className="small muted">Nenhuma sugestão no momento.</p>}
+      <div className="list">
+        {sug.slice(0, 8).map(g => (
+          <div key={`${g.defId}|${g.marca}|${g.modelo}|${g.motor}`} className="li" data-sugestao={`${g.defId}|${g.modelo}`}>
+            <div className="grow"><div className="ttl">{g.nome} · {g.marca} {g.modelo} {g.motor}</div><div className="meta">“Não se aplica” em {g.na} de {g.total} inspeções ({g.pct}%)</div></div>
+            <Btn tamanho="sm" variante="sec" carregando={acao.ocupado} onClick={() => acao.executar(() => ocultarItemPara(u, g.defId, { marca: g.marca, modelo: g.modelo, motor: g.motor }, `Sugestão do sistema: não se aplica em ${g.na} de ${g.total} inspeções`), `${g.nome} não aparece mais para ${g.marca} ${g.modelo}.`)}>Não mostrar para este modelo</Btn>
+          </div>
+        ))}
+      </div>
+      {ocultos.length > 0 && <>
+        <div className="small strong" style={{ margin: '12px 0 6px' }}>Já ocultos</div>
+        <div className="list">
+          {ocultos.map(({ d, o, i }) => (
+            <div key={`${d.id}-${i}`} className="li">
+              <div className="grow"><div className="ttl">{d.nome} · {o.marca} {o.modelo} {o.motor || ''}</div><div className="meta">{o.motivo} · {nomeDe(db, o.por)} em {fmtData(o.em)}</div></div>
+              <Btn tamanho="sm" variante="ghost" carregando={acao.ocupado} onClick={() => acao.executar(() => voltarAMostrarItem(u, d.id, i), 'O item volta a aparecer para este modelo.')}>Voltar a mostrar</Btn>
+            </div>
+          ))}
+        </div>
+      </>}
+    </Card>
   );
 }
 
@@ -169,7 +205,7 @@ function Usuarios({ u }: { u: Usuario }) {
           rodape={<><Btn variante="sec" onClick={() => setEd(null)}>Cancelar</Btn><Btn carregando={acao.ocupado} onClick={async () => { if ((await acao.executar(() => salvarUsuario(u, ed), 'Usuário salvo.')) !== undefined) setEd(null); }}>Salvar</Btn></>}>
           <Field rotulo="Nome" obrigatorio htmlFor="us-nome"><input id="us-nome" className="input" value={ed.nome} onChange={e => setEd({ ...ed, nome: e.target.value })} /></Field>
           <div className="grid k2">
-            <Field rotulo="Perfil" htmlFor="us-role"><select id="us-role" className="input" value={ed.role} onChange={e => setEd({ ...ed, role: e.target.value as Role })}>{(Object.keys(ROLE_LABEL) as Role[]).map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></Field>
+            <Field rotulo="Perfil" htmlFor="us-role"><select id="us-role" className="input" value={ed.role} onChange={e => setEd({ ...ed, role: e.target.value as Role })}>{(Object.keys(ROLE_LABEL) as Role[]).filter(r => r !== 'comercial' || ed.role === 'comercial').map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></Field>
             <Field rotulo="Nível (se mecânico)" htmlFor="us-niv"><input id="us-niv" className="input" value={ed.nivel || ''} onChange={e => setEd({ ...ed, nivel: e.target.value })} placeholder="Ex.: N3" /></Field>
           </div>
           {acao.erro && <Alerta tipo="crit">{acao.erro}</Alerta>}

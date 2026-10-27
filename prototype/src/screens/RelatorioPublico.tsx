@@ -43,11 +43,12 @@ export function RelatorioPublico({ token }: { token: string }) {
     <div style={{ background: 'var(--bg)', minHeight: '100vh' }}>
       <div className="rel-head">
         <img src="./brand/logo-master-oleo.png" alt="Master Óleo" />
-        <Btn variante="sec" tamanho="sm" className="no-print" onClick={() => window.print()}>Salvar / imprimir</Btn>
+        {/* Em visualizador embutido (link beta) a impressão é bloqueada: o botão só aparece na página própria. */}
+        {window.self === window.top && <Btn variante="sec" tamanho="sm" className="no-print" onClick={() => window.print()}>Salvar / imprimir</Btn>}
       </div>
       <div className="rel" data-estado-link="ok">
         <div style={{ margin: '20px 0 16px' }}>
-          <p className="muted small">Relatório da revisão · OS {rel.numero}</p>
+          <p className="muted small">{rel.retorno ? 'Atendimento de retorno' : 'Relatório da revisão'} · OS {rel.numero}</p>
           <h1>Olá{rel.clientePrimeiroNome ? `, ${rel.clientePrimeiroNome}` : ''}! Veja como está o seu {rel.veiculo.modelo}.</h1>
           <div className="row" style={{ marginTop: 10 }}>
             <span className="plate">{rel.veiculo.placa}</span>
@@ -58,13 +59,30 @@ export function RelatorioPublico({ token }: { token: string }) {
           {rel.checklistStatus === 'excecao_autorizada' && <div className="alert-box warn" style={{ marginTop: 10 }}><span className="ic">!</span><div>Nem todos os itens puderam ser inspecionados nesta visita. Os itens não avaliados não aparecem como “em bom estado”.</div></div>}
         </div>
 
-        <div className="grid k3" style={{ marginBottom: 16 }}>
+        {rel.retorno && (
+          <section className="card" style={{ marginBottom: 12 }} data-secao="retorno">
+            <h2 style={{ marginBottom: 6 }}>Seu retorno</h2>
+            <p><b>O que você nos relatou:</b> {rel.retorno.problema}</p>
+            {rel.retorno.solucao && <p style={{ marginTop: 6 }}><b>O que fizemos:</b> {rel.retorno.solucao}</p>}
+            {rel.retorno.aviso && <p style={{ marginTop: 6 }}><b>Nossa orientação:</b> {rel.retorno.aviso}</p>}
+            <div className="ba-grid" style={{ marginTop: 10 }}>
+              {(['antes', 'depois'] as const).map(et => rel.retorno![et].length > 0 && (
+                <div key={et}>
+                  <div className="small strong">{et === 'antes' ? 'Antes' : 'Depois'}</div>
+                  <div className="gallery">{rel.retorno![et].map((f, k) => <figure key={k}><img src={f.url} alt={f.legenda || et} /><figcaption>{[f.legenda, f.demo && 'imagem demonstrativa'].filter(Boolean).join(' · ')}</figcaption></figure>)}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {!rel.retorno && <div className="grid k3" style={{ marginBottom: 16 }}>
           <div className="kpi"><div className="lbl">Itens inspecionados</div><div className="val">{rel.itens.length}</div></div>
           <div className="kpi"><div className="lbl">Com recomendação</div><div className="val" style={{ color: recomendacoes.length ? 'var(--warn)' : undefined }}>{recomendacoes.length}</div></div>
           <div className="kpi"><div className="lbl">Em bom estado</div><div className="val" style={{ color: 'var(--ok)' }}>{ok.length}</div></div>
-        </div>
+        </div>}
 
-        {rel.observacao && <section className="card" style={{ marginBottom: 12 }}><h2 style={{ marginBottom: 6 }}>Recado da equipe</h2><p>{rel.observacao}</p></section>}
+        {rel.observacao && !rel.retorno && <section className="card" style={{ marginBottom: 12 }}><h2 style={{ marginBottom: 6 }}>Recado da equipe</h2><p>{rel.observacao}</p></section>}
 
         {recomendacoes.length > 0 && (
           <section className="card" style={{ marginBottom: 12 }}>
@@ -76,7 +94,7 @@ export function RelatorioPublico({ token }: { token: string }) {
                   {i.recomendacao && <p className="small" style={{ marginTop: 4 }}>{i.recomendacao}</p>}
                   {fotosDe(i.nome).length > 0 && (
                     <div className="gallery" style={{ marginTop: 8 }}>
-                      {fotosDe(i.nome).map((f, k) => <figure key={k}><img src={f.url} alt={f.legenda || i.nome} /><figcaption>{f.legenda}{f.demo ? ' · imagem demonstrativa' : ''}</figcaption></figure>)}
+                      {fotosDe(i.nome).map((f, k) => <figure key={k}><img src={f.url} alt={f.legenda || i.nome} /><figcaption>{[f.legenda, f.demo && 'imagem demonstrativa'].filter(Boolean).join(' · ')}</figcaption></figure>)}
                     </div>
                   )}
                 </div>
@@ -92,10 +110,10 @@ export function RelatorioPublico({ token }: { token: string }) {
           </section>
         )}
 
-        <section className="card" style={{ marginBottom: 12 }}>
+        {rel.servicos.length > 0 && !rel.retorno && <section className="card" style={{ marginBottom: 12 }}>
           <h2 style={{ marginBottom: 6 }}>Serviços realizados</h2>
           {rel.servicos.map(s => <div key={s.nome} className="rel-item"><span style={{ color: 'var(--ok)', fontWeight: 800 }} aria-hidden>✓</span><div><b>{s.nome}</b>{s.detalhe && <div className="small muted">{s.detalhe}</div>}</div></div>)}
-        </section>
+        </section>}
 
         {ok.length > 0 && (
           <section className="card" style={{ marginBottom: 12 }}>

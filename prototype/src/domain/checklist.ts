@@ -2,8 +2,40 @@
 import { ESTADOS } from './catalogo';
 import type { Checklist, EstadoItem, Evidencia, ItemInspecaoDef, ItemRegistro, OrdemServico, Veiculo } from './types';
 
-export const defsAplicaveis = (catalogo: ItemInspecaoDef[], v: Pick<Veiculo, 'cambio'>) =>
-  catalogo.filter(d => d.ativo && (!d.aplicavelA?.cambio || d.aplicavelA.cambio === v.cambio));
+const norm = (x?: string) => (x || '').trim().toLowerCase();
+
+/** O item está oculto para este veículo por decisão da direção (marca + modelo, e motor quando informado)? */
+export const ocultoPara = (d: ItemInspecaoDef, v: Partial<Pick<Veiculo, 'marca' | 'modelo' | 'motor'>>) =>
+  (d.ocultarPara || []).some(o => norm(o.marca) === norm(v.marca) && norm(o.modelo) === norm(v.modelo) && (!o.motor || norm(o.motor) === norm(v.motor)));
+
+export const defsAplicaveis = (catalogo: ItemInspecaoDef[], v: Pick<Veiculo, 'cambio'> & Partial<Pick<Veiculo, 'marca' | 'modelo' | 'motor'>>) =>
+  catalogo.filter(d => d.ativo && (!d.aplicavelA?.cambio || d.aplicavelA.cambio === v.cambio) && !ocultoPara(d, v));
+
+/**
+ * Sugestões para não mostrar um item: modelos (marca + modelo + motor) em que o item foi marcado
+ * "Não se aplica" em pelo menos `minPct`% de `minInspecoes` inspeções ou mais. Só sugere: quem decide é a direção.
+ */
+export const sugestoesOcultar = (checklists: Checklist[], veiculos: Veiculo[], catalogo: ItemInspecaoDef[], minInspecoes = 3, minPct = 80) => {
+  const grupos = new Map<string, { defId: string; marca: string; modelo: string; motor: string; total: number; na: number }>();
+  for (const c of checklists) {
+    const v = veiculos.find(x => x.id === c.veiculoId);
+    if (!v) continue;
+    for (const d of c.defs) {
+      const it = c.itens[d.id];
+      if (!it || it.estado === 'nao_verificado') continue;
+      const k = `${d.id}|${norm(v.marca)}|${norm(v.modelo)}|${norm(v.motor)}`;
+      const g = grupos.get(k) || { defId: d.id, marca: v.marca, modelo: v.modelo, motor: v.motor, total: 0, na: 0 };
+      g.total++;
+      if (it.estado === 'nao_aplicavel') g.na++;
+      grupos.set(k, g);
+    }
+  }
+  return [...grupos.values()]
+    .filter(g => g.total >= minInspecoes && (g.na / g.total) * 100 >= minPct)
+    .filter(g => { const d = catalogo.find(x => x.id === g.defId); return d && d.ativo && !ocultoPara(d, g); })
+    .map(g => ({ ...g, pct: Math.round((g.na / g.total) * 100), nome: catalogo.find(x => x.id === g.defId)!.nome }))
+    .sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome));
+};
 
 export const novoChecklist = (id: string, os: OrdemServico, v: Veiculo, catalogo: ItemInspecaoDef[]): Checklist => {
   const defs = defsAplicaveis(catalogo, v).map(d => ({ ...d }));

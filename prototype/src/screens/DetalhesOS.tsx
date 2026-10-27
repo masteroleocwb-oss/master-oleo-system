@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ir, useRota } from '../app/nav';
 import { cancelarOS, decidirExcecao, definirVisibilidadeFoto, estadoLink, gerarLink, marcarNaoOferecer, nomeDe, projetarRelatorio, registrarCompartilhamento, revogarLink, valoresOS } from '../data/api';
-import { ESTADOS, GRUPOS, SERVICOS } from '../domain/catalogo';
+import { ESTADOS, GRUPOS, MOTIVO_PAUSA, SERVICOS } from '../domain/catalogo';
 import { fotosAtivasDoItem, progresso } from '../domain/checklist';
 import { pode } from '../domain/permissions';
 import type { Compartilhamento, OrdemServico, Usuario } from '../domain/types';
@@ -9,6 +9,8 @@ import { fmtBRL, fmtData, fmtDataHora, fmtKm, fmtMin, diffMin, primeiroNome } fr
 import { Alerta, Badge, Btn, Card, Empty, Field, Placa, Sheet, Tabs, useAcao, useDB, useToast } from '../ui/components';
 import { ChecklistBadge, EstadoBadge, STATUS_OS } from './common';
 import { AuditoriaSheet } from './Lideranca';
+import { rotaTrabalho } from './Operacao';
+import { PausarBotao } from './Pausa';
 
 type Aba = 'resumo' | 'checklist' | 'fotos' | 'relatorio' | 'historico';
 
@@ -47,12 +49,14 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
           </div>
         </div>
         <div className="row">
-          {souExecutor && os.status === 'andamento' && (c?.status === 'concluido' || c?.status === 'excecao_autorizada'
-            ? <Btn onClick={() => ir(`/os/${os.id}/execucao`)}>Executar e finalizar</Btn>
-            : <Btn onClick={() => ir(`/os/${os.id}/checklist`)}>Abrir checklist</Btn>)}
+          {souExecutor && os.status === 'andamento' && (() => {
+            const ckOk = c?.status === 'concluido' || c?.status === 'excecao_autorizada';
+            return <Btn onClick={() => ir(rotaTrabalho(os, ckOk))}>{os.retornoDeOsId ? 'Atendimento do retorno' : ckOk ? 'Executar e finalizar' : 'Abrir checklist'}</Btn>;
+          })()}
+          <PausarBotao u={u} os={os} />
           {pode(u, 'checklist.auditar') && c && (c.status === 'concluido' || c.status === 'excecao_autorizada') && os.mecanicoId !== u.id && <Btn variante="sec" onClick={() => setAuditar(true)}>Auditar checklist</Btn>}
           {pode(u, 'excecao.declarar') && !os.naoOferecer && os.status !== 'concluido' && cli?.tipo === 'frota' && <Btn variante="sec" onClick={() => setNaoOf(true)}>Marcar “não oferecer”</Btn>}
-          {pode(u, 'os.cancelar') && (os.status === 'aguardando' || os.status === 'andamento') && <Btn variante="danger" onClick={() => setCancelar(true)}>Cancelar OS</Btn>}
+          {pode(u, 'os.cancelar') && (os.status === 'aguardando' || os.status === 'andamento' || os.status === 'pausada') && <Btn variante="danger" onClick={() => setCancelar(true)}>Cancelar OS</Btn>}
         </div>
       </div>
 
@@ -73,8 +77,8 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
                 <tbody>
                   {os.servicos.map((s, i) => (
                     <tr key={i}>
-                      <td><b>{SERVICOS[s.key].nome}</b><div className="small muted">{[s.marca, s.quantidadeExecutada || s.quantidade ? `${s.quantidadeExecutada || s.quantidade} L` : null, s.codigo].filter(Boolean).join(' · ')}</div></td>
-                      <td>{s.origem === 'checklist' ? <Badge tom="info">Checklist</Badge> : <Badge tom="outline">Balcão</Badge>}</td>
+                      <td><b>{SERVICOS[s.key].nome}</b><div className="small muted">{[s.marca, s.quantidadeExecutada || s.quantidade ? `${s.quantidadeExecutada || s.quantidade} L` : null, s.codigo, s.intervaloKm ? `próxima em ${s.intervaloKm.toLocaleString('pt-BR')} km ou 6 meses` : null].filter(Boolean).join(' · ')}</div></td>
+                      <td>{s.origem === 'checklist' ? <Badge tom="info">Checklist</Badge> : s.origem === 'adicional' ? <Badge tom="info">Adicional</Badge> : <Badge tom="outline">Balcão</Badge>}</td>
                       <td>{s.executado ? <Badge tom="ok">Executado</Badge> : <Badge tom="neutro">Pendente</Badge>}</td>
                       {pode(u, 'os.ver_valores') && <td className="num">{s.valor ? fmtBRL(s.valor) : '—'}</td>}
                     </tr>
@@ -88,7 +92,11 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
                 </div>
               )}
             </Card>
-            {(os.obsCliente || os.obsInterna) && (
+            {(os.ofertas || []).some(o => o.resultado === 'recusado') && (
+              <p className="small muted" style={{ margin: '-4px 0 12px' }}>Adicionais oferecidos e recusados: {os.ofertas!.filter(o => o.resultado === 'recusado').map(o => SERVICOS[o.key].nome).join(', ')}</p>
+            )}
+            {os.retorno && <RetornoResumo os={os} />}
+            {(os.obsCliente || os.obsInterna) && !os.retorno && (
               <Card titulo="Observações">
                 {os.obsCliente && <p><b>Para o cliente:</b> {os.obsCliente}</p>}
                 {os.obsInterna && <p style={{ marginTop: 6 }}><b>Interna:</b> {os.obsInterna}</p>}
@@ -109,6 +117,13 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
               </dl>
               {(os.naoFazerTesteFreio || os.naoFazerTesteCambio) && <div style={{ marginTop: 10 }}><Alerta tipo="crit">{[os.naoFazerTesteFreio && 'Freio', os.naoFazerTesteCambio && 'Câmbio'].filter(Boolean).join(' e ')}: NÃO FAZER TESTE — SÓ EXECUTAR</Alerta></div>}
               {os.naoOferecer && <div style={{ marginTop: 10 }}><Alerta tipo="info">Não oferecer serviços (frota). Alinhado com {os.naoOferecer.alinhadoCom}; marcado por {nomeDe(db, os.naoOferecer.marcadoPor)}.</Alerta></div>}
+              {os.foraDaOrdem && <div style={{ marginTop: 10 }}><Alerta tipo="info">Assumida fora da ordem prevista{os.foraDaOrdem.previsto ? ` (previsto: ${nomeDe(db, os.foraDaOrdem.previsto)})` : ''}. Motivo: {os.foraDaOrdem.motivo}</Alerta></div>}
+              {(os.pausas || []).length > 0 && (
+                <div style={{ marginTop: 10 }} className="small">
+                  <b>Pausas</b>
+                  {os.pausas!.map((p, i) => <div key={i} className="muted">{MOTIVO_PAUSA[p.motivo]}{p.detalhe ? ` — ${p.detalhe}` : ''} · {fmtDataHora(p.inicio)} → {p.fim ? fmtDataHora(p.fim) : 'em pausa'}</div>)}
+                </div>
+              )}
               {origem && <div style={{ marginTop: 10 }}><Alerta tipo="warn">Retorno da <a href={`#/os/${origem.id}`}>OS #{origem.numero}</a> ({fmtData(origem.concluidaEm)}, {nomeDe(db, origem.mecanicoId)}).</Alerta></div>}
             </Card>
           </div>
@@ -116,7 +131,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
       )}
 
       {aba === 'checklist' && (
-        !c ? <Card><Empty titulo={os.status === 'aguardando' ? 'O checklist começa quando um mecânico assume a OS.' : 'OS registrada antes do checklist existir.'} /></Card> : (
+        !c ? <Card><Empty titulo={os.status === 'aguardando' ? 'O checklist começa quando um mecânico assume a OS.' : os.retornoDeOsId ? 'OS de retorno: o atendimento foca no problema relatado, sem checklist completo (veja o Resumo).' : 'OS registrada antes do checklist existir.'} /></Card> : (
           <div>
             {c.correcaoSolicitada && <div style={{ marginBottom: 12 }}><Alerta tipo={c.correcaoSolicitada.resolvidaEm ? 'ok' : 'warn'}>Correção solicitada por {nomeDe(db, c.correcaoSolicitada.por)}: {c.correcaoSolicitada.motivo}. {c.correcaoSolicitada.resolvidaEm ? `Enviada em ${fmtDataHora(c.correcaoSolicitada.resolvidaEm)}.` : 'Aguardando o mecânico.'}</Alerta></div>}
             {GRUPOS.filter(g => c.defs.some(d => d.grupo === g)).map(g => (
@@ -150,7 +165,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
             {fotos.map(f => (
               <figure key={f.id} style={f.removida ? { opacity: .45 } : undefined}>
                 <img src={f.url} alt={f.legenda || 'Foto do item'} />
-                <figcaption><b>{c?.defs.find(d => d.id === f.itemDefId)?.nome}</b><br />{f.legenda}{f.removida ? ` · Removida: ${f.removida.motivo}` : ''}<br /><span className="muted">{primeiroNome(nomeDe(db, f.capturadaPor))} · {fmtDataHora(f.em)}{f.demo ? ' · demonstrativa' : ''}</span>
+                <figcaption><b>{f.itemDefId === 'retorno' ? `Retorno — ${f.etapa === 'antes' ? 'problema' : 'solução'}` : c?.defs.find(d => d.id === f.itemDefId)?.nome}</b><br />{f.legenda}{f.removida ? ` · Removida: ${f.removida.motivo}` : ''}<br /><span className="muted">{primeiroNome(nomeDe(db, f.capturadaPor))} · {fmtDataHora(f.em)}{f.demo ? ' · demonstrativa' : ''}</span>
                   {!f.removida && <><br />{f.visivelCliente ? <Badge tom="outline">Aparece para o cliente</Badge> : <Badge tom="neutro">Oculta do cliente</Badge>}</>}
                   {!f.removida && pode(u, 'relatorio.revogar') && <div style={{ marginTop: 6 }}><Btn tamanho="sm" variante="sec" carregando={fotoAcao.ocupado} onClick={() => fotoAcao.executar(() => definirVisibilidadeFoto(u, f.id, !f.visivelCliente), f.visivelCliente ? 'Foto oculta do relatório do cliente.' : 'Foto volta a aparecer no relatório.')}>{f.visivelCliente ? 'Ocultar do cliente' : 'Mostrar ao cliente'}</Btn></div>}
                 </figcaption>
@@ -318,5 +333,30 @@ function RelatorioInterno({ u, os }: { u: Usuario; os: OrdemServico }) {
         </Sheet>
       )}
     </div>
+  );
+}
+
+const RELACAO = { sim: 'Sim, relacionado ao serviço anterior', nao: 'Não relacionado', nao_identificado: 'Não foi possível identificar' } as const;
+
+function RetornoResumo({ os }: { os: OrdemServico }) {
+  const db = useDB();
+  const r = os.retorno!;
+  const fotos = db.evidencias.filter(e => e.osId === os.id && e.itemDefId === 'retorno' && !e.removida);
+  const Galeria = ({ etapa }: { etapa: 'antes' | 'depois' }) => {
+    const fs = fotos.filter(f => f.etapa === etapa);
+    return fs.length ? <div className="gallery">{fs.map(f => <figure key={f.id}><img src={f.url} alt={f.legenda || etapa} /><figcaption>{f.legenda}</figcaption></figure>)}</div> : <p className="small muted">Sem foto.</p>;
+  };
+  return (
+    <Card titulo="Atendimento do retorno">
+      <p><b>Problema relatado:</b> {r.problemaRelatado}</p>
+      {r.diagnostico && <p style={{ marginTop: 6 }}><b>Diagnóstico (interno):</b> {r.diagnostico}</p>}
+      {r.relacaoServicoAnterior && <p style={{ marginTop: 6 }}><b>Relação com o serviço anterior:</b> {RELACAO[r.relacaoServicoAnterior]}</p>}
+      {r.solucao && <p style={{ marginTop: 6 }}><b>O que foi feito:</b> {r.solucao}</p>}
+      {r.avisoCliente && <p style={{ marginTop: 6 }}><b>Avisado ao cliente:</b> {r.avisoCliente}</p>}
+      <div className="ba-grid" style={{ marginTop: 10 }}>
+        <div><div className="small strong">Antes</div><Galeria etapa="antes" /></div>
+        <div><div className="small strong">Depois</div>{r.semFotoDepois && !fotos.some(f => f.etapa === 'depois') ? <p className="small muted">Sem foto: {r.semFotoDepois}</p> : <Galeria etapa="depois" />}</div>
+      </div>
+    </Card>
   );
 }

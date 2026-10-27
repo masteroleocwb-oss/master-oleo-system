@@ -6,6 +6,7 @@ import { Admin } from '../screens/Admin';
 import { Checklist } from '../screens/Checklist';
 import { DetalhesOS } from '../screens/DetalhesOS';
 import { Execucao } from '../screens/Execucao';
+import { Retorno } from '../screens/Retorno';
 import { Lideranca } from '../screens/Lideranca';
 import { Login } from '../screens/Login';
 import { Metas } from '../screens/Metas';
@@ -70,6 +71,7 @@ export function App() {
   else if (a === 'os' && b === 'nova') tela = guard('os.abrir', <NovaOS u={u} />);
   else if (a === 'os' && b && c === 'checklist') tela = guard('os.executar', <Checklist u={u} osId={b} foco={query.get('item')} />);
   else if (a === 'os' && b && c === 'execucao') tela = guard('os.executar', <Execucao u={u} osId={b} />);
+  else if (a === 'os' && b && c === 'retorno') tela = guard('os.executar', <Retorno u={u} osId={b} />);
   else if (a === 'os' && b) tela = guard('operacao.ver', <DetalhesOS u={u} osId={b} />);
   else if (a === 'veiculos' && b) tela = guard('veiculo.ver', <Veiculo u={u} veiculoId={b} />);
   else if (a === 'veiculos') tela = guard('veiculo.ver', <Veiculos u={u} termoInicial={query.get('q') || ''} />);

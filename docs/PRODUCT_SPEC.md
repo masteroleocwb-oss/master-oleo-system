@@ -26,12 +26,13 @@ Princípios adotados:
 
 | Perfil | Usuário de demonstração | Pode | Não pode |
 | --- | --- | --- | --- |
-| **Mecânico** | André Costa (`u_m1`), Rafael, Diego, Eduardo, Marcos | Ver a operação; assumir a OS **quando for a vez dele** no rodízio (ou o próprio retorno); executar checklist e serviço **só das OS dele**; marcar o próprio almoço; ver o próprio mês e as ocorrências próprias (com manifestação); ver veículos | Abrir OS, ver contato do cliente, ver metas da equipe, políticas, auditoria, admin, ocorrências de outros, gerar link |
+| **Mecânico** | André Costa (`u_m1`), Rafael, Diego, Eduardo, Marcos | Ver a operação e a fila numerada com o mecânico previsto; assumir a OS prevista para ele, ou **fora da vez informando o motivo** (o previsto pode estar indisponível); pausar a própria OS com motivo e retomar; lançar adicionais vendidos na bancada; executar checklist e serviço **só das OS dele**; marcar o próprio almoço; ver o próprio mês e as ocorrências próprias (com manifestação); ver veículos | Abrir OS, ver contato do cliente, ver metas da equipe, políticas, auditoria, admin, ocorrências de outros, gerar link |
 | **Vendedor** | Igor Martins (`u_ven`), Juliana Prado | Abrir OS (com busca por placa e rascunho automático); ver contato e valores; gerar link do relatório; tratar recomendações | Executar checklist, auditar, metas, admin |
-| **Comercial** | Helena Duarte (`u_com`) | Tratar recomendações (apresentei / avaliar depois / recusou / aceitou com valor); gerar link; ver veículos | Abrir OS, executar, gestão |
 | **Liderança da oficina** | Fernanda Alves (`u_lid`) | Tudo da operação; designar fora do rodízio (com motivo); decidir exceção de checklist; auditar; declarar dia de exceção; marcar "não oferecer" (frota); registrar ocorrência e plano de ação; **propor** metas; simular políticas; revogar link | Aprovar meta, aprovar política, decidir/aplicar ocorrência, admin |
 | **Direção / ADM** | Gustavo Reis (`u_dir`) | Tudo da liderança + aprovar metas, decidir e aplicar ocorrências, catálogo de inspeção, regras de intervalo, usuários, histórico de alterações, links, correção de placa | Aprovar política como vigente **no protótipo** (desativado de propósito: é decisão de Fase B) |
 | **Cliente** | sem conta | Abrir o link do relatório enquanto válido | Qualquer outra tela; ver valores, telefone, observação interna, fotos ocultas |
+
+O perfil **Comercial** fica para o futuro (decisão de 27/10/2026): continua na matriz de permissões, mas não tem usuário de demonstração nem aparece no cadastro de usuários. Hoje o vendedor trata as recomendações.
 
 A matriz completa está em `prototype/src/domain/permissions.ts` e é aplicada **na camada de serviço** (`src/data/api.ts`). Esconder o botão é só conveniência: a ação é recusada mesmo se for chamada diretamente.
 
@@ -60,15 +61,16 @@ Navegação: menu lateral em telas ≥ 960 px e barra inferior no celular. Rota 
 ## 4. Fluxo principal da OS
 
 ```
-Nova OS (vendedor) ─► Aguardando ─► Rodízio: o mecânico da vez assume ─► Em andamento
-   │                                   (liderança pode designar outro, com motivo)
+Nova OS (vendedor) ─► Aguardando (fila numerada, mecânico previsto) ─► Em andamento ⇄ Pausada
+   │                  previsto assume; outro assume fora da vez com motivo; liderança designa
    ▼
 Checklist técnico ──► cada item: OK | Atenção | Prioritário | Não se aplica | Avaliar depois
    │                  Atenção/Prioritário podem exigir foto (regra do item) e geram recomendação
    │                  "Concluir checklist" só com todos os itens decididos e as fotos exigidas
    │                  ou "Pedir exceção" (motivo) → liderança aprova/nega
    ▼
-Execução ─► serviços realizados + KM (não pode ser menor que o último registrado)
+Execução ─► serviços realizados + adicionais vendidos + KM (não pode ser menor que o último)
+   │        óleo: o mecânico escolhe 5, 7 ou 10 mil km; vale o que vier primeiro com 6 meses
    │        próximas manutenções: regra validada → km/data; sem regra → "acompanhar"
    ▼
 Concluída ─► histórico do veículo atualizado ─► link do relatório para o cliente
@@ -85,7 +87,7 @@ Concluída ─► histórico do veículo atualizado ─► link do relatório pa
 | Não se aplica | O item não existe neste carro | Exige justificativa |
 | Avaliar depois | Não deu para avaliar agora (ex.: motor quente, acesso bloqueado) | Exige observação dizendo o que impediu; conta como decidido, e o cliente vê "Avaliação pendente" |
 
-O catálogo (versão 1) tem 14 itens em 5 grupos (Filtros, Motor, Câmbio, Freios, Demais itens), com a fonte marcada: `playbook_fase1`, `pedido_direcao` (trocador de calor, coxim do câmbio) ou `catalogo_atual`. Itens de câmbio aparecem conforme o tipo do câmbio do veículo. **Os critérios técnicos de cada estado e a exigência de foto são proposta** — ver `OPEN_DECISIONS.md` D-04.
+O catálogo (versão 1) tem 14 itens em 5 grupos (sem "vazamento no motor", que a oficina não faz) (Filtros, Motor, Câmbio, Freios, Demais itens), com a fonte marcada: `playbook_fase1`, `pedido_direcao` (trocador de calor, coxim do câmbio) ou `catalogo_atual`. Itens de câmbio aparecem conforme o tipo do câmbio do veículo: um carro manual vê 12 itens, um automático vê 13. **Os critérios técnicos de cada estado e a exigência de foto são proposta** — ver `OPEN_DECISIONS.md` D-04.
 
 O checklist guarda uma **cópia das definições** no momento da criação. Mudar o catálogo não altera inspeções antigas; o catálogo é versionado.
 
@@ -98,11 +100,44 @@ O checklist guarda uma **cópia das definições** no momento da criação. Muda
 - A liderança audita checklists concluídos (nunca o próprio). O resultado pode ser aprovado, reprovado ou correção solicitada. **A auditoria nunca altera a inspeção**: ela registra inconsistências e, se for o caso, reabre só os itens apontados para o executor corrigir.
 - O mecânico vê o alerta de correção na Operação e no checklist.
 
-### 4.4 Rodízio (preservado e endurecido)
+### 4.4 Rodízio e fila de espera
 
 - A vez é de quem iniciou a última OS há mais tempo. Almoço/ausente tira da fila sem mudar a posição.
-- O mecânico só assume a OS quando é a vez dele ("Não é a sua vez no rodízio"). A exceção é o retorno: volta para o mesmo mecânico.
-- A liderança pode designar fora da ordem com motivo obrigatório. O motivo fica no histórico.
+- A fila "Aguardando" é numerada por ordem de chegada (1º, 2º, 3º…). Cada OS mostra o **mecânico previsto**: o retorno fica reservado ao mecânico do serviço original; as demais vão, na ordem, para os mecânicos livres e disponíveis, pela ordem do rodízio. Quando não há mecânico livre para aquela posição, o cartão diz "Aguardando mecânico livre". A previsão é só informativa e se refaz a cada mudança.
+- O mecânico previsto vê "Assumir esta OS". Outro mecânico livre e disponível pode **assumir fora da vez**, escolhendo ou escrevendo o motivo (ex.: previsto no almoço). O motivo fica na OS (`foraDaOrdem`), no histórico e no painel da liderança. Mecânico em almoço/ausente não assume.
+- Retorno de outro mecânico continua bloqueado para mecânicos; a liderança pode designar outra pessoa, com motivo.
+- Cada cartão em andamento ou pausado mostra **"Com: nome"** de quem está com o carro.
+
+### 4.5 Pausa (ex.: aguardando peça)
+
+- O mecânico pausa a OS em andamento com motivo (aguardando peça, aguardando aprovação do cliente, outro) e um detalhe opcional. A OS vai para "Pausadas" e o mecânico fica livre para assumir outra.
+- Nada é registrado numa OS pausada. Para retomar, o mecânico não pode ter outra OS em andamento ("Finalize a atual para retomar"). A liderança também pode retomar.
+- O tempo pausado não conta no tempo de serviço. Pausas ficam na OS (`pausas[]`) e na Gestão da liderança.
+
+### 4.6 Retorno
+
+- Na Nova OS, "É retorno" pede a OS original (do mesmo veículo, últimos 90 dias) e o problema relatado pelo cliente. Retorno não tem serviço vendido nem valor.
+- O retorno **não refaz o checklist**. A tela de atendimento foca no problema: foto do problema (obrigatória), diagnóstico (interno), se tem relação com o serviço anterior (sim / não / não deu para saber), solução aplicada, foto depois (ou o motivo de não ter), o que foi avisado ao cliente e o KM.
+- O relatório do cliente mostra o que ele relatou, o que foi feito, a orientação e as fotos antes/depois. Diagnóstico interno e classificação não aparecem.
+- Retornos não entram na base de carros e checklist das métricas; aparecem na aba Retornos da liderança com a classificação.
+
+### 4.7 Adicionais vendidos na bancada
+
+- Na execução, o cartão "Adicionais oferecidos ao cliente" lista o que faz sentido para o carro: Militec/Nano no motor, aditivo no radiador, flush do câmbio (só automático), higienização do ar-condicionado e palhetas. Quando o checklist marcou o item relacionado como Atenção/Prioritário, o adicional aparece com "Indicado pelo checklist".
+- Para cada um, o mecânico marca "Cliente aceitou" (informa produto, quantidade e valor, se souber) ou "Ofereci, recusou". Aceito vira serviço executado com origem `adicional`; recusado fica registrado como oferta.
+- "Vendeu outro serviço?" permite lançar qualquer outro serviço aplicável ao carro (ex.: troca do óleo do câmbio manual).
+- O "Meu mês" e a liderança mostram adicionais vendidos e a taxa de aceite. **Quem define o preço e se o adicional entra na remuneração é decisão aberta (D-21).**
+
+### 4.8 Checklist por tipo de câmbio e itens que não se aplicam ao modelo
+
+- Carro manual não vê fluido nem trocador de calor do câmbio automático; carro automático não vê óleo do câmbio manual. O trocador de calor fica no grupo Câmbio, só para automático. O item "vazamento no motor" saiu do catálogo (a oficina não faz).
+- Quando um item é marcado "Não se aplica" em pelo menos 3 inspeções e em 80% ou mais delas para a mesma marca + modelo + motor, ele aparece como **sugestão** no Admin › Catálogo. A direção confirma "Não mostrar para este modelo" e pode desfazer. Inspeções antigas não mudam; o catálogo ganha nova versão. O ano ainda não entra na regra (D-22).
+
+### 4.9 Nova OS
+
+- Marca e modelo são listas (marcas e modelos mais comuns no Brasil, com "Outra marca…"/"Outro modelo…" para digitar). Ano também é lista.
+- Telefone do cliente é obrigatório (10 ou 11 dígitos, com máscara). Cliente antigo sem telefone precisa informar antes de salvar.
+- Os serviços de câmbio aparecem conforme o câmbio do veículo.
 
 ## 5. Histórico do veículo e próxima manutenção
 
@@ -118,7 +153,8 @@ O checklist guarda uma **cópia das definições** no momento da criação. Muda
 | `estimativa` | Estimativa pelo histórico | Estimativa pelo uso do veículo |
 | `nao_confirmada` | Não confirmada — acompanhar | Acompanhar na próxima visita |
 
-- **Os intervalos do protótipo são fictícios** (óleo 10.000 km/12 meses, fluido de freio 24 meses, filtro de ar 15.000 km; câmbio automático sem intervalo validado). Não existe intervalo universal; a tabela real é decisão da direção (D-05).
+- **Óleo de motor (regra definida pela direção em 27/10/2026)**: 5, 7 ou 10 mil km conforme o óleo aplicado, ou 6 meses, o que vier primeiro. O mecânico escolhe o intervalo na finalização (obrigatório quando troca o óleo); a recomendação mostra "X km ou dd/mm/aaaa, o que vier primeiro" na execução, no checklist (referência da última troca), no histórico e no relatório do cliente.
+- Os demais intervalos do protótipo continuam **fictícios** (fluido de freio 24 meses, filtro de ar 15.000 km; câmbio automático sem intervalo validado). Não existe intervalo universal; a tabela real é decisão da direção (D-05).
 - Status da previsão: futura, próxima (≤ 1.000 km ou ≤ 30 dias), vencida, acompanhar.
 
 ## 6. Relatório do cliente (link seguro)
@@ -131,7 +167,7 @@ O checklist guarda uma **cópia das definições** no momento da criação. Muda
 - Cada abertura conta um acesso. A tela interna mostra o estado do link, os acessos e a pré-visualização do que o cliente vê.
 - Compartilhar: copiar, WhatsApp (abre a conversa com o texto, sem envio automático), abrir.
 
-## 7. Comercial — recomendações
+## 7. Recomendações (vendedor; perfil Comercial no futuro)
 
 Cada item Atenção/Prioritário com recomendação vira uma **oportunidade** ligada ao item e às fotos. A situação pode ser: nova → apresentada → aceita (com valor) / recusada / avaliar depois. Em OS marcada "não oferecer" (frota/locação), a oportunidade nasce como `nao_oferecer` e fica fora da conversão.
 
@@ -185,7 +221,7 @@ Meses anteriores vêm de **fechamentos mensais imutáveis**; o mês atual é cal
 | Referência de 10% de auditoria | **Em teste** (proposta deste protótipo) | indicadores da liderança |
 | "Comissão por upsell acabou" | **Não aprovado** — conflita com a regra vigente (D-07) | não aplicado |
 | Meta "X%" de itens | **Não aprovado** — valor não definido (D-08) | meta configurável sem valor imposto |
-| Intervalos de manutenção | **Não aprovado** — nenhum documento traz intervalos; os do protótipo são fictícios (D-05) | regras de intervalo |
+| Intervalos de manutenção | Óleo de motor **definido pela direção** (5/7/10 mil km ou 6 meses, o que vier primeiro, 27/10/2026); os demais **não aprovados** e fictícios no protótipo (D-05) | regras de intervalo |
 | Exibir valores no relatório do cliente | **Não aprovado** — oculto por padrão (D-10) | projeção do relatório |
 
 ## 11. Requisitos não funcionais atendidos no protótipo

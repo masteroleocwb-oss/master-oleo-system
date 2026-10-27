@@ -3,7 +3,7 @@
 import type { DB } from '../domain/types';
 import { gerarSeed } from './seed';
 
-const CHAVE = 'mo-proto:db:v1';
+const CHAVE = 'mo-proto:db:v2';
 const CHAVE_DEMO = 'mo-proto:demo-ctrl';
 
 export interface ControleDemo {

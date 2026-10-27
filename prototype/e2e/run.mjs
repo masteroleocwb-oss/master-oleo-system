@@ -74,7 +74,7 @@ async function tocar(sel) {
 }
 const semSheet = () => page.waitForFunction(() => !document.querySelector('.sheet'), { timeout: 5000 });
 async function entrar(id) { await ir('/login'); await page.waitForSelector(`[data-user="${id}"]`); await tocar(`[data-user="${id}"]`); await esperar(200); }
-const db = () => page.evaluate(() => JSON.parse(localStorage.getItem('mo-proto:db:v1')));
+const db = () => page.evaluate(() => JSON.parse(localStorage.getItem('mo-proto:db:v2')));
 const foto = nome => page.screenshot({ path: join(OUT, `${nome}.png`) });
 const PRIMEIRO = { André: 'u_m1', Rafael: 'u_m2', Diego: 'u_m3', Eduardo: 'u_m4', Marcos: 'u_m5' };
 
@@ -119,8 +119,13 @@ await fluxo('Fluxo 1 — OS completa (abrir → checklist → evidência → fin
   await entrar('u_ven');
   await ir('/os/nova');
   await clicar('Cadastrar veículo novo');
-  await preencher('#placa', ctx.placa); await preencher('#marca', 'Fiat'); await preencher('#modelo', 'Argo'); await preencher('#ano', '2021');
-  await preencher('#motor', '1.3'); await preencher('#cli-nome', 'Cliente Teste Automatizado'); await preencher('#cli-tel', '(41) 90000-0001'); await preencher('#valor', '350');
+  await preencher('#placa', ctx.placa); await preencher('#ano', '2021'); await preencher('#marca', 'Fiat');
+  await page.waitForSelector('#modelo option[value="Argo"]'); await preencher('#modelo', 'Argo');
+  await preencher('#motor', '1.3'); await preencher('#cli-nome', 'Cliente Teste Automatizado'); await preencher('#valor', '350');
+  await clicar('Salvar e colocar na fila');
+  await aguardarTexto('Informe o telefone com DDD');
+  await preencher('#cli-tel', '41900000001');
+  if ((await page.$eval('#cli-tel', e => e.value)) !== '(41) 90000-0001') throw new Error('Máscara do telefone não aplicada');
   await clicar('Salvar e colocar na fila');
   await aguardarTexto('criada e colocada na fila');
   const d = await db();
@@ -128,14 +133,22 @@ await fluxo('Fluxo 1 — OS completa (abrir → checklist → evidência → fin
   ctx.osId = os.id; ctx.numero = os.numero;
   await foto('f1-os-criada');
 
-  await ir('/operacao');
-  const vez = await page.$$eval('.badge', bs => bs.map(b => b.textContent).find(t => t.startsWith('Vez:')));
-  const mec = PRIMEIRO[vez.replace('Vez: ', '').trim()];
+  // A OS nova é a última da fila: Rafael (livre) assume fora da vez, informando o motivo.
+  const mec = 'u_m2';
   ctx.mec1 = mec;
   await entrar(mec);
   await page.waitForSelector(`[data-os="${ctx.numero}"]`);
-  await page.evaluate(n => [...document.querySelector(`[data-os="${n}"]`).parentElement.querySelectorAll('button')].find(b => b.textContent.includes('Assumir')).click(), ctx.numero);
+  const posicoes = await page.$$eval('[data-os]', es => es.map(e => e.getAttribute('data-os')));
+  if (posicoes.indexOf(String(ctx.numero)) < 1) throw new Error('OS nova deveria estar atrás das que chegaram antes');
+  await page.evaluate(n => [...document.querySelector(`[data-os="${n}"]`).parentElement.querySelectorAll('button')].find(b => b.textContent.includes('Assumir fora da vez')).click(), ctx.numero);
+  await page.waitForSelector('.sheet #motivo-assumir');
+  await preencher('#motivo-assumir', 'Previsto em almoço (teste)');
+  await clicar('Assumir', { escopo: '.sheet-foot', exato: true });
   await aguardarTexto('Checklist técnico');
+  const fora = (await db()).os.find(o => o.id === ctx.osId).foraDaOrdem;
+  if (fora?.motivo !== 'Previsto em almoço (teste)') throw new Error('Motivo de assumir fora da vez não registrado');
+  const defs = (await db()).checklists.find(c => c.osId === ctx.osId).defs.map(d => d.id);
+  if (defs.includes('fluido_cambio') || defs.includes('trocador_calor') || !defs.includes('oleo_cambio_manual') || defs.includes('vazamento_motor')) throw new Error('Carro manual mostrando itens de câmbio automático');
   await foto('f1-checklist-inicio');
 });
 
@@ -180,8 +193,21 @@ await fluxo('Fluxo 3 — Evidência obrigatória bloqueia até anexar a foto', a
 
 await fluxo('Fluxo 5 — Próxima manutenção por regra validada (parte 1: registro)', async () => {
   await preencher('#km', '45000');
+  if (await page.$('[data-adicional="flush"]')) throw new Error('Flush de câmbio oferecido para carro manual');
+  await clicar('Finalizar OS');
+  await aguardarTexto('Escolha o intervalo conforme o óleo aplicado');
+  await tocar('[data-intervalo="10000"]');
+  await aguardarTexto('o que vier primeiro');
   await aguardarTexto('Previsto: 55.000 km');
   await aguardarTexto('Regra interna Master Óleo');
+  // Adicionais: cliente aceitou Militec, recusou aditivo; mecânico lançou outro serviço vendido na bancada.
+  await clicar('Cliente aceitou', { escopo: '[data-adicional="militec"]' });
+  await preencher('[aria-label="Valor de Militec/Nano"]', '89');
+  await clicar('Ofereci, recusou', { escopo: '[data-adicional="aditivo"]' });
+  if (await page.$('#outro-servico option[value="cambioAutomatico"]')) throw new Error('Fluido de câmbio automático oferecido para carro manual');
+  await preencher('#outro-servico', 'cambioManual');
+  await clicar('Adicionar', { exato: true });
+  await page.waitForSelector('[data-adicional="cambioManual"]');
   await foto('f5-proximas');
   await clicar('Finalizar OS');
   await aguardarTexto(`OS #${ctx.numero}`);
@@ -189,6 +215,12 @@ await fluxo('Fluxo 5 — Próxima manutenção por regra validada (parte 1: regi
   const d = await db();
   const m = d.manutencoes.find(x => x.osOrigemId === ctx.osId && x.servicoKey === 'oleoMotor');
   if (m?.kmPrevisto !== 55000 || !m.dataPrevista) throw new Error('Próxima troca de óleo não registrada com km e data');
+  const osF = d.os.find(o => o.id === ctx.osId);
+  const mil = osF.servicos.find(s => s.key === 'militec');
+  if (mil?.origem !== 'adicional' || !mil.executado || mil.valor !== 89) throw new Error('Adicional aceito não virou serviço executado: ' + JSON.stringify(mil));
+  if (!osF.ofertas?.some(o => o.key === 'aditivo' && o.resultado === 'recusado')) throw new Error('Oferta recusada não registrada');
+  if (osF.servicos.find(s => s.key === 'oleoMotor')?.intervaloKm !== 10000) throw new Error('Intervalo do óleo não gravado no serviço');
+  if (osF.servicos.find(s => s.key === 'cambioManual')?.origem !== 'adicional') throw new Error('Serviço lançado pelo mecânico não registrado');
   if (!d.manutencoes.some(x => x.osOrigemId === ctx.osId && x.itemDefId === 'pastilhas' && x.origem === 'profissional')) throw new Error('Recomendação do item prioritário não virou acompanhamento');
 });
 
@@ -246,6 +278,10 @@ await fluxo('Fluxo 4 — Segunda OS do mesmo veículo; histórico mostra as duas
   await ir('/operacao');
   await page.waitForSelector(`[data-os="${os2.numero}"]`);
   await page.evaluate(n => [...document.querySelector(`[data-os="${n}"]`).parentElement.querySelectorAll('button')].find(b => b.textContent.includes('Designar')).click(), os2.numero);
+  await page.waitForSelector('#mec-designar');
+  if (!(await page.$eval('#mec-designar', e => e.value))) await preencher('#mec-designar', await page.$eval('#mec-designar', e => [...e.options].find(o => o.value && !o.text.includes('—')).value));
+  await esperar(100);
+  if (await page.$('#motivo-fora')) await preencher('#motivo-fora', 'Liderança redistribuiu (teste)');
   await clicar('Iniciar com este mecânico', { escopo: '.sheet' });
   await aguardarTexto('OS iniciada');
   const mec = (await db()).os.find(o => o.id === os2.id).mecanicoId;
@@ -259,6 +295,7 @@ await fluxo('Fluxo 4 — Segunda OS do mesmo veículo; histórico mostra as duas
   await clicar('Finalizar OS');
   await aguardarTexto('KM menor que o último registrado');
   await preencher('#km', '50000');
+  await tocar('[data-intervalo="10000"]');
   await clicar('Finalizar OS');
   await aguardarTexto('Concluída');
 
@@ -289,8 +326,10 @@ await fluxo('Fluxo 7 — Permissões por perfil', async () => {
   if (nav.some(n => n.includes('Administração'))) throw new Error('Liderança não deveria ver Administração');
   await ir('/admin'); await aguardarTexto('Acesso não permitido');
   await ir('/metas/politicas'); await aguardarTexto('Simular para um mecânico'); await semTexto('Aprovar como vigente');
-  await entrar('u_com');
-  await ir('/os/nova'); await aguardarTexto('Acesso não permitido');
+  await entrar('u_ven');
+  for (const r of ['/admin', '/lideranca', '/metas/politicas']) { await ir(r); await aguardarTexto('Acesso não permitido'); }
+  await ir('/login');
+  if (await page.$('[data-user="u_com"]')) throw new Error('Perfil comercial (futuro) não deveria aparecer');
   await entrar('u_dir');
   await ir('/admin'); await aguardarTexto('Histórico de ações');
 });
@@ -301,7 +340,7 @@ await fluxo('Fluxo 8 — Meta: criar, alterar vigência, versão anterior preser
   await clicar('Criar meta');
   await preencher('#nm-nome', 'Meta automatizada'); await preencher('#nm-alvo', '10'); await preencher('#nm-just', 'Teste');
   await clicar('Criar rascunho', { escopo: '.sheet' });
-  await page.waitForFunction(() => JSON.parse(localStorage.getItem('mo-proto:db:v1')).metas.some(m => m.nome === 'Meta automatizada'), { timeout: 8000 });
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('mo-proto:db:v2')).metas.some(m => m.nome === 'Meta automatizada'), { timeout: 8000 });
   await semSheet();
   await entrar('u_dir');
   await ir('/metas');
@@ -395,9 +434,96 @@ await fluxo('Rascunho da Nova OS é recuperado após recarregar', async () => {
   await clicar('Cancelar');
 });
 
+console.log('Pausa e retorno');
+await fluxo('Pausa por peça: mecânico fica livre, outra OS pode ser assumida, depois retoma', async () => {
+  await entrar('u_m1');
+  const osA = (await db()).os.find(o => o.status === 'andamento' && o.mecanicoId === 'u_m1');
+  await ir(`/os/${osA.id}/checklist`);
+  await aguardarTexto('Checklist técnico');
+  await clicar('Pausar OS');
+  await preencher('#motivo-pausa', 'peca');
+  await preencher('#detalhe-pausa', 'Filtro de ar — chega às 15h (teste)');
+  await clicar('Pausar', { escopo: '.sheet-foot', exato: true });
+  await aguardarTexto('pausada');
+  await aguardarTexto('Operação de hoje');
+  const p = (await db()).os.find(o => o.id === osA.id);
+  if (p.status !== 'pausada' || p.pausas.at(-1)?.motivo !== 'peca') throw new Error('OS não ficou pausada com o motivo');
+  await aguardarTexto('Aguardando peça — Filtro de ar');
+  await foto('pausa-operacao');
+  // Livre: André consegue assumir outra OS (fora da vez, com motivo) e não pode retomar a pausada enquanto isso.
+  const outra = (await db()).os.filter(o => o.status === 'aguardando' && !o.retornoDeOsId).sort((a, b) => a.abertaEm.localeCompare(b.abertaEm))[0];
+  await page.evaluate(n => [...document.querySelector(`[data-os="${n}"]`).parentElement.querySelectorAll('button')].find(b => b.textContent.includes('Assumir')).click(), outra.numero);
+  await esperar(150);
+  if (await page.$('.sheet #motivo-assumir')) { await preencher('#motivo-assumir', 'Teste de pausa'); await clicar('Assumir', { escopo: '.sheet-foot', exato: true }); }
+  await aguardarTexto('Checklist técnico');
+  await ir('/operacao');
+  await aguardarTexto('Finalize a atual para retomar');
+  // Para liberar o André, a liderança cancela a segunda OS (fica no histórico) e ele retoma a pausada.
+  await entrar('u_lid');
+  await ir(`/os/${outra.id}`);
+  await clicar('Cancelar OS');
+  await preencher('#motivo-canc', 'Teste automatizado de pausa');
+  await clicar('Confirmar cancelamento', { escopo: '.sheet-foot' });
+  await aguardarTexto('OS cancelada');
+  await entrar('u_m1');
+  await ir('/operacao');
+  await clicar('Retomar', { exato: true });
+  await aguardarTexto('retomada');
+  const r = (await db()).os.find(o => o.id === osA.id);
+  if (r.status !== 'andamento' || !r.pausas.at(-1).fim) throw new Error('OS não retomou corretamente');
+});
+
+await fluxo('Retorno: mesmo mecânico, foco no problema, fotos antes/depois, relatório do cliente', async () => {
+  await entrar('u_m2');
+  const ret = (await db()).os.find(o => o.status === 'aguardando' && o.retornoDeOsId);
+  await ir('/operacao');
+  await page.waitForSelector(`[data-os="${ret.numero}"]`);
+  const card = await page.$eval(`[data-os="${ret.numero}"]`, e => e.parentElement.innerText);
+  if (!card.includes('Previsto: você (retorno)')) throw new Error('Retorno não aparece previsto para o mecânico original');
+  await page.evaluate(n => [...document.querySelector(`[data-os="${n}"]`).parentElement.querySelectorAll('button')].find(b => b.textContent.includes('Assumir esta OS')).click(), ret.numero);
+  await aguardarTexto('Atendimento de retorno');
+  await semTexto('Checklist técnico');
+  await clicar('Finalizar retorno');
+  await aguardarTexto('Antes de finalizar');
+  await tocar('[data-foto="antes"]');
+  await clicar('Usar foto demonstrativa', { escopo: '.sheet' });
+  await clicar('Usar esta foto', { escopo: '.sheet' });
+  await aguardarTexto('Foto registrada');
+  await preencher('#ret-diag', 'Anel do bujão mal assentado (diagnóstico interno)');
+  await clicar('Sim', { escopo: '[role="radiogroup"]', exato: true });
+  await preencher('#ret-sol', 'Troca do anel de vedação e reaperto do bujão (teste)');
+  await tocar('[data-foto="depois"]');
+  await clicar('Usar foto demonstrativa', { escopo: '.sheet' });
+  await clicar('Usar esta foto', { escopo: '.sheet' });
+  await aguardarTexto('Foto registrada');
+  await preencher('#ret-aviso', 'Observar o piso da garagem por 3 dias (teste)');
+  const v = (await db()).veiculos.find(x => x.id === ret.veiculoId);
+  await preencher('#km', String((v.kmAtual || 0) + 120));
+  await foto('retorno-preenchido');
+  await clicar('Finalizar retorno');
+  await aguardarTexto('Concluída');
+  const f = (await db()).os.find(o => o.id === ret.id);
+  if (f.retorno.relacaoServicoAnterior !== 'sim' || !f.retorno.solucao) throw new Error('Atendimento do retorno não gravado');
+  if ((await db()).evidencias.filter(e => e.osId === ret.id && !e.removida).length !== 2) throw new Error('Fotos antes/depois não registradas');
+
+  await entrar('u_lid');
+  await ir(`/os/${ret.id}`);
+  await clicar('Relatório do cliente');
+  await clicar('Gerar link do relatório');
+  await aguardarTexto('Link criado');
+  const href = await page.$$eval('a', as => as.map(a => a.getAttribute('href')).find(h => h?.startsWith('#/r/')));
+  await ir(href.slice(1));
+  await page.waitForSelector('[data-secao="retorno"]');
+  const t = await texto();
+  for (const deve of ['Troca do anel de vedação', 'Observar o piso da garagem', 'Gotejamento de óleo']) if (!t.includes(deve)) throw new Error(`Relatório do retorno sem "${deve}"`);
+  for (const nao of ['diagnóstico interno', 'Relação com o serviço']) if (t.includes(nao)) throw new Error(`Relatório do retorno expõe "${nao}"`);
+  if ((await page.$$('.rel img[src^="data:image"]')).length < 2) throw new Error('Fotos antes/depois ausentes no relatório');
+  await foto('retorno-relatorio');
+});
+
 console.log('Navegação e celular');
 await fluxo('Todos os menus de todos os perfis abrem sem erro', async () => {
-  for (const u of ['u_m2', 'u_ven', 'u_com', 'u_lid', 'u_dir']) {
+  for (const u of ['u_m2', 'u_ven', 'u_lid', 'u_dir']) {
     await entrar(u);
     const rotas = await page.$$eval('.sidenav a', as => as.map(a => a.getAttribute('href')));
     for (const r of rotas) { await page.goto(BASE + r); await esperar(120); const t = await texto(); if (/Página não encontrada|Acesso não permitido/.test(t)) throw new Error(`${u} → ${r}`); }

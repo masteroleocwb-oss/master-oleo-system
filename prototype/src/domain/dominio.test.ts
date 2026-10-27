@@ -70,9 +70,16 @@ describe('próximas manutenções', () => {
   });
 
   it('com regra validada calcula km e data e classifica futura/próxima/vencida/concluída', () => {
-    const s = sugerirProxima('oleoMotor', 'Óleo', REGRAS_INICIAIS, veic('manual'), '2026-10-26T15:00:00Z', 50000);
+    // Óleo: 5, 7 ou 10 mil km conforme o óleo, ou 6 meses — o que vier primeiro.
+    const semEscolha = sugerirProxima('oleoMotor', 'Óleo', REGRAS_INICIAIS, veic('manual'), '2026-10-26T15:00:00Z', 50000);
+    expect(semEscolha.kmPrevisto).toBeUndefined();
+    expect(semEscolha.opcoesKm).toEqual([5000, 7000, 10000]);
+    expect(sugerirProxima('oleoMotor', 'Óleo', REGRAS_INICIAIS, veic('manual'), '2026-10-26T15:00:00Z', 50000, 8000).kmPrevisto).toBeUndefined();
+    expect(sugerirProxima('oleoMotor', 'Óleo', REGRAS_INICIAIS, veic('manual'), '2026-10-26T15:00:00Z', 50000, 7000).kmPrevisto).toBe(57000);
+    const s = sugerirProxima('oleoMotor', 'Óleo', REGRAS_INICIAIS, veic('manual'), '2026-10-26T15:00:00Z', 50000, 10000);
     expect(s.kmPrevisto).toBe(60000);
-    expect(s.dataPrevista?.slice(0, 7)).toBe('2027-10');
+    expect(s.dataPrevista?.slice(0, 7)).toBe('2027-04');
+    expect(s.motivo).toContain('o que vier primeiro');
     const m = { id: 'm', veiculoId: 'v', osOrigemId: 'o', descricao: 'Óleo', origem: 'interna' as const, fonte: 'x', registradoPor: 'u', registradoEm: '', kmPrevisto: 60000, dataPrevista: s.dataPrevista };
     const hoje = '2026-10-26T15:00:00Z';
     expect(statusManutencao(m, 55000, hoje)).toBe('futura');

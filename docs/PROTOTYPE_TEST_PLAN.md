@@ -8,10 +8,10 @@
 | Camada | Ferramenta | Resultado |
 | --- | --- | --- |
 | Regras de domínio | vitest (`src/domain/dominio.test.ts`) | **16/16** |
-| Camada de serviço: permissões, transação, projeção | vitest (`src/data/api.test.ts`) | **15/15** |
-| Fluxos ponta a ponta no navegador | puppeteer (`e2e/run.mjs`) | **17/17 cenários** |
+| Camada de serviço: permissões, transação, projeção | vitest (`src/data/api.test.ts`) | **22/22** |
+| Fluxos ponta a ponta no navegador | puppeteer (`e2e/run.mjs`) | **19/19 cenários** |
 | Isolamento: nenhuma referência a Firebase/Google/credenciais | `scripts/check-isolamento.mjs` | **OK** |
-| Build de produção do protótipo | `tsc -b && vite build` | **OK** (JS 381 kB, 114 kB gzip) |
+| Build de produção do protótipo | `tsc -b && vite build` | **OK** (JS 424 kB, 126 kB gzip) |
 | Requisições de rede fora do protótipo durante o E2E | monitor do puppeteer | **0** |
 | Erros de JavaScript durante o E2E | monitor do puppeteer | **0** |
 
@@ -27,13 +27,13 @@ O E2E sobe o Vite em `127.0.0.1:5199`, usa o Chrome instalado (`/Applications/Go
 
 | # | Fluxo | Como é testado (automático) | Resultado | Captura |
 | --- | --- | --- | --- | --- |
-| 1 | OS completa: abrir → iniciar → verificar todos os itens → evidência → finalizar checklist → serviços → concluir → histórico → relatório | Vendedor cadastra um veículo novo (`QAT1E23`) e abre a OS; o mecânico da vez assume; marca os 14 itens (pastilhas como Prioritário, com foto e recomendação); conclui o checklist; registra serviços e KM; finaliza; confere o histórico e o relatório | ✓ | `f1-*.png` |
+| 1 | OS completa: abrir → iniciar → verificar todos os itens → evidência → finalizar checklist → serviços → concluir → histórico → relatório | Vendedor cadastra um veículo novo (`QAT1E23`) escolhendo marca/modelo/ano nas listas; salvar sem telefone é recusado ("Informe o telefone com DDD") e a máscara é conferida; a OS entra no fim da fila; Rafael assume **fora da vez com motivo** (gravado em `foraDaOrdem`); o checklist de carro manual não traz fluido/trocador de calor do automático nem vazamento no motor; marca os 14 itens (pastilhas como Prioritário, com foto e recomendação); conclui o checklist; registra serviços e KM; finaliza; confere o histórico e o relatório | ✓ | `f1-*.png` |
 | 2 | Checklist incompleto lista exatamente o que falta | Tenta concluir com itens pendentes; confere a lista nominal de pendências e os links para cada item | ✓ | `f2-pendencias.png` |
 | 3 | Foto obrigatória bloqueia e libera | Item em Prioritário sem foto não salva ("foto obrigatória"); depois de anexar, salva | ✓ | `f3-sem-foto.png` |
 | 4 | Duas OS do mesmo veículo | Segunda OS pela busca de placa (reaproveita o cadastro, mostra "Últimas visitas"); a linha do tempo mostra as duas | ✓ | `f4-historico.png` |
-| 5 | Próxima manutenção por regra validada | Óleo trocado a 50.000 km → previsão 60.000 km / +12 meses com origem "Regra interna"; pastilhas sem regra → "Acompanhar" com origem "Recomendação do profissional" | ✓ | `f5-proximas.png` |
+| 5 | Próxima manutenção por regra validada + adicionais | Finalizar sem escolher o intervalo do óleo é recusado; escolhido 10.000 km → "o que vier primeiro" e previsão 55.000 km (e 60.000 km na segunda OS) com origem "Regra interna"; Militec aceito com valor vira serviço `adicional`, aditivo recusado fica em `ofertas`, outro serviço lançado pelo mecânico entra como adicional; flush e fluido de automático não são oferecidos ao carro manual; pastilhas sem regra → "Acompanhar" com origem "Recomendação do profissional" | ✓ | `f5-proximas.png` |
 | 6 | Link do cliente | Gera link (token de 22 caracteres); a página pública mostra recomendações, serviços e próximas manutenções e **não** mostra telefone, sobrenome, R$, observação interna, score nem vendedor; liderança **oculta a foto** e ela sai do relatório; revoga; o link e um número de OS usado como token mostram "Este link não está disponível" | ✓ | `f6-relatorio.png` |
-| 7 | Permissões | Mecânico recebe "Acesso não permitido" em metas, políticas, admin, liderança e nova OS; liderança vê Liderança e Metas, não vê Administração nem "Aprovar como vigente"; comercial não abre OS; direção abre o Admin | ✓ | `f7-negado.png` |
+| 7 | Permissões | Mecânico recebe "Acesso não permitido" em metas, políticas, admin, liderança e nova OS; liderança vê Liderança e Metas, não vê Administração nem "Aprovar como vigente"; vendedor não abre Admin, Liderança nem Políticas; o perfil Comercial (futuro) não aparece no login; direção abre o Admin | ✓ | `f7-negado.png` |
 | 8 | Meta: criar, mudar vigência, versão anterior preservada | Liderança cria o rascunho; direção aprova; liderança propõe alvo 15 com vigência futura; direção aprova; confere v1 encerrada (alvo 10) e v2 aprovada (alvo 15) | ✓ | `f8-versoes.png` |
 | 9 | Ocorrência | Liderança registra; manda para revisão; direção aprova com observação; aplica; o histórico mostra cada passo e o autor. A manifestação/contestação do mecânico é coberta no teste unitário e no roteiro manual | ✓ | `f9-historico.png` |
 | 10 | Integridade | Toda requisição do navegador é registrada; o teste falha se alguma sair de `127.0.0.1:5199` (exceto `data:`/`blob:`). Além disso, a checagem estática não encontra `firebase`, `firestore`, `gstatic`, `googleapis`, o id do projeto nem chaves `AIza…` | ✓ | — |
@@ -50,6 +50,8 @@ O E2E sobe o Vite em `127.0.0.1:5199`, usa o Chrome instalado (`/Applications/Go
 | Navegação completa | Abre todos os itens de menu de todos os perfis e falha em erro de JS ou "Página não encontrada" | ✓ |
 | Celular (390 px) | Operação, checklist e relatório sem rolagem horizontal; checklist marcável | ✓ (`mobile-*.png`) |
 | Tablet (768 px) | Menus e telas principais sem rolagem horizontal | ✓ |
+| Pausa por peça | André pausa com motivo e detalhe; a OS vai para Pausadas com o motivo no cartão; ele assume outra OS; "Finalize a atual para retomar" aparece; depois de liberado, retoma e a pausa ganha fim | ✓ (`pausa-operacao.png`) |
+| Retorno | A fila mostra "Previsto: você (retorno)" para Rafael; ao assumir abre o atendimento de retorno (sem checklist); finalizar sem foto/dados lista as pendências; com fotos antes/depois, diagnóstico, relação, solução, aviso e KM, conclui; o relatório do cliente mostra problema, solução, orientação e as duas fotos, sem o diagnóstico interno | ✓ (`retorno-*.png`) |
 
 ## 4. Testes unitários — o que cobrem
 
@@ -112,6 +114,10 @@ O E2E sobe o Vite em `127.0.0.1:5199`, usa o Chrome instalado (`/Applications/Go
 | 10 | Placa de teste inválida no E2E (`E2E1A11`) | E2E (o app recusou corretamente) | Placa de teste `QAT1E23` |
 | 11 | Clique do puppeteer falhava durante a rolagem suave | E2E intermitente | Clique pelo DOM depois de `scrollIntoView` |
 | 12 | Fluxo 8 intermitente ao esperar o aviso (toast) | E2E, 1 em 3 execuções | Espera pelo estado gravado em vez do aviso |
+| 13 | Campos lado a lado (Placa/Ano) desalinhados na Nova OS | Revisão visual | Margem entre campos zerada dentro de grades |
+| 14 | Retorno da demonstração caía num carro que já tinha OS hoje | Revisão visual | O seed escolhe uma OS original de veículo sem OS no dia |
+| 15 | Legenda vazia mostrava "· imagem demonstrativa" no relatório | E2E, captura do retorno | Separador só entre partes preenchidas |
+| 16 | `confirm()` do navegador não funciona no link beta (visualizador embutido) | Preparação do link beta | Confirmação na própria janela de controles da demo; botão de imprimir só fora do visualizador |
 
 ## 6. Roteiro de teste manual por perfil
 
@@ -121,12 +127,13 @@ Rode `npm run dev` em `prototype/` e abra http://127.0.0.1:5180. Use **Controles
 
 1. Entre como Igor e abra **Nova OS**.
 2. Busque `EXM` e escolha um veículo. Confira as "Últimas visitas".
-3. Marque Óleo de motor e Filtro de óleo, informe o valor e salve. A OS entra na fila.
-4. Abra uma OS concluída hoje › **Relatório do cliente** › escolha 30 dias › **Gerar link do relatório** › **Abrir**. Confira que não há valores nem telefone.
+3. Para veículo novo, escolha marca e modelo nas listas e informe o telefone (obrigatório). Marque Óleo de motor e Filtro de óleo, informe o valor e salve. A OS entra na fila.
+4. Teste **É retorno**: escolha a OS original e descreva o problema relatado; o retorno não tem serviços nem valor.
+5. Abra uma OS concluída hoje › **Relatório do cliente** › escolha 30 dias › **Gerar link do relatório** › **Abrir**. Confira que não há valores nem telefone.
 
 ### Mecânico — André Costa
 
-1. Entre como André. Se for a vez dele, **Assumir esta OS**; se não, a tela explica de quem é a vez.
+1. Entre como André. Se ele for o previsto, **Assumir esta OS**; se não, **Assumir fora da vez** com motivo.
 2. No checklist, marque OK nos itens. Em um item, escolha **Prioritário** sem foto: o item não salva.
 3. Use **Usar foto demonstrativa**, escreva a recomendação e salve.
 4. Tente **Concluir checklist** com itens pendentes e confira a lista do que falta.
@@ -134,10 +141,19 @@ Rode `npm run dev` em `prototype/` e abra http://127.0.0.1:5180. Use **Controles
 6. Abra **Meu mês**: meta, projeção e o "?" de cada indicador.
 7. Tente abrir `#/metas` ou `#/admin`: aparece "Acesso não permitido".
 
-### Comercial — Helena Duarte
+### Vendedor — Recomendações (o perfil Comercial fica para o futuro)
 
-1. Abra **Recomendações** › **Em aberto**.
+1. Como Igor, abra **Recomendações** › **Em aberto**.
 2. Abra uma recomendação, veja a foto e marque **Aceitou** com valor, ou **Avaliar depois**.
+
+### Mecânicos — fila, pausa e retorno
+
+1. Como André, veja a fila numerada: cada OS mostra o previsto ou "Aguardando mecânico livre"; cartões em andamento mostram "Com: nome".
+2. Em uma OS que não é a sua, **Assumir fora da vez** pede o motivo.
+3. Na OS em andamento, **Pausar OS** › Aguardando peça. Assuma outra; a pausada só retoma quando a atual terminar.
+4. Na execução, escolha o intervalo do óleo (5/7/10 mil km) e marque adicionais (Cliente aceitou / Ofereci, recusou); lance outro serviço vendido.
+5. Como Rafael, assuma o retorno: fotografe o problema, registre diagnóstico, solução, foto depois e o aviso ao cliente. Gere o link e veja o relatório.
+6. Como Eduardo, retome a OS pausada aguardando peça.
 
 ### Liderança — Fernanda Alves
 
@@ -154,7 +170,7 @@ Rode `npm run dev` em `prototype/` e abra http://127.0.0.1:5180. Use **Controles
 1. **Metas**: aprove o rascunho e o ajuste; abra as versões.
 2. **Liderança › Ocorrências**: aprove ou rejeite com observação e aplique.
 3. **Admin**:
-   - **Catálogo**: altere a instrução de um item e veja a versão subir.
+   - **Catálogo**: altere a instrução de um item e veja a versão subir. Confira as sugestões "Não mostrar para este modelo" (itens marcados "Não se aplica" com frequência) e desfaça uma.
    - **Intervalos**: confira a origem de cada regra.
    - **Usuários**: desative e reative um usuário.
    - **Histórico**: filtre e veja o antes/depois.

@@ -28,7 +28,6 @@ const USUARIOS = (criadoEm: string): Usuario[] => [
   { id: 'u_m5', nome: 'Marcos Lima', role: 'mecanico', ativo: true, nivel: 'N2', criadoEm },
   { id: 'u_lid', nome: 'Fernanda Alves', role: 'lider', ativo: true, criadoEm },
   { id: 'u_dir', nome: 'Gustavo Reis', role: 'direcao', ativo: true, criadoEm },
-  { id: 'u_com', nome: 'Helena Duarte', role: 'comercial', ativo: true, criadoEm },
   { id: 'u_ven', nome: 'Igor Martins', role: 'vendedor', ativo: true, criadoEm },
   { id: 'u_ven2', nome: 'Juliana Prado', role: 'vendedor', ativo: true, criadoEm },
   { id: 'u_ina', nome: 'Paulo Souza', role: 'mecanico', ativo: false, nivel: 'N1', criadoEm },
@@ -125,7 +124,9 @@ export function gerarSeed(): DB {
     const estados: Record<string, EstadoItem> = {};
     c.defs.forEach(d => {
       const x = r();
-      estados[d.id] = d.id === 'diferencial' && r() < 0.7 ? 'nao_aplicavel'
+      // Diferencial só existe de fato em picape/4x4: nos demais o mecânico marca "Não se aplica" quase sempre.
+      const temDif = ['Ranger', 'Hilux'].includes(db.veiculos.find(v => v.id === c.veiculoId)?.modelo || '');
+      estados[d.id] = d.id === 'diferencial' && !temDif && r() < 0.93 ? 'nao_aplicavel'
         : x < 0.8 ? 'ok' : x < 0.93 ? 'atencao' : x < 0.97 ? 'prioritario' : 'pendente_avaliacao';
     });
     return { estados, incompleto: r() > p.completo, semFoto: r() > p.foto };
@@ -176,7 +177,7 @@ export function gerarSeed(): DB {
         servicoKey: d.servicoRelacionado, criadaPor: os.mecanicoId!, criadaEm: it.registradoEm!,
         historico: [{ situacao: 'nova', por: os.mecanicoId!, em: it.registradoEm! }],
       };
-      if (situacao !== 'nova') op.historico.push({ situacao, por: 'u_com', em: addDias(it.registradoEm!, 0.01) });
+      if (situacao !== 'nova') op.historico.push({ situacao, por: 'u_ven', em: addDias(it.registradoEm!, 0.01) });
       if (situacao === 'aceita' && d.servicoRelacionado) {
         op.valor = VALOR_UPSELL[d.servicoRelacionado] || 120;
         os.servicos.push({ key: d.servicoRelacionado, origem: 'checklist', executado: concluida, valor: op.valor, oportunidadeId: op.id });
@@ -195,7 +196,9 @@ export function gerarSeed(): DB {
     v.kmAtualEm = fimISO;
     // Próximas manutenções a partir de regras validadas
     os.servicos.forEach(s => {
-      const sug = sugerirProxima(s.key, SERVICOS[s.key].nome, db.regrasIntervalo, v, fimISO, km);
+      // Óleo: intervalo conforme o óleo aplicado (dado fictício: 0W20 → 10 mil, 5W30 → 7 mil, demais → 5 mil).
+      if (s.key === 'oleoMotor' && !s.intervaloKm) s.intervaloKm = /0W20/.test(s.marca || '') ? 10000 : /5W30/.test(s.marca || '') ? 7000 : s.marca ? 5000 : 10000;
+      const sug = sugerirProxima(s.key, SERVICOS[s.key].nome, db.regrasIntervalo, v, fimISO, km, s.intervaloKm);
       if (!sug.regra) return;
       db.manutencoes.filter(m => m.veiculoId === v.id && m.servicoKey === s.key && !m.concluidaPorOsId).forEach(m => { m.concluidaPorOsId = os.id; });
       const m: ManutencaoPrevista = {
@@ -273,12 +276,12 @@ export function gerarSeed(): DB {
   set.os.km = 52300; vDemo.kmAtual = 52300;
   db.manutencoes.filter(m => m.osOrigemId === set.os.id).forEach(m => {
     m.ultimaExecucao = { data: set.os.concluidaEm!, km: 52300 };
-    if (m.servicoKey === 'oleoMotor') m.kmPrevisto = 62300;
+    if (m.servicoKey === 'oleoMotor') m.kmPrevisto = 52300 + 10000;
   });
-  db.oportunidades.filter(o => o.osId === set.os.id).forEach(o => { o.situacao = 'avaliar_depois'; o.historico.push({ situacao: 'avaliar_depois', por: 'u_com', em: set.os.concluidaEm!, obs: 'Cliente pediu para avaliar na próxima troca' }); });
+  db.oportunidades.filter(o => o.osId === set.os.id).forEach(o => { o.situacao = 'avaliar_depois'; o.historico.push({ situacao: 'avaliar_depois', por: 'u_ven', em: set.os.concluidaEm!, obs: 'Cliente pediu para avaliar na próxima troca' }); });
   // Manutenção "próxima" por km
   const vProx = db.veiculos[5];
-  legado(vProx, '2026-04-02T13:00:00.000Z', 60000, 'u_m5', ['oleoMotor', 'filtroOleo']);
+  legado(vProx, '2026-05-12T13:00:00.000Z', 60000, 'u_m5', ['oleoMotor', 'filtroOleo']);
   vProx.kmAtual = 69400;
 
   // ── Mês atual: OS concluídas até ontem ──
@@ -323,12 +326,19 @@ export function gerarSeed(): DB {
   const ag1 = abrir(vDemo, hojeAs(hBase + 1, 30));
   if (!ag1.servicos.some(s => s.key === 'fluidoFreio')) ag1.servicos.push({ key: 'fluidoFreio', marca: 'Bosch DOT4', quantidade: '1', origem: 'balcao', executado: false });
   ag1.naoFazerTesteFreio = true;
-  abrir(vFrota, hojeAs(hBase + 1, 40), { naoOferecer: { alinhadoCom: 'Helena Duarte (comercial)', marcadoPor: 'u_lid', em: hojeAs(hBase + 1, 41) } });
+  abrir(vFrota, hojeAs(hBase + 1, 40), { naoOferecer: { alinhadoCom: 'Igor Martins (balcão)', marcadoPor: 'u_lid', em: hojeAs(hBase + 1, 41) } });
   abrir(db.veiculos[17], hojeAs(hBase + 1, 50));
   // Retorno: carro concluído no mês volta com problema → mesmo mecânico (regra do rodízio)
-  const origRet = db.os.find(o => o.status === 'concluido' && o.mecanicoId === 'u_m2' && o.abertaEm.slice(0, 7) === mesAtual)!;
-  const ret = abrir(db.veiculos.find(v => v.id === origRet.veiculoId)!, hojeAs(hBase + 2, 0), { retornoDeOsId: origRet.id, valorInicial: 0, obsInterna: 'Retorno: cliente relata gotejamento de óleo após a troca.' });
-  ret.servicos = [{ key: 'oleoMotor', origem: 'balcao', executado: false, marca: 'Verificar vazamento' }];
+  const veiculosHoje = new Set(db.os.filter(o => o.abertaEm.slice(0, 10) === hoje).map(o => o.veiculoId));
+  const origRet = db.os.find(o => o.status === 'concluido' && o.mecanicoId === 'u_m2' && o.abertaEm.slice(0, 7) === mesAtual && !veiculosHoje.has(o.veiculoId))
+    || db.os.find(o => o.status === 'concluido' && o.mecanicoId === 'u_m2' && o.abertaEm.slice(0, 7) === mesAtual)!;
+  const ret = abrir(db.veiculos.find(v => v.id === origRet.veiculoId)!, hojeAs(hBase + 2, 0), { retornoDeOsId: origRet.id, valorInicial: 0, retorno: { problemaRelatado: 'Gotejamento de óleo embaixo do carro desde a troca.' } });
+  ret.servicos = [];
+  ret.naoFazerTesteFreio = undefined; ret.naoFazerTesteCambio = undefined;
+  // Pausada: Eduardo aguardando peça (fica livre para outro carro enquanto isso)
+  const pausada = ciclo(db.veiculos[18], 'u_m4', hojeAs(Math.max(8, hBase - 1), 10), { concluir: false, plano: { parar: 5 } });
+  pausada.os.status = 'pausada';
+  pausada.os.pausas = [{ inicio: addDias(pausada.os.iniciadaEm!, 0.015), motivo: 'peca', detalhe: 'Filtro de combustível — fornecedor entrega à tarde', por: 'u_m4' }];
 
   // ── Compartilhamentos: ativo, revogado e expirado ──
   db.compartilhamentos.push(

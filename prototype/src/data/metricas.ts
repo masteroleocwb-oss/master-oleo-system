@@ -3,11 +3,11 @@
 import { checklistCompleto, fotosAtivasDoItem } from '../domain/checklist';
 import { descontoChecklist, scoreExecucao, versaoEm } from '../domain/gestao';
 import type { DB, OrdemServico } from '../domain/types';
-import { diaKey, diasUteis, diffMin, hojeKey, media, mesKey, pct, soma, ultimoDiaDoMes } from '../domain/util';
+import { diaKey, diasUteis, diffMin, hojeKey, media, minutosTrabalhados, mesKey, pct, soma, ultimoDiaDoMes } from '../domain/util';
 import { valoresOS } from './api';
 
 export const DEFINICOES: Record<string, { nome: string; formula: string; porque: string }> = {
-  carros: { nome: 'Carros atendidos', formula: 'OS concluídas por você no mês.', porque: 'Volume sozinho não diz qualidade; por isso aparece ao lado do checklist.' },
+  carros: { nome: 'Carros atendidos', formula: 'OS concluídas por você no mês (retornos ficam fora: não são um carro novo).', porque: 'Volume sozinho não diz qualidade; por isso aparece ao lado do checklist.' },
   checklist: { nome: 'Checklist completo', formula: 'OS com checklist completo ÷ OS concluídas. Exceção autorizada NÃO conta como completo.', porque: 'É a base da recomendação ao cliente: sem inspeção completa, não há confiança no que foi recomendado.' },
   excecoes: { nome: 'Exceções autorizadas', formula: 'OS concluídas com checklist fechado por exceção aprovada pela liderança.', porque: 'Mostra quando a operação impediu a inspeção completa — separado para não punir nem esconder.' },
   evidencias: { nome: 'Evidência quando exigida', formula: 'Itens com foto obrigatória que têm foto ÷ itens com foto obrigatória.', porque: 'A foto sustenta a recomendação para o cliente e para a auditoria.' },
@@ -15,7 +15,9 @@ export const DEFINICOES: Record<string, { nome: string; formula: string; porque:
   realizados: { nome: 'Itens realizados', formula: 'Serviços vindos do checklist, aceitos pelo cliente e executados.', porque: 'É o indicador da meta individual (Playbook: meta em volume de itens).' },
   conversao: { nome: 'Aceite das recomendações', formula: 'Itens realizados ÷ itens identificados.', porque: 'Depende também do comercial; aparece para contexto, não para cobrança isolada.' },
   retornos: { nome: 'Retornos', formula: 'OS abertas como retorno de serviço feito por você.', porque: 'Qualidade de execução: retorno custa tempo e confiança.' },
-  tempo: { nome: 'Tempo médio por OS', formula: 'Média de (conclusão − início) das OS concluídas.', porque: 'Só para contexto. Não é meta: pressa piora o checklist.' },
+  adicionais: { nome: 'Adicionais vendidos', formula: 'Serviços adicionais (militec, aditivo, flush…) oferecidos por você na bancada, aceitos e executados.', porque: 'Mostra a oferta na bancada, separada das recomendações do checklist.' },
+  foraDaOrdem: { nome: 'Assumidas fora da ordem', formula: 'OS que você assumiu no lugar do mecânico previsto na fila (sempre com motivo).', porque: 'Transparência do rodízio: não é falta, mas a liderança acompanha o padrão.' },
+  tempo: { nome: 'Tempo médio por OS', formula: 'Média de (conclusão − início − pausas) das OS concluídas. Tempo aguardando peça não conta.', porque: 'Só para contexto. Não é meta: pressa piora o checklist.' },
   score: { nome: 'Score de execução (proposta em teste)', formula: '100 − ocorrências aplicadas − desconto do checklist + reconhecimentos (até +5).', porque: 'Proposta do Playbook em teste. NÃO altera remuneração real neste protótipo.' },
 };
 
@@ -34,6 +36,9 @@ export interface IndicadoresMecanico {
   conversaoPct: number | null;
   faturamento: number;
   upsell: number;
+  adicionais: number;
+  ofertasAdicionais: number;
+  foraDaOrdem: number;
   retornos: number;
   tempoMedioMin: number | null;
   tempoChecklistMin: number | null;
@@ -45,7 +50,9 @@ export interface IndicadoresMecanico {
 const concluidasNoMes = (d: DB, mes: string) => d.os.filter(o => o.status === 'concluido' && o.concluidaEm && mesKey(o.concluidaEm) === mes);
 
 export function indicadoresMecanico(d: DB, mecanicoId: string, mes = mesKey(hojeKey() + 'T15:00:00Z')): IndicadoresMecanico {
-  const os = concluidasNoMes(d, mes).filter(o => o.mecanicoId === mecanicoId);
+  const todas = concluidasNoMes(d, mes).filter(o => o.mecanicoId === mecanicoId);
+  // Retorno não é um carro novo nem tem checklist: fica fora da base de carros e do checklist %.
+  const os = todas.filter(o => !o.retornoDeOsId);
   const cks = os.map(o => d.checklists.find(c => c.id === o.checklistId));
   const comChecklist = cks.filter(Boolean);
   const completos = comChecklist.filter(c => checklistCompleto(c)).length;
@@ -81,8 +88,11 @@ export function indicadoresMecanico(d: DB, mecanicoId: string, mes = mesKey(hoje
     conversaoPct: ident ? pct(realizados, ident) : null,
     faturamento: soma(os.map(o => valoresOS(o).total)),
     upsell: soma(os.map(o => valoresOS(o).upsell)),
+    adicionais: soma(os.map(o => o.servicos.filter(s => s.origem === 'adicional' && s.executado).length)),
+    ofertasAdicionais: soma(os.map(o => (o.ofertas || []).length)),
+    foraDaOrdem: d.os.filter(o => o.mecanicoId === mecanicoId && o.foraDaOrdem && o.iniciadaEm && mesKey(o.iniciadaEm) === mes).length,
     retornos,
-    tempoMedioMin: media(os.filter(o => o.iniciadaEm && o.concluidaEm).map(o => diffMin(o.iniciadaEm!, o.concluidaEm!))),
+    tempoMedioMin: media(os.map(minutosTrabalhados).filter((x): x is number => x != null)),
     tempoChecklistMin: media(comChecklist.filter(c => c!.iniciadoEm && c!.concluidoEm).map(c => diffMin(c!.iniciadoEm!, c!.concluidoEm!))),
     score: scoreExecucao(aplicadas, desc),
     descontoChecklist: desc,
@@ -132,8 +142,10 @@ export function painelHoje(d: DB) {
   const os = d.os.filter(o => o.status !== 'encerrada' && o.status !== 'cancelada' && doDia(o));
   const concluidasHoje = d.os.filter(o => o.status === 'concluido' && o.concluidaEm && diaKey(o.concluidaEm) === hoje);
   return {
-    aguardando: os.filter(o => o.status === 'aguardando'),
+    aguardando: os.filter(o => o.status === 'aguardando').sort((a, b) => a.abertaEm.localeCompare(b.abertaEm)),
     andamento: os.filter(o => o.status === 'andamento'),
+    // Pausadas aparecem sempre (a peça pode chegar no dia seguinte).
+    pausadas: d.os.filter(o => o.status === 'pausada'),
     concluidasHoje,
     faturamentoHoje: soma(concluidasHoje.map(o => valoresOS(o).total)),
     excecoesPendentes: d.checklists.filter(c => c.solicitacaoExcecao?.status === 'pendente'),
@@ -167,6 +179,8 @@ export function indicadoresLideranca(d: DB, mes = mesKey(hojeKey() + 'T15:00:00Z
     planosVencidos: planos.filter(p => p.status === 'aberto' && p.prazo < hoje).length,
     metasSemComunicar: d.metas.filter(m => !m.comunicadaEm).length,
     ocorrenciasParadas: d.ocorrencias.filter(o => o.status === 'registrada').length,
+    foraDaOrdem: d.os.filter(o => o.foraDaOrdem && o.iniciadaEm && mesKey(o.iniciadaEm) === mes),
+    pausadas: d.os.filter(o => o.status === 'pausada'),
   };
 }
 

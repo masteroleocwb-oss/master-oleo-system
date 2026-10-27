@@ -212,6 +212,7 @@ export function DemoBanner({ onControles }: { onControles: () => void }) {
 
 export function DemoControles({ onClose }: { onClose: () => void }) {
   const c = useControle();
+  const [confirmando, setConfirmando] = useState(false);
   const toast = useToast();
   return (
     <Sheet titulo="Controles da demonstração" sub="Use para testar estados de erro e voltar ao início." onClose={onClose}>
@@ -226,8 +227,11 @@ export function DemoControles({ onClose }: { onClose: () => void }) {
         <div className="divider" />
         <p className="small muted">Os dados ficam só neste navegador (armazenamento local). Restaurar apaga tudo o que foi feito e recria a base fictícia.</p>
         <div className="sheet-foot">
-          <Btn variante="danger" onClick={() => { if (confirm('Restaurar a base de demonstração? Tudo o que foi feito neste navegador será descartado.')) { resetarDemo(); toast({ texto: 'Base de demonstração restaurada.', tipo: 'ok' }); onClose(); } }}>Restaurar dados da demo</Btn>
-          <Btn variante="sec" onClick={onClose}>Fechar</Btn>
+          {/* Confirmação na própria tela (confirm() do navegador não funciona em visualizadores embutidos). */}
+          {confirmando
+            ? <Btn variante="danger" onClick={() => { resetarDemo(); toast({ texto: 'Base de demonstração restaurada.', tipo: 'ok' }); onClose(); }}>Sim, descartar e restaurar</Btn>
+            : <Btn variante="danger" onClick={() => setConfirmando(true)}>Restaurar dados da demo</Btn>}
+          <Btn variante="sec" onClick={confirmando ? () => setConfirmando(false) : onClose}>{confirmando ? 'Voltar' : 'Fechar'}</Btn>
         </div>
       </div>
     </Sheet>
