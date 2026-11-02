@@ -303,3 +303,15 @@ describe('histórico e gestão', () => {
     }
   });
 });
+
+describe('base de demonstração', () => {
+  // O link beta quebrou em 02/11: no começo do mês não havia histórico para montar o retorno de exemplo.
+  it('é gerada em qualquer dia, inclusive no dia 1º, em domingos e na virada do ano', () => {
+    for (const d of ['2026-11-01T13:00:00Z', '2026-11-02T13:00:00Z', '2026-12-01T22:00:00Z', '2027-01-01T11:00:00Z', '2027-01-04T13:00:00Z', '2027-03-01T13:00:00Z', '2026-10-31T23:30:00Z']) {
+      fixarAgora(new Date(d));
+      const db = gerarSeed();
+      expect(db.os.some(o => o.retornoDeOsId && o.status === 'aguardando'), d).toBe(true);
+      expect(db.os.filter(o => o.status === 'concluido').length, d).toBeGreaterThan(20);
+    }
+  });
+});

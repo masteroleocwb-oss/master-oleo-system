@@ -67,6 +67,8 @@ export function gerarSeed(): DB {
   const hoje = diaKey(agoraISO);
   const mesAtual = mesKey(agoraISO);
   const inicioMes = `${mesAtual}-01`;
+  // Histórico recente: desde o dia 1º, mas nunca menos de 3 semanas (no começo do mês a base não fica vazia).
+  const inicioHist = [inicioMes, diaKey(addDias(agoraISO, -24))].sort()[0];
   const criadoEm = '2026-01-05T12:00:00.000Z';
 
   const db: DB = {
@@ -284,15 +286,15 @@ export function gerarSeed(): DB {
   legado(vProx, '2026-05-12T13:00:00.000Z', 60000, 'u_m5', ['oleoMotor', 'filtroOleo']);
   vProx.kmAtual = 69400;
 
-  // ── Mês atual: OS concluídas até ontem ──
+  // ── Últimas semanas (desde o dia 1º, no mínimo 3 semanas): OS concluídas até ontem ──
   const diaExc = (() => { // um sábado anterior do mês, se houver
-    for (let d = new Date(inicioMes + 'T15:00:00Z'); diaKey(d) < hoje; d = new Date(d.getTime() + 864e5)) if (d.getUTCDay() === 6) return diaKey(d);
+    for (let d = new Date(inicioHist + 'T15:00:00Z'); diaKey(d) < hoje; d = new Date(d.getTime() + 864e5)) if (d.getUTCDay() === 6) return diaKey(d);
     return null;
   })();
   if (diaExc) db.diasExcecao.push({ data: diaExc, declaradoPor: 'u_lid', motivo: 'Oficina lotada — ação de frota agendada', em: `${diaExc}T11:00:00.000Z` });
 
   let vi = 6;
-  for (let d = new Date(inicioMes + 'T12:00:00Z'); diaKey(d) < hoje; d = new Date(d.getTime() + 864e5)) {
+  for (let d = new Date(inicioHist + 'T12:00:00Z'); diaKey(d) < hoje; d = new Date(d.getTime() + 864e5)) {
     if (d.getUTCDay() === 0) continue;
     const dia = diaKey(d);
     for (const mec of MECANICOS) {
@@ -330,8 +332,8 @@ export function gerarSeed(): DB {
   abrir(db.veiculos[17], hojeAs(hBase + 1, 50));
   // Retorno: carro concluído no mês volta com problema → mesmo mecânico (regra do rodízio)
   const veiculosHoje = new Set(db.os.filter(o => o.abertaEm.slice(0, 10) === hoje).map(o => o.veiculoId));
-  const origRet = db.os.find(o => o.status === 'concluido' && o.mecanicoId === 'u_m2' && o.abertaEm.slice(0, 7) === mesAtual && !veiculosHoje.has(o.veiculoId))
-    || db.os.find(o => o.status === 'concluido' && o.mecanicoId === 'u_m2' && o.abertaEm.slice(0, 7) === mesAtual)!;
+  const recentesRafael = db.os.filter(o => o.status === 'concluido' && o.mecanicoId === 'u_m2' && o.abertaEm >= inicioHist);
+  const origRet = recentesRafael.find(o => !veiculosHoje.has(o.veiculoId)) || recentesRafael[0];
   const ret = abrir(db.veiculos.find(v => v.id === origRet.veiculoId)!, hojeAs(hBase + 2, 0), { retornoDeOsId: origRet.id, valorInicial: 0, retorno: { problemaRelatado: 'Gotejamento de óleo embaixo do carro desde a troca.' } });
   ret.servicos = [];
   ret.naoFazerTesteFreio = undefined; ret.naoFazerTesteCambio = undefined;
