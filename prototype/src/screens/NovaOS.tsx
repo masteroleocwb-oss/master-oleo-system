@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ir } from '../app/nav';
-import { abrirOS, buscarVeiculosEClientes, validarNovaOS, type NovaOSInput } from '../data/api';
-import { SERVICO_KEYS, SERVICOS, servicoAplicavel } from '../domain/catalogo';
+import { abrirOS, buscarVeiculosEClientes, cadastroFinal, faltasCadastroCliente, recomendacoesAbertas, validarNovaOS, type CadastroCliente, type NovaOSInput } from '../data/api';
+import { CIDADES_SUGERIDAS, COMO_CONHECEU, RECOMENDACAO, RESPOSTA_CLIENTE, SERVICO_KEYS, SERVICOS, servicoAplicavel } from '../domain/catalogo';
 import { ANOS, MARCAS, MARCAS_MODELOS, OUTRO } from '../domain/veiculosCatalogo';
 import type { Cambio, ServicoKey, ServicoOS, Usuario } from '../domain/types';
 import { fmtData, fmtKm, fmtTelefone, normalizarPlaca, placaValida, telefoneValido } from '../domain/util';
@@ -19,6 +19,9 @@ interface Form {
   clienteNome: string; clienteTel: string;
   /** Telefone para cliente já cadastrado sem telefone. */
   telExistente?: string;
+  /** Como conheceu, cidade e bairro (cliente novo, ou cliente antigo que ainda não tem). */
+  comoConheceu?: string; comoConheceuDetalhe?: string; cidade?: string; bairro?: string;
+  pedidoOlist?: string;
   retorno?: boolean; retornoDeOsId?: string; problema?: string;
   vendedorId: string;
   servicos: Partial<Record<ServicoKey, { marca?: string; quantidade?: string; codigo?: string }>>;
@@ -60,14 +63,20 @@ export function NovaOS({ u }: { u: Usuario }) {
   const cambioAtual: Cambio | undefined = veiculo?.cambio ?? (f.novo ? f.cambio : undefined);
   const servicosVisiveis = SERVICO_KEYS.filter(k => servicoAplicavel(k, cambioAtual));
   const clienteSemTel = !!veiculo && !telefoneValido(cliente?.telefone);
+  const dadosDigitados: Partial<CadastroCliente> = { comoConheceu: f.comoConheceu, comoConheceuDetalhe: f.comoConheceu === 'Outro' ? f.comoConheceuDetalhe : undefined, cidade: f.cidade, bairro: f.bairro };
+  // Cliente antigo: pede só o que falta no cadastro (fica gravado para as próximas visitas).
+  const faltaNoCadastro = veiculo && cliente ? {
+    comoConheceu: !cliente.comoConheceu || (cliente.comoConheceu === 'Outro' && !cliente.comoConheceuDetalhe), cidade: !cliente.cidade, bairro: !cliente.bairro,
+  } : null;
   const osAnteriores = veiculo ? db.os.filter(o => o.veiculoId === veiculo.id && o.status === 'concluido').sort((a, b) => b.concluidaEm!.localeCompare(a.concluidaEm!)) : [];
   const retorno = !!f.retorno && !!veiculo;
 
   const entrada: NovaOSInput = {
     veiculoId: f.veiculoId,
     novoVeiculo: f.novo ? { placa: f.placa, marca: marcaFinal, modelo: modeloFinal, ano: Number(f.ano) || 0, motor: f.motor.trim(), cambio: f.cambio, combustivel: 'Flex' } : undefined,
-    novoCliente: f.novo ? { nome: f.clienteNome, telefone: f.clienteTel } : undefined,
-    telefoneCliente: clienteSemTel ? f.telExistente : undefined,
+    novoCliente: f.novo ? { nome: f.clienteNome, telefone: f.clienteTel, ...dadosDigitados } as NovaOSInput['novoCliente'] : undefined,
+    completarCliente: veiculo ? { ...(clienteSemTel ? { telefone: f.telExistente } : {}), ...dadosDigitados } : undefined,
+    pedidoOlist: f.pedidoOlist,
     retornoDeOsId: retorno ? f.retornoDeOsId : undefined,
     problemaRelatado: retorno ? f.problema : undefined,
     vendedorId: f.vendedorId,
@@ -78,7 +87,7 @@ export function NovaOS({ u }: { u: Usuario }) {
     naoFazerTesteCambio: f.naoTesteCambio || undefined,
   };
   const erros = [
-    ...validarNovaOS(entrada, cliente?.telefone),
+    ...validarNovaOS(entrada, cliente),
     ...(retorno && !f.retornoDeOsId ? ['Escolha a OS original do retorno.'] : []),
   ];
 
@@ -93,7 +102,34 @@ export function NovaOS({ u }: { u: Usuario }) {
   };
 
   const ultimas = veiculo ? db.os.filter(o => o.veiculoId === veiculo.id && o.status === 'concluido').sort((a, b) => b.abertaEm.localeCompare(a.abertaEm)).slice(0, 2) : [];
-  const recomendacoesAbertas = veiculo ? db.oportunidades.filter(o => o.veiculoId === veiculo.id && o.situacao === 'avaliar_depois') : [];
+  const recsAbertas = veiculo ? recomendacoesAbertas(db, veiculo.id) : [];
+  const faltaCampo = (campo: keyof CadastroCliente) => tentou && faltasCadastroCliente(f.novo ? cadastroFinal(undefined, entrada.novoCliente) : cadastroFinal(cliente, entrada.completarCliente))
+    .some(e => e.includes({ telefone: 'telefone', comoConheceu: 'onheceu', comoConheceuDetalhe: 'Outro', cidade: 'cidade', bairro: 'bairro' }[campo]));
+  // Função (não componente): manter os inputs montados entre renders, sem perder o foco ao digitar.
+  const camposCadastro = (mostrar: { comoConheceu: boolean; cidade: boolean; bairro: boolean }) => (
+    <>
+      {mostrar.comoConheceu && (
+        <Field rotulo="Como o cliente conheceu a Master Óleo?" obrigatorio htmlFor="cli-como" erro={faltaCampo('comoConheceu') ? 'Escolha uma opção' : faltaCampo('comoConheceuDetalhe') ? 'Descreva' : null}>
+          <select id="cli-como" className="input" value={f.comoConheceu || ''} onChange={e => set({ comoConheceu: e.target.value })}>
+            <option value="">Selecione</option>
+            {COMO_CONHECEU.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+          {f.comoConheceu === 'Outro' && <input id="cli-como-outro" aria-label="Como conheceu (outro)" className="input" style={{ marginTop: 6 }} value={f.comoConheceuDetalhe || ''} onChange={e => set({ comoConheceuDetalhe: e.target.value })} placeholder="Ex.: evento, rádio, parceiro" />}
+        </Field>
+      )}
+      {mostrar.cidade && (
+        <Field rotulo="Cidade" obrigatorio htmlFor="cli-cidade" erro={faltaCampo('cidade') ? 'Informe a cidade' : null}>
+          <input id="cli-cidade" className="input" list="cidades-sugeridas" value={f.cidade || ''} onChange={e => set({ cidade: e.target.value })} placeholder="Ex.: Curitiba" autoComplete="off" />
+          <datalist id="cidades-sugeridas">{CIDADES_SUGERIDAS.map(c => <option key={c} value={c} />)}</datalist>
+        </Field>
+      )}
+      {mostrar.bairro && (
+        <Field rotulo="Bairro" obrigatorio htmlFor="cli-bairro" erro={faltaCampo('bairro') ? 'Informe o bairro' : null}>
+          <input id="cli-bairro" className="input" value={f.bairro || ''} onChange={e => set({ bairro: e.target.value })} placeholder="Ex.: Água Verde" />
+        </Field>
+      )}
+    </>
+  );
 
   return (
     <div style={{ maxWidth: 760 }}>
@@ -108,7 +144,7 @@ export function NovaOS({ u }: { u: Usuario }) {
           <Alerta tipo="warn">
             <b>Há um cadastro não finalizado neste aparelho.</b> Se começar um novo cadastro, ele será substituído.
             <div className="row" style={{ marginTop: 8 }}>
-              <Btn tamanho="sm" onClick={() => { setF(rascunho); setRascunho(null); }}>Recuperar rascunho</Btn>
+              <Btn tamanho="sm" onClick={() => { setF({ ...VAZIO(f.vendedorId), ...rascunho }); setRascunho(null); }}>Recuperar rascunho</Btn>
               <Btn tamanho="sm" variante="sec" onClick={() => { try { localStorage.removeItem(RASCUNHO); } catch { /* ignora */ } setRascunho(null); }}>Descartar</Btn>
             </div>
           </Alerta>
@@ -122,14 +158,27 @@ export function NovaOS({ u }: { u: Usuario }) {
               <div className="row"><Placa placa={veiculo.placa} grande /><div><b>{veiculo.marca} {veiculo.modelo} {veiculo.ano}</b><div className="small muted">{veiculo.motor} · câmbio {veiculo.cambio} · {fmtKm(veiculo.kmAtual)}</div></div></div>
               <Btn variante="ghost" tamanho="sm" onClick={() => set({ veiculoId: undefined })}>Trocar</Btn>
             </div>
-            <div className="small">Cliente: <b>{cliente?.nome}</b>{cliente?.telefone ? ` · ${cliente.telefone}` : ''}{cliente?.tipo === 'frota' && <> <Badge tom="muted">Frota</Badge></>}</div>
+            <div className="small">Cliente: <b>{cliente?.nome}</b>{cliente?.telefone ? ` · ${cliente.telefone}` : ''}{cliente?.bairro ? ` · ${cliente.bairro}, ${cliente.cidade}` : ''}{cliente?.tipo === 'frota' && <> <Badge tom="muted">Frota</Badge></>}</div>
+            {faltaNoCadastro && (faltaNoCadastro.comoConheceu || faltaNoCadastro.cidade || faltaNoCadastro.bairro) && (
+              <div className="retorno-box" data-completar-cadastro>
+                <div className="small strong" style={{ marginBottom: 6 }}>Complete o cadastro do cliente</div>
+                <div className="grid k2">{camposCadastro(faltaNoCadastro)}</div>
+              </div>
+            )}
             {clienteSemTel && (
               <Field rotulo="Telefone do cliente" obrigatorio htmlFor="cli-tel-existente" dica="Este cliente está sem telefone no cadastro." erro={tentou && !telefoneValido(f.telExistente) ? 'Informe o telefone com DDD' : null}>
                 <input id="cli-tel-existente" className="input" inputMode="tel" value={f.telExistente || ''} onChange={e => set({ telExistente: fmtTelefone(e.target.value) })} placeholder="(41) 99999-9999" />
               </Field>
             )}
             {ultimas.length > 0 && <div className="small muted">Últimas visitas: {ultimas.map(o => `${fmtData(o.concluidaEm)} (${fmtKm(o.km)})`).join(' · ')} · <a href={`#/veiculos/${veiculo.id}`}>ver histórico</a></div>}
-            {recomendacoesAbertas.length > 0 && <Alerta tipo="info"><b>{recomendacoesAbertas.length} recomendação(ões) da visita anterior para avaliar:</b> {recomendacoesAbertas.map(o => o.recomendacao).join('; ')}</Alerta>}
+            {recsAbertas.length > 0 && (
+              <Alerta tipo="warn">
+                <b>Recomendado nas visitas anteriores e ainda não feito — ofereça de novo:</b>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18 }} data-recs-abertas>
+                  {recsAbertas.map(r => <li key={r.m.id}><b>{r.m.descricao}</b> · {RECOMENDACAO[r.estado].interno} · OS #{r.osNumero} ({fmtData(r.m.registradoEm)}){r.situacao && RESPOSTA_CLIENTE[r.situacao] ? ` · ${RESPOSTA_CLIENTE[r.situacao]}` : ''}</li>)}
+                </ul>
+              </Alerta>
+            )}
             {osAnteriores.length > 0 && (
               <div className="retorno-box">
                 <label className="check"><input id="eh-retorno" type="checkbox" checked={!!f.retorno} onChange={e => set({ retorno: e.target.checked, retornoDeOsId: e.target.checked ? osAnteriores[0].id : undefined })} />
@@ -206,6 +255,7 @@ export function NovaOS({ u }: { u: Usuario }) {
               <Field rotulo="Telefone" obrigatorio htmlFor="cli-tel" erro={tentou && !telefoneValido(f.clienteTel) ? 'Informe o telefone com DDD' : null}>
                 <input id="cli-tel" className="input" inputMode="tel" value={f.clienteTel} onChange={e => set({ clienteTel: fmtTelefone(e.target.value) })} placeholder="(41) 99999-9999" />
               </Field>
+              {camposCadastro({ comoConheceu: true, cidade: true, bairro: true })}
             </div>
             {placaJaExiste && <div style={{ marginTop: 10 }}><Alerta tipo="info">Esta placa já está cadastrada. <Btn variante="ghost" tamanho="sm" onClick={() => set({ novo: false, veiculoId: placaJaExiste.id })}>Usar o cadastro existente</Btn></Alerta></div>}
             <div style={{ marginTop: 10 }}><Btn variante="ghost" tamanho="sm" onClick={() => set({ novo: false })}>‹ Voltar para a busca</Btn></div>
@@ -258,6 +308,9 @@ export function NovaOS({ u }: { u: Usuario }) {
               <input id="valor" className="input" inputMode="decimal" value={f.valor} onChange={e => set({ valor: e.target.value.replace(/[^\d,.]/g, '') })} placeholder="0,00" />
             </Field>
           )}
+          <Field rotulo="Nº do pedido no Olist" htmlFor="pedido-olist" dica="Se ainda não tiver, dá para informar depois na OS.">
+            <input id="pedido-olist" className="input" inputMode="numeric" value={f.pedidoOlist || ''} onChange={e => set({ pedidoOlist: e.target.value.replace(/[^\w.\-/]/g, '').slice(0, 30) })} placeholder="Ex.: 104523" />
+          </Field>
           <Field rotulo="Vendedor" obrigatorio htmlFor="vendedor">
             <select id="vendedor" className="input" value={f.vendedorId} onChange={e => set({ vendedorId: e.target.value })}>
               <option value="">Selecione</option>

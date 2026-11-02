@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { ir } from '../app/nav';
-import { adicionarEvidencia, concluirChecklist, enviarCorrecao, registrarItemChecklist, removerEvidencia, solicitarExcecao } from '../data/api';
+import { adicionarEvidencia, concluirChecklist, enviarCorrecao, recomendacoesAbertas, registrarItemChecklist, removerEvidencia, solicitarExcecao } from '../data/api';
 import { ESTADOS, ESTADOS_ORDEM, GRUPOS } from '../domain/catalogo';
 import { fotosAtivasDoItem, pendenciasParaConcluir, progresso, validarItem, type DadosItem } from '../domain/checklist';
 import type { Checklist as TChecklist, DB, EstadoItem, ItemInspecaoDef, Usuario } from '../domain/types';
 import { fmtData, fmtDataHora, fmtKm, primeiroNome } from '../domain/util';
-import { ORIGEM_LABEL } from '../domain/catalogo';
+import { ORIGEM_LABEL, RECOMENDACAO, RESPOSTA_CLIENTE } from '../domain/catalogo';
 import { textoPrevisto } from '../domain/manutencao';
 import { Alerta, Badge, Btn, Empty, Field, Placa, Progress, SaveIndicator, Segmented, Sheet, useAcao, useDB, type SaveState } from '../ui/components';
 import { PhotoCapture } from '../ui/PhotoCapture';
@@ -196,12 +196,14 @@ function ItemLinha(p: { db: DB; c: TChecklist; def: ItemInspecaoDef; aberto: boo
   const [montar, setMontar] = useState(p.aberto);
   useEffect(() => { if (p.aberto) setMontar(true); }, [p.aberto]);
   const fotos = fotosAtivasDoItem(it, p.db.evidencias);
+  const anterior = recAnterior(p.db, p.c, p.def.id);
   const cls = ['ck-item', it.estado === 'nao_verificado' ? 'pend' : '', p.destaque ? 'hl' : '', p.emCorrecao ? 'corr' : ''].join(' ');
   return (
     <div className={cls} id={`item-${p.def.id}`} data-item={p.def.id}>
       <button className="ck-head" onClick={p.onToggle} aria-expanded={p.aberto}>
         <span className="nm">{p.def.nome}<small>{it.estado !== 'nao_verificado' ? `${fotos ? `${fotos} foto(s) · ` : ''}${it.registradoEm ? `registrado ${fmtDataHora(it.registradoEm).slice(-5)}` : ''}` : p.def.fotoObrigatoriaEm.length ? 'Foto obrigatória em ' + p.def.fotoObrigatoriaEm.map(e => ESTADOS[e].curto).join(' / ') : 'Sem foto obrigatória'}</small></span>
         {p.emCorrecao && <Badge tom="atencao">Corrigir</Badge>}
+        {anterior && it.estado === 'nao_verificado' && <Badge tom={RECOMENDACAO[anterior.estado].tom}>Recomendado antes</Badge>}
         <EstadoBadge estado={it.estado} />
         <span className="chev" aria-hidden>{p.aberto ? '⌃' : '⌄'}</span>
       </button>
@@ -251,6 +253,7 @@ function ItemEditor({ db, c, def, u, editavel, emCorrecao, onSalvo }: { db: DB; 
     <div>
       <div className="ck-instr"><b>Como verificar:</b> {def.instrucao}</div>
       <ReferenciaManutencao db={db} c={c} def={def} />
+      <RecomendacaoAnterior db={db} c={c} def={def} />
       <div className="estados" role="radiogroup" aria-label={`Condição de ${def.nome}`}>
         {ESTADOS_ORDEM.filter(e => def.estadosPermitidos.includes(e)).map(e => (
           <button key={e} role="radio" aria-checked={estado === e} disabled={!editavel} className={`estado-btn ${ESTADOS[e].tom} ${estado === e ? 'on' : ''}`} onClick={() => escolher(e)} data-estado={e}>
@@ -313,6 +316,22 @@ function ItemEditor({ db, c, def, u, editavel, emCorrecao, onSalvo }: { db: DB; 
         <PhotoCapture itemId={def.id} itemNome={def.nome} ocupado={fotoAcao.ocupado} onClose={() => setCamera(false)}
           onConfirmar={async f => { if (await fotoAcao.executar(() => adicionarEvidencia(u, c.id, def.id, f), 'Foto salva no item.')) setCamera(false); }} />
       )}
+    </div>
+  );
+}
+
+/** Recomendação deste item ainda em aberto, de uma visita anterior. */
+const recAnterior = (db: DB, c: TChecklist, defId: string) =>
+  recomendacoesAbertas(db, c.veiculoId).find(r => r.m.itemDefId === defId && r.m.osOrigemId !== c.osId);
+
+/** O mecânico vê que o item já estava ruim e o que o cliente respondeu — e confere se piorou. */
+function RecomendacaoAnterior({ db, c, def }: { db: DB; c: TChecklist; def: ItemInspecaoDef }) {
+  const r = recAnterior(db, c, def.id);
+  if (!r) return null;
+  return (
+    <div className="ck-instr" style={{ background: 'var(--warn-50)' }} data-rec-anterior>
+      <b>Na OS #{r.osNumero} ({fmtData(r.m.registradoEm)}):</b> {RECOMENDACAO[r.estado].interno} — {r.m.descricao}.
+      {r.situacao && RESPOSTA_CLIENTE[r.situacao] ? ` ${RESPOSTA_CLIENTE[r.situacao]}.` : ''} Confira se piorou e registre a condição de hoje.
     </div>
   );
 }

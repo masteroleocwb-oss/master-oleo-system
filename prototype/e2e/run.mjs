@@ -74,7 +74,7 @@ async function tocar(sel) {
 }
 const semSheet = () => page.waitForFunction(() => !document.querySelector('.sheet'), { timeout: 5000 });
 async function entrar(id) { await ir('/login'); await page.waitForSelector(`[data-user="${id}"]`); await tocar(`[data-user="${id}"]`); await esperar(200); }
-const db = () => page.evaluate(() => JSON.parse(localStorage.getItem('mo-proto:db:v2')));
+const db = () => page.evaluate(() => JSON.parse(localStorage.getItem('mo-proto:db:v3')));
 const foto = nome => page.screenshot({ path: join(OUT, `${nome}.png`) });
 const PRIMEIRO = { André: 'u_m1', Rafael: 'u_m2', Diego: 'u_m3', Eduardo: 'u_m4', Marcos: 'u_m5' };
 
@@ -124,6 +124,9 @@ await fluxo('Fluxo 1 — OS completa (abrir → checklist → evidência → fin
   await preencher('#motor', '1.3'); await preencher('#cli-nome', 'Cliente Teste Automatizado'); await preencher('#valor', '350');
   await clicar('Salvar e colocar na fila');
   await aguardarTexto('Informe o telefone com DDD');
+  for (const t of ['Informe como o cliente conheceu a Master Óleo.', 'Informe a cidade do cliente.', 'Informe o bairro do cliente.']) await aguardarTexto(t);
+  await preencher('#cli-como', 'Instagram'); await preencher('#cli-cidade', 'Curitiba'); await preencher('#cli-bairro', 'Água Verde');
+  await preencher('#pedido-olist', '104523');
   await preencher('#cli-tel', '41900000001');
   if ((await page.$eval('#cli-tel', e => e.value)) !== '(41) 90000-0001') throw new Error('Máscara do telefone não aplicada');
   await clicar('Salvar e colocar na fila');
@@ -131,6 +134,10 @@ await fluxo('Fluxo 1 — OS completa (abrir → checklist → evidência → fin
   const d = await db();
   const os = d.os.find(o => d.veiculos.find(v => v.id === o.veiculoId)?.placa === ctx.placa);
   ctx.osId = os.id; ctx.numero = os.numero;
+  if (os.pedidoOlist !== '104523') throw new Error('Pedido do Olist não gravado');
+  const cli = d.clientes.find(c => c.id === os.clienteId);
+  if (cli.comoConheceu !== 'Instagram' || cli.cidade !== 'Curitiba' || cli.bairro !== 'Água Verde') throw new Error('Cadastro do cliente incompleto: ' + JSON.stringify(cli));
+  await aguardarTexto('104523');
   await foto('f1-os-criada');
 
   // A OS nova é a última da fila: Rafael (livre) assume fora da vez, informando o motivo.
@@ -193,6 +200,8 @@ await fluxo('Fluxo 3 — Evidência obrigatória bloqueia até anexar a foto', a
 
 await fluxo('Fluxo 5 — Próxima manutenção por regra validada (parte 1: registro)', async () => {
   await preencher('#km', '45000');
+  const travada = await page.evaluate(() => [...document.querySelectorAll('label.check')].find(l => l.innerText.includes('Trocar pastilhas dianteiras'))?.querySelector('input')?.disabled);
+  if (!travada) throw new Error('Recomendação do item prioritário deveria ficar sempre marcada');
   if (await page.$('[data-adicional="flush"]')) throw new Error('Flush de câmbio oferecido para carro manual');
   await clicar('Finalizar OS');
   await aguardarTexto('Escolha o intervalo conforme o óleo aplicado');
@@ -221,6 +230,7 @@ await fluxo('Fluxo 5 — Próxima manutenção por regra validada (parte 1: regi
   if (!osF.ofertas?.some(o => o.key === 'aditivo' && o.resultado === 'recusado')) throw new Error('Oferta recusada não registrada');
   if (osF.servicos.find(s => s.key === 'oleoMotor')?.intervaloKm !== 10000) throw new Error('Intervalo do óleo não gravado no serviço');
   if (osF.servicos.find(s => s.key === 'cambioManual')?.origem !== 'adicional') throw new Error('Serviço lançado pelo mecânico não registrado');
+  if (d.manutencoes.find(x => x.osOrigemId === ctx.osId && x.itemDefId === 'pastilhas')?.estadoItem !== 'prioritario') throw new Error('Recomendação sem o estado do item');
   if (!d.manutencoes.some(x => x.osOrigemId === ctx.osId && x.itemDefId === 'pastilhas' && x.origem === 'profissional')) throw new Error('Recomendação do item prioritário não virou acompanhamento');
 });
 
@@ -236,7 +246,9 @@ await fluxo('Fluxo 6 — Link do cliente: gerar, ver só o permitido, revogar', 
   await ir(`/r/${ctx.token}`);
   await aguardarTexto('Nossas recomendações');
   const t = await texto();
-  for (const deve of ['Pastilhas de freio', 'Trocar pastilhas dianteiras', 'Óleo de motor', 'Próximas manutenções', '55.000 km', 'Olá, Cliente']) if (!t.includes(deve)) throw new Error(`Relatório sem "${deve}"`);
+  for (const deve of ['Pastilhas de freio', 'Trocar pastilhas dianteiras', 'Óleo de motor', 'Próximas manutenções', '55.000 km', 'Olá, Cliente', 'Recomendamos fazer o quanto antes']) if (!t.includes(deve)) throw new Error(`Relatório sem "${deve}"`);
+  if (!(await page.$('[data-proxima="prioritario"]'))) throw new Error('Pastilhas não aparecem nas próximas manutenções do relatório');
+  await page.$eval('[data-proxima="prioritario"]', e => e.scrollIntoView({ block: 'center' })); await foto('f6-relatorio-proximas');
   for (const nao of ['90000-0001', 'Automatizado', 'R$', 'Interna', 'Score', 'Vendedor']) if (t.includes(nao)) throw new Error(`Relatório expõe "${nao}"`);
   if (!(await page.$('.rel img[src^="data:image"]'))) throw new Error('Foto não aparece no relatório');
   await foto('f6-relatorio');
@@ -268,6 +280,8 @@ await fluxo('Fluxo 4 — Segunda OS do mesmo veículo; histórico mostra as duas
   await preencher('#busca-veic', ctx.placa);
   await clicar('Argo', { seletor: 'button.li' });
   await aguardarTexto('Últimas visitas');
+  await aguardarTexto('Recomendado nas visitas anteriores e ainda não feito');
+  await aguardarTexto('Trocar pastilhas dianteiras');
   await preencher('#valor', '280');
   await clicar('Salvar e colocar na fila');
   await aguardarTexto('criada e colocada na fila');
@@ -288,6 +302,9 @@ await fluxo('Fluxo 4 — Segunda OS do mesmo veículo; histórico mostra as duas
   await entrar(mec);
   await ir(`/os/${os2.id}/checklist`);
   await aguardarTexto('Checklist técnico');
+  if (!(await page.$eval('[data-item="pastilhas"] .ck-head', e => e.textContent.includes('Recomendado antes')))) throw new Error('Checklist não avisa a recomendação anterior');
+  await tocar('[data-item="pastilhas"] .ck-head');
+  await page.waitForSelector('[data-item="pastilhas"] [data-rec-anterior]', { visible: true });
   await checklistTudoOk();
   await clicar('Concluir checklist');
   await aguardarTexto('Execução e finalização');
@@ -306,6 +323,7 @@ await fluxo('Fluxo 4 — Segunda OS do mesmo veículo; histórico mostra as duas
   await aguardarTexto('Linha do tempo');
   const t = await texto();
   for (const n of [ctx.numero, os2.numero]) if (!t.includes(`OS #${n}`)) throw new Error(`Linha do tempo sem OS #${n}`);
+  if (await page.$('[data-rec="pastilhas"]')) throw new Error('Pastilhas verificadas OK na 2ª visita deveriam sair das recomendações');
   await foto('f4-historico');
 });
 
@@ -340,7 +358,7 @@ await fluxo('Fluxo 8 — Meta: criar, alterar vigência, versão anterior preser
   await clicar('Criar meta');
   await preencher('#nm-nome', 'Meta automatizada'); await preencher('#nm-alvo', '10'); await preencher('#nm-just', 'Teste');
   await clicar('Criar rascunho', { escopo: '.sheet' });
-  await page.waitForFunction(() => JSON.parse(localStorage.getItem('mo-proto:db:v2')).metas.some(m => m.nome === 'Meta automatizada'), { timeout: 8000 });
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('mo-proto:db:v3')).metas.some(m => m.nome === 'Meta automatizada'), { timeout: 8000 });
   await semSheet();
   await entrar('u_dir');
   await ir('/metas');
@@ -420,6 +438,26 @@ await fluxo('Formulário incompleto e dados ausentes', async () => {
   await ir('/os/inexistente'); await aguardarTexto('OS não encontrada');
   await ir('/veiculos/inexistente'); await aguardarTexto('Veículo não encontrado');
   await ir('/rota/que/nao/existe'); await aguardarTexto('Página não encontrada');
+});
+
+await fluxo('Cliente antigo sem cadastro completo: Nova OS pede como conheceu, cidade e bairro', async () => {
+  await entrar('u_ven');
+  await ir('/os/nova');
+  await preencher('#busca-veic', 'EXM8L34');
+  await clicar('Sandero', { seletor: 'button.li' });
+  await page.waitForSelector('[data-completar-cadastro]');
+  await preencher('#valor', '199');
+  await clicar('Salvar e colocar na fila');
+  await aguardarTexto('Informe como o cliente conheceu a Master Óleo.');
+  await foto('nova-os-completar-cadastro');
+  await preencher('#cli-como', 'Outro');
+  await page.waitForSelector('#cli-como-outro');
+  await preencher('#cli-como-outro', 'Rádio (teste)'); await preencher('#cli-cidade', 'Colombo'); await preencher('#cli-bairro', 'Centro');
+  await clicar('Salvar e colocar na fila');
+  await aguardarTexto('criada e colocada na fila');
+  const c = (await db()).clientes.find(x => x.id === 'c_legado');
+  if (c.comoConheceuDetalhe !== 'Rádio (teste)' || c.cidade !== 'Colombo') throw new Error('Cadastro do cliente antigo não completado');
+  await page.evaluate(() => localStorage.removeItem('mo-proto:rascunho-nova-os'));
 });
 
 await fluxo('Rascunho da Nova OS é recuperado após recarregar', async () => {

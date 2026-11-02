@@ -49,8 +49,8 @@ export function Operacao({ u }: { u: Usuario }) {
       <div className="page-head">
         <div><h1>Operação de hoje</h1><div className="sub">{hoje}</div></div>
         <form className="row" onSubmit={e => { e.preventDefault(); ir(`/veiculos?q=${encodeURIComponent(busca)}`); }} role="search">
-          <label className="sr-only" htmlFor="busca-op">Buscar placa, cliente ou OS</label>
-          <input id="busca-op" className="input" style={{ width: 230 }} placeholder="Placa, cliente ou nº da OS" value={busca} onChange={e => setBusca(e.target.value)} />
+          <label className="sr-only" htmlFor="busca-op">Buscar placa, cliente, OS ou pedido do Olist</label>
+          <input id="busca-op" className="input" style={{ width: 230 }} placeholder="Placa, cliente, OS ou pedido" value={busca} onChange={e => setBusca(e.target.value)} />
           <Btn variante="sec" type="submit">Buscar</Btn>
         </form>
       </div>

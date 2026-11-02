@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ir } from '../app/nav';
 import { finalizarOS, pendenciasFinalizacao, type AdicionalInput, type FinalizarInput, type ProximaInput } from '../data/api';
-import { ADICIONAIS, ESTADOS, ORIGEM_LABEL, SERVICO_KEYS, SERVICOS, servicoAplicavel } from '../domain/catalogo';
+import { ADICIONAIS, ESTADOS, ORIGEM_LABEL, RECOMENDACAO, RESPOSTA_CLIENTE, SERVICO_KEYS, SERVICOS, servicoAplicavel } from '../domain/catalogo';
 import { sugerirProxima, textoPrevisto } from '../domain/manutencao';
 import type { ServicoKey, Usuario } from '../domain/types';
 import { addMeses, agoraISO, fmtBRL, fmtData, fmtKm } from '../domain/util';
@@ -43,18 +43,20 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
         fonte: sug.regra.fonte, kmPrevisto: sug.kmPrevisto, dataPrevista: sug.dataPrevista, incluir: true, editavel: false, motivo: sug.motivo,
       });
     });
-    // Recomendações do checklist que o cliente não fez agora: viram acompanhamento recomendado pelo profissional.
+    // Itens com desgaste, em mau estado ou a avaliar que o cliente não fez agora: continuam recomendados
+    // nas próximas manutenções (sempre registrados — o mecânico não pode tirar).
     c?.defs.forEach(d => {
       const it = c.itens[d.id];
-      const aceita = db.oportunidades.find(o => o.osId === os.id && o.itemDefId === d.id)?.situacao === 'aceita';
-      if (aceita || !(it.estado === 'atencao' || it.estado === 'prioritario' || it.estado === 'pendente_avaliacao')) return;
+      const sit = db.oportunidades.find(o => o.osId === os.id && o.itemDefId === d.id)?.situacao;
+      if (sit === 'aceita' || !(it.estado === 'atencao' || it.estado === 'prioritario' || it.estado === 'pendente_avaliacao')) return;
+      if (d.servicoRelacionado && os.servicos.some((sv, i) => sv.key === d.servicoRelacionado && exec[`${sv.key}:${i}`]?.executado)) return; // feito nesta OS
       linhas.push({
-        chave: `i:${d.id}`, itemDefId: d.id, descricao: it.estado === 'pendente_avaliacao' ? `Avaliar ${d.nome.toLowerCase()}` : it.recomendacao || `Revisar ${d.nome.toLowerCase()}`,
+        chave: `i:${d.id}`, itemDefId: d.id, estadoItem: it.estado, descricao: it.estado === 'pendente_avaliacao' ? `Avaliar ${d.nome.toLowerCase()}` : it.recomendacao || `Revisar ${d.nome.toLowerCase()}`,
         origem: 'profissional', fonte: `Checklist da OS #${os.numero}`, incluir: true, editavel: true,
-        motivo: it.estado === 'prioritario' ? 'Item prioritário não realizado nesta visita' : 'Recomendação do mecânico',
+        motivo: [RECOMENDACAO[it.estado].interno, sit && RESPOSTA_CLIENTE[sit]].filter(Boolean).join(' · '),
       });
     });
-    return linhas.map(l => ({ ...l, ...extras[l.chave] }));
+    return linhas.map(l => ({ ...l, ...extras[l.chave], ...(l.estadoItem ? { incluir: true } : {}) }));
   }, [os, v, c, db, exec, kmNum, extras, intervaloOleo]);
 
   if (!os || !v) return <div className="card"><Empty titulo="OS não encontrada." /></div>;
@@ -176,16 +178,18 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
       </Card>
 
       <Card titulo="Próximas manutenções">
-        <p className="small muted" style={{ marginBottom: 10 }}>O sistema só calcula km/data quando há regra validada. Sem regra validada, registra como “acompanhar”. Nenhum intervalo é inventado.</p>
+        <p className="small muted" style={{ marginBottom: 10 }}>Itens do checklist com desgaste, em mau estado ou a avaliar entram sempre, mesmo que o cliente não faça agora: ficam recomendados no histórico do carro e no relatório até serem resolvidos. Km/data só com regra validada; nenhum intervalo é inventado.</p>
         {proximas.length === 0 && <p className="small muted">Nenhuma sugestão para os serviços desta OS.</p>}
         {proximas.map(p => (
           <div key={p.chave} style={{ padding: '10px 0', borderBottom: '1px solid var(--line)' }}>
             <label className="check" style={{ padding: 0 }}>
-              <input type="checkbox" checked={p.incluir} onChange={e => setExtras({ ...extras, [p.chave]: { ...extras[p.chave], incluir: e.target.checked } })} />
+              <input type="checkbox" checked={p.incluir} disabled={!!p.estadoItem} title={p.estadoItem ? 'Recomendação do checklist: fica registrada até ser resolvida' : undefined}
+                onChange={e => setExtras({ ...extras, [p.chave]: { ...extras[p.chave], incluir: e.target.checked } })} />
               <span className="grow">
                 <b>{p.descricao}</b>
                 <span className="row" style={{ marginTop: 4 }}>
-                  <Badge tom={p.origem === 'nao_confirmada' ? 'muted' : p.origem === 'profissional' ? 'info' : 'navy'}>{ORIGEM_LABEL[p.origem].rotulo}</Badge>
+                  {p.estadoItem ? <Badge tom={RECOMENDACAO[p.estadoItem].tom}>{ESTADOS[p.estadoItem].curto}</Badge>
+                    : <Badge tom={p.origem === 'nao_confirmada' ? 'muted' : p.origem === 'profissional' ? 'info' : 'navy'}>{ORIGEM_LABEL[p.origem].rotulo}</Badge>}
                   <span className="small muted">{p.motivo}</span>
                 </span>
                 {!p.editavel && (p.kmPrevisto || p.dataPrevista) && <span className="small" style={{ display: 'block', marginTop: 4 }}>Previsto: {textoPrevisto(p.kmPrevisto, p.dataPrevista, fmtKm, fmtData)}</span>}

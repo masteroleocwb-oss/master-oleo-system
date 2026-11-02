@@ -6,7 +6,7 @@ import { fotosAtivasDoItem, novoChecklist, pendenciasParaConcluir, registrarItem
 import { aprovarVersao, descartarRascunho, proporVersao, transicaoOcorrencia, type AcaoOcorrencia } from '../domain/gestao';
 import { exigir, ErroPermissao, pode } from '../domain/permissions';
 import type {
-  AtendimentoRetorno, Cambio, Checklist, Cliente, DB, EstadoItem, Evento, ItemInspecaoDef, Meta, Ocorrencia, OrdemServico, OrigemIntervalo,
+  AtendimentoRetorno, Cambio, Checklist, Cliente, DB, EstadoItem, EstadoRecomendado, Evento, ItemInspecaoDef, ManutencaoPrevista, Meta, Ocorrencia, OrdemServico, OrigemIntervalo,
   Pausa, Role, ServicoKey, ServicoOS, SituacaoOportunidade, Usuario, Veiculo,
 } from '../domain/types';
 import { addDias, agoraISO, diaKey, fmtPlaca, hojeKey, novoId, novoToken, normalizarPlaca, placaValida, primeiroNome, telefoneValido } from '../domain/util';
@@ -48,9 +48,10 @@ export const buscarVeiculosEClientes = (u: Usuario, termo: string) => {
       const porNome = !!c && c.nome.toLowerCase().includes(t);
       const porTel = verContato && !!c?.telefone && t.replace(/\D/g, '').length >= 4 && c.telefone.replace(/\D/g, '').includes(t.replace(/\D/g, ''));
       const porOS = !Number.isNaN(num) && num > 0 && d.os.some(o => o.veiculoId === v.id && o.numero === num);
-      if (!(porPlaca || porNome || porTel || porOS)) return null;
+      const pedido = t.length >= 3 ? d.os.find(o => o.veiculoId === v.id && o.pedidoOlist?.toLowerCase() === t) : undefined;
+      if (!(porPlaca || porNome || porTel || porOS || pedido)) return null;
       const visitas = d.os.filter(o => o.veiculoId === v.id && o.status === 'concluido').length;
-      return { veiculo: v, cliente: c ? { id: c.id, nome: c.nome, telefone: verContato ? c.telefone : undefined } : undefined, visitas, motivo: porOS ? `OS #${num}` : porPlaca ? 'placa' : porNome ? 'nome' : 'telefone' };
+      return { veiculo: v, cliente: c ? { id: c.id, nome: c.nome, telefone: verContato ? c.telefone : undefined } : undefined, visitas, motivo: pedido ? `pedido Olist ${pedido.pedidoOlist} (OS #${pedido.numero})` : porOS ? `OS #${num}` : porPlaca ? 'placa' : porNome ? 'nome' : 'telefone' };
     })
     .filter(Boolean)
     .slice(0, 12) as { veiculo: Veiculo; cliente?: { id: string; nome: string; telefone?: string }; visitas: number; motivo: string }[];
@@ -58,13 +59,18 @@ export const buscarVeiculosEClientes = (u: Usuario, termo: string) => {
 
 // ───────────────────────── Abertura ─────────────────────────
 
+/** Dados do cliente exigidos na abertura de OS. */
+export interface CadastroCliente { telefone: string; comoConheceu: string; comoConheceuDetalhe?: string; cidade: string; bairro: string }
+
 export interface NovaOSInput {
   veiculoId?: string;
   novoVeiculo?: { placa: string; marca: string; modelo: string; ano: number; motor: string; cambio: Cambio; combustivel: Veiculo['combustivel'] };
   clienteId?: string;
-  novoCliente?: { nome: string; telefone: string };
-  /** Cliente já cadastrado sem telefone: o telefone passa a ser exigido na abertura. */
-  telefoneCliente?: string;
+  novoCliente?: { nome: string } & CadastroCliente;
+  /** Cliente já cadastrado: completa (ou corrige) telefone, como conheceu, cidade e bairro. */
+  completarCliente?: Partial<CadastroCliente>;
+  /** Número do pedido do cliente no Olist (opcional; pode ser informado depois). */
+  pedidoOlist?: string;
   /** OS de retorno: liga à OS original e registra o problema relatado pelo cliente. */
   retornoDeOsId?: string;
   problemaRelatado?: string;
@@ -76,16 +82,35 @@ export interface NovaOSInput {
   naoFazerTesteCambio?: boolean;
 }
 
-/** `telefoneAtual` = telefone já cadastrado do cliente do veículo escolhido (se houver). */
-export const validarNovaOS = (i: NovaOSInput, telefoneAtual?: string): string[] => {
+const preenchido = (x?: string) => (x?.trim() ? x.trim() : undefined);
+
+/** Junta o cadastro atual do cliente com o que foi digitado na abertura (o digitado vence). */
+export const cadastroFinal = (atual: Partial<Cliente> | undefined, novo: Partial<CadastroCliente> | undefined): Partial<CadastroCliente> => ({
+  telefone: preenchido(novo?.telefone) ?? atual?.telefone,
+  comoConheceu: preenchido(novo?.comoConheceu) ?? atual?.comoConheceu,
+  comoConheceuDetalhe: preenchido(novo?.comoConheceuDetalhe) ?? atual?.comoConheceuDetalhe,
+  cidade: preenchido(novo?.cidade) ?? atual?.cidade,
+  bairro: preenchido(novo?.bairro) ?? atual?.bairro,
+});
+
+export const faltasCadastroCliente = (c: Partial<CadastroCliente>): string[] => [
+  ...(!telefoneValido(c.telefone) ? ['Informe o telefone do cliente com DDD.'] : []),
+  ...(!c.comoConheceu ? ['Informe como o cliente conheceu a Master Óleo.'] : c.comoConheceu === 'Outro' && !c.comoConheceuDetalhe?.trim() ? ['Como conheceu: descreva em "Outro".'] : []),
+  ...(!c.cidade?.trim() ? ['Informe a cidade do cliente.'] : []),
+  ...(!c.bairro?.trim() ? ['Informe o bairro do cliente.'] : []),
+];
+
+/** `clienteAtual` = cadastro do cliente do veículo escolhido (se houver). */
+export const validarNovaOS = (i: NovaOSInput, clienteAtual?: Partial<Cliente>): string[] => {
   const e: string[] = [];
   const retorno = !!i.retornoDeOsId;
   if (!i.veiculoId && !i.novoVeiculo) e.push('Escolha um veículo ou cadastre um novo.');
   if (i.novoVeiculo && !placaValida(i.novoVeiculo.placa)) e.push('Placa inválida (padrão antigo ou Mercosul).');
   if (i.novoVeiculo && (!i.novoVeiculo.marca || !i.novoVeiculo.modelo)) e.push('Informe marca e modelo.');
   if (!i.veiculoId && !i.clienteId && !i.novoCliente?.nome?.trim()) e.push('Informe o cliente.');
-  if (i.novoVeiculo && !telefoneValido(i.novoCliente?.telefone)) e.push('Informe o telefone do cliente com DDD.');
-  if (i.veiculoId && !telefoneValido(telefoneAtual) && !telefoneValido(i.telefoneCliente)) e.push('Cliente sem telefone: informe o telefone com DDD.');
+  if (i.novoVeiculo && !i.clienteId) e.push(...faltasCadastroCliente(cadastroFinal(undefined, i.novoCliente)));
+  if (i.veiculoId) e.push(...faltasCadastroCliente(cadastroFinal(clienteAtual, i.completarCliente)));
+  if (i.pedidoOlist && !/^[\w.\-/]{1,30}$/.test(i.pedidoOlist.trim())) e.push('Número do pedido do Olist inválido.');
   if (!i.vendedorId) e.push('Selecione o vendedor.');
   if (retorno && !i.problemaRelatado?.trim()) e.push('Descreva o problema que o cliente relatou.');
   if (!retorno && !i.servicos.length) e.push('Selecione pelo menos um serviço.');
@@ -97,17 +122,22 @@ export async function abrirOS(u: Usuario, i: NovaOSInput) {
   exigir(u, 'os.abrir');
   const dAtual = getDB();
   const vAtual = i.veiculoId ? dAtual.veiculos.find(v => v.id === i.veiculoId) : undefined;
-  const telAtual = vAtual ? dAtual.clientes.find(c => c.id === vAtual.clienteId)?.telefone : undefined;
-  const erros = validarNovaOS(i, telAtual);
+  const cliAtual = vAtual ? dAtual.clientes.find(c => c.id === vAtual.clienteId) : undefined;
+  const erros = validarNovaOS(i, cliAtual);
   if (erros.length) throw new ErroValidacao(erros.join(' '));
   return transacao(d => {
     let veiculo: Veiculo;
     if (i.veiculoId) {
       veiculo = veicPorId(d, i.veiculoId);
       const cli = d.clientes.find(c => c.id === veiculo.clienteId);
-      if (cli && !telefoneValido(cli.telefone) && i.telefoneCliente) {
-        cli.telefone = i.telefoneCliente.trim();
-        evento(d, u.id, 'cliente.telefone', 'cliente', cli.id, `Telefone de ${cli.nome} cadastrado`);
+      if (cli) {
+        const final = cadastroFinal(cli, i.completarCliente);
+        const campos = (Object.keys(final) as (keyof CadastroCliente)[]).filter(k => final[k] !== cli[k]);
+        if (campos.length) {
+          const antes = Object.fromEntries(campos.map(k => [k, cli[k]]));
+          Object.assign(cli, final);
+          evento(d, u.id, 'cliente.atualizado', 'cliente', cli.id, `Cadastro de ${cli.nome} atualizado na abertura da OS`, { antes, depois: Object.fromEntries(campos.map(k => [k, final[k]])) });
+        }
       }
     }
     else {
@@ -118,7 +148,7 @@ export async function abrirOS(u: Usuario, i: NovaOSInput) {
       else {
         let clienteId = i.clienteId;
         if (!clienteId) {
-          const c: Cliente = { id: novoId('c'), nome: i.novoCliente!.nome.trim(), telefone: i.novoCliente!.telefone.trim(), tipo: 'particular' };
+          const c: Cliente = { id: novoId('c'), nome: i.novoCliente!.nome.trim(), tipo: 'particular', ...cadastroFinal(undefined, i.novoCliente) };
           d.clientes.push(c);
           clienteId = c.id;
           evento(d, u.id, 'cliente.criado', 'cliente', c.id, `Cliente ${c.nome} cadastrado`);
@@ -137,7 +167,7 @@ export async function abrirOS(u: Usuario, i: NovaOSInput) {
     const numero = Math.max(d.contadorOS, ...d.os.map(o => o.numero)) + 1;
     d.contadorOS = numero;
     const os: OrdemServico = {
-      id: novoId('os'), numero, status: 'aguardando', veiculoId: veiculo.id, clienteId: veiculo.clienteId, vendedorId: i.vendedorId,
+      id: novoId('os'), numero, status: 'aguardando', veiculoId: veiculo.id, clienteId: veiculo.clienteId, vendedorId: i.vendedorId, pedidoOlist: preenchido(i.pedidoOlist),
       abertaEm: i.abertaEm || agoraISO(), servicos: i.servicos.map(s => ({ ...s, origem: 'balcao', executado: false })), valorInicial: i.valorInicial,
       naoFazerTesteFreio: i.naoFazerTesteFreio, naoFazerTesteCambio: i.naoFazerTesteCambio, criadaPor: u.id,
       ...(origem ? { retornoDeOsId: origem.id, retorno: { problemaRelatado: i.problemaRelatado!.trim() } } : {}),
@@ -487,6 +517,7 @@ export interface ProximaInput {
   fonte: string;
   kmPrevisto?: number;
   dataPrevista?: string;
+  estadoItem?: EstadoRecomendado;
 }
 
 export interface AdicionalInput { key: ServicoKey; marca?: string; quantidade?: string; valor?: number }
@@ -552,14 +583,37 @@ export async function finalizarOS(u: Usuario, osId: string, f: FinalizarInput) {
     const kmAntes = v.kmAtual;
     v.kmAtual = f.km!;
     v.kmAtualEm = agora;
-    for (const p of f.proximas) {
+    // Recomendações antigas do checklist resolvidas nesta visita: item agora OK, ou serviço aceito e executado.
+    const ckAtual = d.checklists.find(c => c.id === os.checklistId);
+    d.manutencoes.filter(m => m.veiculoId === v.id && !m.concluidaPorOsId && m.itemDefId).forEach(m => {
+      const itemOk = ckAtual?.itens[m.itemDefId!]?.estado === 'ok';
+      const servicoDoItem = ckAtual?.defs.find(x => x.id === m.itemDefId)?.servicoRelacionado;
+      const feito = os.servicos.some(s => s.executado && ((s.oportunidadeId && d.oportunidades.find(o => o.id === s.oportunidadeId)?.itemDefId === m.itemDefId) || (servicoDoItem && s.key === servicoDoItem)));
+      if (itemOk || feito) m.concluidaPorOsId = os.id;
+    });
+    // Itens com desgaste, em mau estado ou a avaliar que não foram feitos: sempre viram recomendação,
+    // mesmo que a tela não mande (o cliente pode recusar agora, mas continua recomendado).
+    const proximas = [...f.proximas];
+    ckAtual?.defs.forEach(df => {
+      const it = ckAtual.itens[df.id];
+      if (!(it.estado === 'atencao' || it.estado === 'prioritario' || it.estado === 'pendente_avaliacao')) return;
+      if (d.oportunidades.find(o => o.osId === os.id && o.itemDefId === df.id)?.situacao === 'aceita') return;
+      if (df.servicoRelacionado && os.servicos.some(sv => sv.executado && sv.key === df.servicoRelacionado)) return; // feito nesta OS
+      const ja = proximas.find(p => p.itemDefId === df.id);
+      if (ja) { ja.estadoItem = it.estado; return; }
+      proximas.push({
+        itemDefId: df.id, estadoItem: it.estado, origem: 'profissional', fonte: `Checklist da OS #${os.numero}`,
+        descricao: it.estado === 'pendente_avaliacao' ? `Avaliar ${df.nome.toLowerCase()}` : it.recomendacao || `Revisar ${df.nome.toLowerCase()}`,
+      });
+    });
+    for (const p of proximas) {
       d.manutencoes
         .filter(m => m.veiculoId === v.id && !m.concluidaPorOsId && ((p.servicoKey && m.servicoKey === p.servicoKey) || (p.itemDefId && m.itemDefId === p.itemDefId)))
         .forEach(m => { m.concluidaPorOsId = os.id; });
       d.manutencoes.push({
         id: novoId('mp'), veiculoId: v.id, osOrigemId: os.id, descricao: p.descricao, servicoKey: p.servicoKey, itemDefId: p.itemDefId, regraId: p.regraId,
         origem: p.origem, fonte: p.fonte, ultimaExecucao: p.servicoKey ? { data: agora, km: f.km! } : undefined,
-        kmPrevisto: p.kmPrevisto, dataPrevista: p.dataPrevista, registradoPor: u.id, registradoEm: agora,
+        kmPrevisto: p.kmPrevisto, dataPrevista: p.dataPrevista, registradoPor: u.id, registradoEm: agora, estadoItem: p.estadoItem,
       });
     }
     evento(d, u.id, 'os.concluida', 'os', os.id, `OS #${os.numero} concluída · ${f.km!.toLocaleString('pt-BR')} km`, { antes: { kmVeiculo: kmAntes }, depois: { km: f.km } });
@@ -658,7 +712,7 @@ export interface RelatorioPublico {
   checklistStatus: Checklist['status'] | 'sem_checklist';
   fotos: { url: string; legenda: string; item: string; demo: boolean }[];
   observacao?: string;
-  proximas: { descricao: string; kmPrevisto?: number; dataPrevista?: string; origem: OrigemIntervalo }[];
+  proximas: { descricao: string; kmPrevisto?: number; dataPrevista?: string; origem: OrigemIntervalo; estadoItem?: EstadoRecomendado; clienteAdiou?: boolean; desde?: string }[];
   /** Só em OS de retorno: o problema, o que foi feito e o que foi combinado com o cliente. */
   retorno?: { problema: string; solucao: string; aviso: string; antes: { url: string; legenda: string; demo: boolean }[]; depois: { url: string; legenda: string; demo: boolean }[] };
 }
@@ -680,6 +734,36 @@ export function obterRelatorioPublico(token: string): ResultadoPublico {
     x.eventos.push({ id: novoId('evt'), em: agoraISO(), por: 'cliente (link)', tipo: 'link.acessado', entidade: 'compartilhamento', entidadeId: sh.id, resumo: `Relatório da OS #${os.numero} aberto pelo link` });
   });
   return { estado: 'ok', relatorio: projetarRelatorio(d, os) };
+}
+
+// ───────────────────────── Recomendações em aberto ─────────────────────────
+
+const ORDEM_REC: Record<EstadoRecomendado, number> = { prioritario: 0, atencao: 1, pendente_avaliacao: 2 };
+/** Prioritário primeiro, depois atenção, avaliar depois e, por fim, as manutenções por intervalo. */
+const ordemProxima = (m: ManutencaoPrevista) => (m.estadoItem ? ORDEM_REC[m.estadoItem] : 3);
+
+/** O que o cliente respondeu à recomendação que originou esta manutenção (se veio do checklist). */
+export const situacaoRecomendacao = (d: DB, m: ManutencaoPrevista): SituacaoOportunidade | undefined =>
+  m.itemDefId ? d.oportunidades.find(o => o.osId === m.osOrigemId && o.itemDefId === m.itemDefId)?.situacao : undefined;
+
+export interface RecomendacaoAberta { m: ManutencaoPrevista; estado: EstadoRecomendado; situacao?: SituacaoOportunidade; osNumero?: number }
+
+/** Itens em mau estado / com desgaste / a avaliar que ainda não foram resolvidos no veículo. */
+export const recomendacoesAbertas = (d: DB, veiculoId: string): RecomendacaoAberta[] =>
+  d.manutencoes.filter(m => m.veiculoId === veiculoId && !m.concluidaPorOsId && m.estadoItem)
+    .sort((a, b) => ordemProxima(a) - ordemProxima(b) || b.registradoEm.localeCompare(a.registradoEm))
+    .map(m => ({ m, estado: m.estadoItem!, situacao: situacaoRecomendacao(d, m), osNumero: d.os.find(o => o.id === m.osOrigemId)?.numero }));
+
+export async function definirPedidoOlist(u: Usuario, osId: string, pedido: string) {
+  exigir(u, 'os.abrir');
+  const p = pedido.trim();
+  if (p && !/^[\w.\-/]{1,30}$/.test(p)) throw new ErroValidacao('Número do pedido do Olist inválido.');
+  return transacao(d => {
+    const os = osPorId(d, osId);
+    const antes = os.pedidoOlist;
+    os.pedidoOlist = p || undefined;
+    evento(d, u.id, 'os.pedido_olist', 'os', os.id, p ? `Pedido Olist ${p} informado na OS #${os.numero}` : `Pedido Olist removido da OS #${os.numero}`, { antes, depois: os.pedidoOlist });
+  });
 }
 
 export function projetarRelatorio(d: DB, os: OrdemServico): RelatorioPublico {
@@ -708,7 +792,17 @@ export function projetarRelatorio(d: DB, os: OrdemServico): RelatorioPublico {
     checklistStatus: c?.status || 'sem_checklist',
     fotos,
     observacao: os.obsCliente,
-    proximas: d.manutencoes.filter(m => m.osOrigemId === os.id && !m.concluidaPorOsId).map(m => ({ descricao: m.descricao, kmPrevisto: m.kmPrevisto, dataPrevista: m.dataPrevista, origem: m.origem })),
+    // Desta visita + recomendações de visitas anteriores ainda em aberto (o cliente não fez, mas continua recomendado).
+    proximas: [
+      ...recomendacoesAbertas(d, v.id).filter(r => r.m.osOrigemId !== os.id && r.m.registradoEm <= (os.concluidaEm || os.abertaEm)).map(r => r.m),
+      ...d.manutencoes.filter(m => m.osOrigemId === os.id && !m.concluidaPorOsId),
+    ].sort((a, b) => ordemProxima(a) - ordemProxima(b)).map(m => {
+      const sit = situacaoRecomendacao(d, m);
+      return {
+        descricao: m.descricao, kmPrevisto: m.kmPrevisto, dataPrevista: m.dataPrevista, origem: m.origem, estadoItem: m.estadoItem,
+        clienteAdiou: sit === 'recusada' || sit === 'avaliar_depois', desde: m.osOrigemId !== os.id ? m.registradoEm : undefined,
+      };
+    }),
     // Diagnóstico interno e a classificação "relação com o serviço anterior" não saem para o cliente.
     ...(os.retorno ? { retorno: { problema: os.retorno.problemaRelatado, solucao: os.retorno.solucao || '', aviso: os.retorno.avisoCliente || '', antes: fotoRet('antes'), depois: fotoRet('depois') } } : {}),
   };

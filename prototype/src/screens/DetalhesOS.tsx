@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ir, useRota } from '../app/nav';
-import { cancelarOS, decidirExcecao, definirVisibilidadeFoto, estadoLink, gerarLink, marcarNaoOferecer, nomeDe, projetarRelatorio, registrarCompartilhamento, revogarLink, valoresOS } from '../data/api';
+import { cancelarOS, decidirExcecao, definirPedidoOlist, definirVisibilidadeFoto, estadoLink, gerarLink, marcarNaoOferecer, nomeDe, projetarRelatorio, registrarCompartilhamento, revogarLink, valoresOS } from '../data/api';
 import { ESTADOS, GRUPOS, MOTIVO_PAUSA, SERVICOS } from '../domain/catalogo';
 import { fotosAtivasDoItem, progresso } from '../domain/checklist';
 import { pode } from '../domain/permissions';
@@ -107,6 +107,8 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
             <Card titulo="Dados da OS">
               <dl className="small" style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 12px' }}>
                 <dt className="muted">Cliente</dt><dd style={{ margin: 0 }}>{cli?.nome}{cli?.tipo === 'frota' && ' (frota)'}{pode(u, 'cliente.ver_contato') && cli?.telefone ? ` · ${cli.telefone}` : ''}</dd>
+                {pode(u, 'cliente.ver_contato') && (cli?.cidade || cli?.comoConheceu) && <><dt className="muted">Endereço</dt><dd style={{ margin: 0 }}>{[cli.bairro, cli.cidade].filter(Boolean).join(', ') || '—'}{cli.comoConheceu ? ` · conheceu por: ${cli.comoConheceu === 'Outro' ? cli.comoConheceuDetalhe : cli.comoConheceu}` : ''}</dd></>}
+                <dt className="muted">Pedido Olist</dt><dd style={{ margin: 0 }}><PedidoOlist u={u} os={os} /></dd>
                 <dt className="muted">Vendedor</dt><dd style={{ margin: 0 }}>{nomeDe(db, os.vendedorId)}</dd>
                 <dt className="muted">Mecânico</dt><dd style={{ margin: 0 }}>{os.mecanicoId ? nomeDe(db, os.mecanicoId) : 'Aguardando rodízio'}</dd>
                 <dt className="muted">Aberta</dt><dd style={{ margin: 0 }}>{fmtDataHora(os.abertaEm)}</dd>
@@ -358,5 +360,22 @@ function RetornoResumo({ os }: { os: OrdemServico }) {
         <div><div className="small strong">Depois</div>{r.semFotoDepois && !fotos.some(f => f.etapa === 'depois') ? <p className="small muted">Sem foto: {r.semFotoDepois}</p> : <Galeria etapa="depois" />}</div>
       </div>
     </Card>
+  );
+}
+
+/** Nº do pedido no Olist: o vendedor informa na abertura ou depois, quando o pedido existir. */
+function PedidoOlist({ u, os }: { u: Usuario; os: OrdemServico }) {
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState(os.pedidoOlist || '');
+  const acao = useAcao();
+  if (!pode(u, 'os.abrir')) return <>{os.pedidoOlist || '—'}</>;
+  if (!editando) return <span className="row" style={{ gap: 6 }}><span data-pedido-olist>{os.pedidoOlist || 'não informado'}</span><Btn tamanho="sm" variante="ghost" onClick={() => setEditando(true)}>{os.pedidoOlist ? 'Alterar' : 'Informar'}</Btn></span>;
+  return (
+    <span className="row nowrap" style={{ gap: 6 }}>
+      <input id="pedido-olist-os" aria-label="Número do pedido no Olist" className="input" style={{ maxWidth: 160 }} value={valor} onChange={e => setValor(e.target.value.replace(/[^\w.\-/]/g, '').slice(0, 30))} />
+      <Btn tamanho="sm" carregando={acao.ocupado} onClick={async () => { if (await acao.executar(() => definirPedidoOlist(u, os.id, valor), 'Pedido do Olist salvo.')) setEditando(false); }}>Salvar</Btn>
+      <Btn tamanho="sm" variante="ghost" onClick={() => { setValor(os.pedidoOlist || ''); setEditando(false); }}>Cancelar</Btn>
+      {acao.erro && <span className="small" style={{ color: 'var(--crit)' }}>{acao.erro}</span>}
+    </span>
   );
 }

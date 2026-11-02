@@ -18,6 +18,11 @@ export interface Cliente {
   nome: string;
   telefone?: string;
   tipo: 'particular' | 'frota';
+  /** Obrigatórios na abertura de OS (clientes antigos completam na próxima visita). */
+  comoConheceu?: string;
+  comoConheceuDetalhe?: string;
+  cidade?: string;
+  bairro?: string;
 }
 
 export type Cambio = 'manual' | 'automatico';
@@ -95,6 +100,8 @@ export interface AtendimentoRetorno {
 export interface OrdemServico {
   id: string;
   numero: number;
+  /** Número do pedido do cliente no Olist (ERP), informado pelo vendedor. */
+  pedidoOlist?: string;
   status: StatusOS;
   veiculoId: string;
   clienteId: string;
@@ -276,7 +283,11 @@ export interface ManutencaoPrevista {
   registradoPor: string;
   registradoEm: string;
   concluidaPorOsId?: string;
+  /** Recomendação vinda do checklist: estado do item quando foi registrada (sempre aparece até ser resolvida). */
+  estadoItem?: EstadoRecomendado;
 }
+
+export type EstadoRecomendado = 'atencao' | 'prioritario' | 'pendente_avaliacao';
 
 export interface Compartilhamento {
   id: string;

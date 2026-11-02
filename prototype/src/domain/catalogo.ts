@@ -1,6 +1,6 @@
 // Catálogos: os 16 serviços do sistema atual (chaves preservadas) e o catálogo
 // inicial de itens de inspeção (Playbook — checklist fase 1 + itens pedidos pela direção).
-import type { EstadoItem, ItemInspecaoDef, RegraIntervalo, ServicoKey } from './types';
+import type { EstadoItem, EstadoRecomendado, ItemInspecaoDef, RegraIntervalo, ServicoKey, SituacaoOportunidade } from './types';
 
 export const SERVICOS: Record<ServicoKey, { nome: string; campos: ('marca' | 'quantidade' | 'codigo')[] }> = {
   oleoMotor: { nome: 'Óleo de motor', campos: ['marca', 'quantidade'] },
@@ -112,6 +112,28 @@ export const ADICIONAIS: { key: ServicoKey; rotulo: string; itemRelacionado?: st
   { key: 'higienizacaoAC', rotulo: 'Higienização do ar-condicionado', itemRelacionado: 'filtro_cabine' },
   { key: 'palhetas', rotulo: 'Palhetas do limpador', itemRelacionado: 'palhetas' },
 ];
+
+/** Recomendação do checklist nas próximas manutenções: como a equipe e o cliente leem cada estado. */
+export const RECOMENDACAO: Record<EstadoRecomendado, { interno: string; cliente: string; tom: 'critico' | 'atencao' | 'info' }> = {
+  prioritario: { interno: 'Prioritário — mau estado', cliente: 'Recomendamos fazer o quanto antes', tom: 'critico' },
+  atencao: { interno: 'Atenção — desgaste', cliente: 'Recomendamos programar', tom: 'atencao' },
+  pendente_avaliacao: { interno: 'Avaliar na próxima visita', cliente: 'Avaliar na próxima visita', tom: 'info' },
+};
+
+/** O que o cliente respondeu à recomendação (vem da oportunidade ligada ao item). */
+export const RESPOSTA_CLIENTE: Partial<Record<SituacaoOportunidade, string>> = {
+  nova: 'Ainda não apresentada ao cliente',
+  apresentada: 'Apresentada, cliente não respondeu',
+  recusada: 'Cliente não quis fazer agora',
+  avaliar_depois: 'Cliente vai avaliar',
+  nao_oferecer: 'Não oferecida (frota)',
+};
+
+/** Como o cliente conheceu a Master Óleo (lista de partida — revisar com a direção). */
+export const COMO_CONHECEU = ['Indicação de amigo ou parente', 'Google', 'Instagram', 'Facebook', 'Passou em frente', 'Já era cliente', 'Frota / empresa', 'Outro'] as const;
+
+/** Cidades sugeridas no cadastro (Curitiba e região); o campo aceita qualquer cidade. */
+export const CIDADES_SUGERIDAS = ['Curitiba', 'São José dos Pinhais', 'Pinhais', 'Colombo', 'Araucária', 'Campo Largo', 'Fazenda Rio Grande', 'Almirante Tamandaré', 'Piraquara', 'Campina Grande do Sul', 'Quatro Barras'];
 
 /** Serviços que fazem sentido para o câmbio do veículo (manual não vê fluido de automático e vice-versa). */
 export const servicoAplicavel = (k: ServicoKey, cambio?: 'manual' | 'automatico') =>

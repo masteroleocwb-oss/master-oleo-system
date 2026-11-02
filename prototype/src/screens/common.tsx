@@ -67,6 +67,7 @@ export function OSCard({ db, os, mostrarMecanico = true, previsto, euId }: {
         {os.status !== 'aguardando' && !os.retornoDeOsId && <ChecklistBadge c={c} />}
         {mostrarMecanico && mec && os.status === 'concluido' && <span className="small muted">{primeiroNome(mec.nome)}</span>}
         {espera != null && <span className="small muted">Aberta às {fmtHora(os.abertaEm)} · espera {fmtMin(espera)}</span>}
+        {os.pedidoOlist && <span className="small muted">Pedido Olist {os.pedidoOlist}</span>}
         {os.status === 'andamento' && <span className="small muted">Início {fmtHora(os.iniciadaEm)}</span>}
         {os.status === 'concluido' && <span className="small muted">Concluída {fmtHora(os.concluidaEm)}</span>}
       </div>

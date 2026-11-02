@@ -138,6 +138,17 @@ O checklist guarda uma **cópia das definições** no momento da criação. Muda
 - Marca e modelo são listas (marcas e modelos mais comuns no Brasil, com "Outra marca…"/"Outro modelo…" para digitar). Ano também é lista.
 - Telefone do cliente é obrigatório (10 ou 11 dígitos, com máscara). Cliente antigo sem telefone precisa informar antes de salvar.
 - Os serviços de câmbio aparecem conforme o câmbio do veículo.
+- **Como o cliente conheceu a Master Óleo, cidade e bairro são obrigatórios** (02/11/2026). Cidade tem sugestões de Curitiba e região, mas aceita qualquer uma. "Outro" em como conheceu pede descrição. Cliente antigo sem esses dados vê "Complete o cadastro do cliente" na próxima OS; o que for preenchido fica gravado no cliente (com evento no histórico).
+- **Nº do pedido no Olist** (opcional): o vendedor informa na abertura ou depois, nos detalhes da OS. Aparece no cartão da OS e a busca de veículos encontra pelo número do pedido.
+- Ao escolher um veículo, a Nova OS lista o que foi recomendado nas visitas anteriores e ainda não foi feito, com o estado e a resposta do cliente, para o vendedor oferecer de novo.
+
+### 4.10 Recomendações que o cliente não fez
+
+- Todo item marcado **Atenção** (desgaste), **Prioritário** (mau estado) ou **Avaliar depois** que não foi feito na visita entra nas **próximas manutenções recomendadas**, mesmo que o cliente tenha recusado. O mecânico não consegue desmarcar, e o servidor registra mesmo que a tela não mande.
+- Não vira recomendação se o cliente aceitou e o serviço foi feito, ou se o serviço ligado ao item foi feito na mesma OS.
+- A recomendação guarda o estado do item e mostra a resposta do cliente (não quis fazer agora, vai avaliar, apresentada sem resposta, ainda não apresentada).
+- Onde aparece: na execução (travada), no histórico do veículo (prioritário primeiro, antes das manutenções por intervalo), na Nova OS do mesmo carro, no item do checklist da próxima visita ("Recomendado antes" e o que foi dito) e no relatório do cliente ("Recomendamos fazer o quanto antes / programar"; "Apresentado em dd/mm; você preferiu deixar para depois. Continua recomendado.").
+- Some quando uma visita posterior marca o item como OK ou executa o serviço ligado a ele. Se o item continuar ruim, a recomendação nova substitui a antiga.
 
 ## 5. Histórico do veículo e próxima manutenção
 

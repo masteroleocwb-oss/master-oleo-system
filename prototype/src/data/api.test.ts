@@ -6,7 +6,7 @@ import { sugestoesOcultar } from '../domain/checklist';
 import {
   abrirOS, acaoOcorrencia, adicionarEvidencia, adicionarFotoRetorno, auditarChecklist, buscarVeiculosEClientes, concluirChecklist, corrigirPlaca, ErroValidacao,
   filaRodizio, finalizarOS, finalizarRetorno, gerarLink, iniciarOS, obterRelatorioPublico, ocultarItemPara, pausarOS, previsaoFila, projetarRelatorio, proximoDaFila,
-  registrarItemChecklist, retomarOS, revogarLink, salvarRetorno, setStatusRodizio, valoresOS,
+  recomendacoesAbertas, definirPedidoOlist, registrarItemChecklist, retomarOS, revogarLink, salvarRetorno, setStatusRodizio, valoresOS,
 } from './api';
 import { indicadoresMecanico } from './metricas';
 import { gerarSeed } from './seed';
@@ -236,12 +236,13 @@ describe('abertura: telefone obrigatório', () => {
   it('veículo novo sem telefone não abre; cliente antigo sem telefone precisa informar', async () => {
     const novo = { placa: 'QAT2B34', marca: 'Fiat', modelo: 'Argo', ano: 2021, motor: '1.3', cambio: 'manual' as const, combustivel: 'Flex' as const };
     const base = { vendedorId: 'u_ven', servicos: [{ key: 'oleoMotor' as const, origem: 'balcao' as const, executado: false }], valorInicial: 300 };
-    await expect(abrirOS(U('u_ven'), { ...base, novoVeiculo: novo, novoCliente: { nome: 'Cliente Teste', telefone: '' } })).rejects.toThrow(/telefone/);
-    await abrirOS(U('u_ven'), { ...base, novoVeiculo: novo, novoCliente: { nome: 'Cliente Teste', telefone: '(41) 98888-7777' } });
+    const cad = { comoConheceu: 'Google', cidade: 'Curitiba', bairro: 'Portão' };
+    await expect(abrirOS(U('u_ven'), { ...base, novoVeiculo: novo, novoCliente: { nome: 'Cliente Teste', telefone: '', ...cad } })).rejects.toThrow(/telefone/);
+    await abrirOS(U('u_ven'), { ...base, novoVeiculo: novo, novoCliente: { nome: 'Cliente Teste', telefone: '(41) 98888-7777', ...cad } });
     const v = getDB().veiculos.find(x => x.id === 'v5')!;
     getDB().clientes.find(c => c.id === v.clienteId)!.telefone = undefined;
-    await expect(abrirOS(U('u_ven'), { ...base, veiculoId: 'v5' })).rejects.toThrow(/sem telefone/);
-    await abrirOS(U('u_ven'), { ...base, veiculoId: 'v5', telefoneCliente: '(41) 97777-6666' });
+    await expect(abrirOS(U('u_ven'), { ...base, veiculoId: 'v5' })).rejects.toThrow(/telefone/);
+    await abrirOS(U('u_ven'), { ...base, veiculoId: 'v5', completarCliente: { telefone: '(41) 97777-6666' } });
     expect(getDB().clientes.find(c => c.id === v.clienteId)!.telefone).toBe('(41) 97777-6666');
   });
 
@@ -313,5 +314,69 @@ describe('base de demonstração', () => {
       expect(db.os.some(o => o.retornoDeOsId && o.status === 'aguardando'), d).toBe(true);
       expect(db.os.filter(o => o.status === 'concluido').length, d).toBeGreaterThan(20);
     }
+  });
+});
+
+describe('cadastro do cliente e pedido do Olist na abertura', () => {
+  const base = { vendedorId: 'u_ven', servicos: [{ key: 'oleoMotor' as const, origem: 'balcao' as const, executado: false }], valorInicial: 300 };
+  const novo = { placa: 'QAT3C45', marca: 'Fiat', modelo: 'Argo', ano: 2021, motor: '1.3', cambio: 'manual' as const, combustivel: 'Flex' as const };
+
+  it('cliente novo exige como conheceu, cidade e bairro; "Outro" exige descrição', async () => {
+    const cli = { nome: 'Cliente Novo', telefone: '(41) 98888-1111' };
+    await expect(abrirOS(U('u_ven'), { ...base, novoVeiculo: novo, novoCliente: { ...cli, comoConheceu: '', cidade: '', bairro: '' } }))
+      .rejects.toThrow(/conheceu.*cidade.*bairro/);
+    await expect(abrirOS(U('u_ven'), { ...base, novoVeiculo: novo, novoCliente: { ...cli, comoConheceu: 'Outro', cidade: 'Curitiba', bairro: 'Batel' } })).rejects.toThrow(/Outro/);
+    const os = await abrirOS(U('u_ven'), { ...base, novoVeiculo: novo, pedidoOlist: ' 104523 ', novoCliente: { ...cli, comoConheceu: 'Outro', comoConheceuDetalhe: 'Evento da rua', cidade: 'Curitiba', bairro: 'Batel' } });
+    const c = getDB().clientes.find(x => x.id === os.clienteId)!;
+    expect([c.comoConheceu, c.comoConheceuDetalhe, c.cidade, c.bairro]).toEqual(['Outro', 'Evento da rua', 'Curitiba', 'Batel']);
+    expect(getDB().os.find(o => o.id === os.id)!.pedidoOlist).toBe('104523');
+    expect(buscarVeiculosEClientes(U('u_ven'), '104523')[0]?.motivo).toMatch(/pedido Olist 104523/);
+  });
+
+  it('cliente antigo sem os dados completa na abertura, e o cadastro fica gravado', async () => {
+    const v = getDB().veiculos.find(x => x.clienteId === 'c_legado')!;
+    await expect(abrirOS(U('u_ven'), { ...base, veiculoId: v.id })).rejects.toThrow(/conheceu/);
+    await abrirOS(U('u_ven'), { ...base, veiculoId: v.id, completarCliente: { comoConheceu: 'Google', cidade: 'Pinhais', bairro: 'Centro' } });
+    expect(getDB().clientes.find(c => c.id === 'c_legado')).toMatchObject({ comoConheceu: 'Google', cidade: 'Pinhais', bairro: 'Centro' });
+    await abrirOS(U('u_ven'), { ...base, veiculoId: v.id }); // segunda visita: nada a pedir
+    expect(getDB().eventos.some(e => e.tipo === 'cliente.atualizado' && e.entidadeId === 'c_legado')).toBe(true);
+  });
+
+  it('pedido do Olist pode ser informado depois, só por quem abre OS', async () => {
+    const os = getDB().os.find(o => o.status === 'aguardando')!;
+    await expect(definirPedidoOlist(U('u_m1'), os.id, '555')).rejects.toBeInstanceOf(ErroPermissao);
+    await expect(definirPedidoOlist(U('u_ven'), os.id, 'pedido 1')).rejects.toThrow(/inválido/);
+    await definirPedidoOlist(U('u_ven'), os.id, '555');
+    expect(getDB().os.find(o => o.id === os.id)!.pedidoOlist).toBe('555');
+  });
+});
+
+describe('recomendações não feitas continuam nas próximas manutenções', () => {
+  it('item em mau estado recusado pelo cliente fica recomendado (relatório e próxima visita) até ser resolvido', async () => {
+    const os = getDB().os.find(o => o.status === 'andamento' && o.mecanicoId === 'u_m1')!;
+    const c = getDB().checklists.find(x => x.id === os.checklistId)!;
+    await adicionarEvidencia(U('u_m1'), c.id, 'pastilhas', { url: 'data:,', demo: true });
+    await registrarItemChecklist(U('u_m1'), c.id, 'pastilhas', 'prioritario', { recomendacao: 'Trocar pastilhas dianteiras' });
+    for (const d of c.defs) if (getDB().checklists.find(x => x.id === c.id)!.itens[d.id].estado === 'nao_verificado') await registrarItemChecklist(U('u_m1'), c.id, d.id, 'ok', {});
+    await concluirChecklist(U('u_m1'), c.id);
+    getDB().oportunidades.find(o => o.osId === os.id && o.itemDefId === 'pastilhas')!.situacao = 'recusada';
+    const v = getDB().veiculos.find(x => x.id === os.veiculoId)!;
+    // A tela não mandou a recomendação: o servidor registra mesmo assim.
+    await finalizarOS(U('u_m1'), os.id, { km: (v.kmAtual || 0) + 300, servicos: os.servicos.map(s => ({ key: s.key, executado: true, intervaloKm: s.key === 'oleoMotor' ? 10000 : undefined })), proximas: [] });
+    const rec = recomendacoesAbertas(getDB(), v.id).find(r => r.m.itemDefId === 'pastilhas')!;
+    expect(rec).toMatchObject({ estado: 'prioritario', situacao: 'recusada' });
+    expect(rec.m.descricao).toBe('Trocar pastilhas dianteiras');
+    const rel = projetarRelatorio(getDB(), getDB().os.find(o => o.id === os.id)!);
+    expect(rel.proximas.find(p => p.descricao === 'Trocar pastilhas dianteiras')).toMatchObject({ estadoItem: 'prioritario', clienteAdiou: true });
+    expect(rel.proximas[0].estadoItem).toBe('prioritario'); // prioritários primeiro
+
+    // Próxima visita: o item volta OK (cliente trocou em outro lugar ou aqui) → a recomendação é resolvida.
+    const os2 = await abrirOS(U('u_ven'), { veiculoId: v.id, vendedorId: 'u_ven', servicos: [{ key: 'oleoMotor', origem: 'balcao', executado: false }], valorInicial: 250 });
+    await iniciarOS(U('u_lid'), os2.id, 'u_m2', 'teste');
+    const c2 = getDB().checklists.find(x => x.osId === os2.id)!;
+    for (const d of c2.defs) await registrarItemChecklist(U('u_m2'), c2.id, d.id, 'ok', {});
+    await concluirChecklist(U('u_m2'), c2.id);
+    await finalizarOS(U('u_m2'), os2.id, { km: (v.kmAtual || 0) + 300, servicos: [{ key: 'oleoMotor', executado: true, intervaloKm: 5000 }], proximas: [] });
+    expect(recomendacoesAbertas(getDB(), v.id).some(r => r.m.itemDefId === 'pastilhas')).toBe(false);
   });
 });

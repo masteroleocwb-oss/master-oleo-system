@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { obterRelatorioPublico, type ResultadoPublico } from '../data/api';
-import { ESTADOS, ORIGEM_LABEL } from '../domain/catalogo';
+import { ESTADOS, ORIGEM_LABEL, RECOMENDACAO } from '../domain/catalogo';
 import type { EstadoItem } from '../domain/types';
 import { fmtData, fmtDataHora, fmtKm } from '../domain/util';
 import { Badge, Btn } from '../ui/components';
@@ -125,11 +125,16 @@ export function RelatorioPublico({ token }: { token: string }) {
         {rel.proximas.length > 0 && (
           <section className="card" style={{ marginBottom: 12 }}>
             <h2 style={{ marginBottom: 6 }}>Próximas manutenções</h2>
-            {rel.proximas.map(p => (
-              <div key={p.descricao} className="rel-item">
+            {rel.proximas.map((p, k) => (
+              <div key={`${p.descricao}-${k}`} className="rel-item" data-proxima={p.estadoItem || 'intervalo'}>
                 <div className="grow">
-                  <b>{p.descricao}</b>
-                  <div className="small">{p.kmPrevisto || p.dataPrevista ? `Previsto: ${[p.kmPrevisto ? fmtKm(p.kmPrevisto) : null, p.dataPrevista ? fmtData(p.dataPrevista) : null].filter(Boolean).join(' ou ')}, o que vier primeiro` : 'Acompanhar na próxima visita'}</div>
+                  <div className="row between" style={{ alignItems: 'flex-start' }}>
+                    <b>{p.descricao}</b>
+                    {p.estadoItem && <Badge tom={RECOMENDACAO[p.estadoItem].tom}>{RECOMENDACAO[p.estadoItem].cliente}</Badge>}
+                  </div>
+                  {p.estadoItem
+                    ? <div className="small">{p.clienteAdiou ? `Apresentado${p.desde ? ` em ${fmtData(p.desde)}` : ' nesta visita'}; você preferiu deixar para depois. Continua recomendado.` : p.desde ? `Recomendado em ${fmtData(p.desde)} e ainda não realizado.` : 'Recomendado nesta visita.'}</div>
+                    : <div className="small">{p.kmPrevisto || p.dataPrevista ? `Previsto: ${[p.kmPrevisto ? fmtKm(p.kmPrevisto) : null, p.dataPrevista ? fmtData(p.dataPrevista) : null].filter(Boolean).join(' ou ')}, o que vier primeiro` : 'Acompanhar na próxima visita'}</div>}
                   <div className="tiny muted">{ORIGEM_LABEL[p.origem].cliente}</div>
                 </div>
               </div>

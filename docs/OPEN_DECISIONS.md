@@ -39,6 +39,7 @@ Legenda de bloqueio:
 | D-22 | Ocultar itens por modelo: limites (3 inspeções, 80%) e se o ano entra na regra | Direção + liderança técnica | Não bloqueia |
 | D-23 | Lista de marcas e modelos da Nova OS | Liderança | Não bloqueia |
 | D-24 | Motivos de pausa e de "assumir fora da vez" | Liderança | Não bloqueia |
+| D-25 | Lista "como conheceu", cidades sugeridas e migração do cadastro dos clientes atuais | Direção | Não bloqueia |
 
 ---
 
@@ -165,9 +166,10 @@ Legenda de bloqueio:
 - **Recomendação**: (a) + (b) para quem for avaliar. A auditoria descreve falhas de segurança atuais e **não deve ficar pública**.
 - **Aprovador**: responsável técnico. Bloqueia qualquer merge na `main`.
 
-## D-16 — Integração com o Tiny ERP
+## D-16 — Integração com o Tiny ERP (Olist)
 
-- **Estado atual**: citada no planejamento, sem chave de API nem escopo definido. O protótipo não integra.
+- **Estado atual**: citada no planejamento, sem chave de API nem escopo definido. O protótipo não integra. Desde 02/11/2026 o vendedor digita o **nº do pedido no Olist** na OS (opcional), o que já permite cruzar OS e pedido manualmente.
+- **Pergunta**: o nº do pedido deve ser obrigatório para fechar a OS? No futuro, buscar o pedido pelo número e conferir valor/itens automaticamente?
 - **Recomendação**: definir o que sincronizar (cliente, veículo, valor da OS?) depois da etapa 2. A chave fica só no servidor, nunca no front-end.
 - **Aprovador**: direção. Não bloqueia.
 
@@ -219,3 +221,9 @@ Legenda de bloqueio:
 
 - **Estado atual**: pausa = aguardando peça / aguardando aprovação do cliente / outro; fora da vez = sugestões rápidas (previsto no almoço, previsto em outro carro, pedido da liderança…) ou texto livre.
 - **Aprovador**: liderança. Não bloqueia.
+
+## D-25 — Como conheceu, cidade e bairro
+
+- **Estado atual**: obrigatórios na Nova OS desde 02/11/2026. Opções de como conheceu: indicação, Google, Instagram, Facebook, passou em frente, já era cliente, frota/empresa, outro (com descrição). Cidades sugeridas: Curitiba e região metropolitana; o campo aceita qualquer cidade. Bairro é texto livre.
+- **Perguntas**: a lista de "como conheceu" está certa (falta alguma campanha, parceiro, Google Meu Negócio)? Na Fase B, os clientes atuais serão completados aos poucos (na próxima visita, como no protótipo) ou em mutirão?
+- **Aprovador**: direção. Não bloqueia.

@@ -3,7 +3,7 @@
 import type { DB } from '../domain/types';
 import { gerarSeed } from './seed';
 
-const CHAVE = 'mo-proto:db:v2';
+const CHAVE = 'mo-proto:db:v3';
 const CHAVE_DEMO = 'mo-proto:demo-ctrl';
 
 export interface ControleDemo {
@@ -28,6 +28,8 @@ const ouvintes = new Set<() => void>();
 let controle: ControleDemo = carregarControle();
 
 function carregar(): DB {
+  // Bases de versões anteriores do protótipo não são migradas: a demonstração recomeça com a base nova.
+  try { ['mo-proto:db:v1', 'mo-proto:db:v2'].forEach(k => armazenamento?.removeItem(k)); } catch { /* ignora */ }
   try {
     const raw = armazenamento?.getItem(CHAVE);
     if (raw) return JSON.parse(raw) as DB;

@@ -38,6 +38,10 @@ const NOMES = ['Mariana Exemplo', 'Carlos Fictício', 'Beatriz Demonstração', 
   'Aline Amostra', 'Vinícius Demo', 'Renata Simulada', 'Felipe Protótipo', 'Juliana Teste', 'Marcelo Exemplo', 'Natália Modelo',
   'Otávio Amostra', 'Priscila Demo', 'Ricardo Teste', 'Tatiane Exemplo', 'Ulisses Modelo', 'Vanessa Fictícia', 'Wagner Demo'];
 
+// Cadastro de origem e endereço (determinístico, para não mexer na sequência aleatória da base).
+const BAIRROS = ['Água Verde', 'Portão', 'Batel', 'Bigorrilho', 'Boqueirão', 'Cajuru', 'Santa Felicidade', 'Cabral', 'Juvevê', 'Xaxim', 'Centro', 'Pinheirinho'];
+const COMO = ['Indicação de amigo ou parente', 'Google', 'Instagram', 'Passou em frente', 'Já era cliente', 'Google', 'Facebook', 'Indicação de amigo ou parente'];
+
 const CARROS: [string, string, string, 'manual' | 'automatico'][] = [
   ['Chevrolet', 'Onix', '1.0', 'manual'], ['Volkswagen', 'T-Cross', '1.0 TSI', 'automatico'], ['Fiat', 'Argo', '1.3', 'manual'],
   ['Toyota', 'Corolla', '2.0', 'automatico'], ['Hyundai', 'HB20', '1.0', 'manual'], ['Jeep', 'Renegade', '1.3 T', 'automatico'],
@@ -80,10 +84,15 @@ export function gerarSeed(): DB {
 
   // ── Clientes e veículos ──
   NOMES.forEach((nome, i) => {
-    const c: Cliente = { id: `c${i + 1}`, nome, telefone: `(41) 90000-${String(1000 + i).slice(-4)}`, tipo: 'particular' };
+    const c: Cliente = {
+      id: `c${i + 1}`, nome, telefone: `(41) 90000-${String(1000 + i).slice(-4)}`, tipo: 'particular',
+      comoConheceu: COMO[i % COMO.length], cidade: i % 7 === 3 ? 'São José dos Pinhais' : i % 9 === 5 ? 'Pinhais' : 'Curitiba', bairro: BAIRROS[i % BAIRROS.length],
+    };
     db.clientes.push(c);
   });
-  db.clientes.push({ id: 'c_frota', nome: 'Locadora Exemplo Ltda', telefone: '(41) 90000-9999', tipo: 'frota' });
+  db.clientes.push({ id: 'c_frota', nome: 'Locadora Exemplo Ltda', telefone: '(41) 90000-9999', tipo: 'frota', comoConheceu: 'Frota / empresa', cidade: 'Curitiba', bairro: 'CIC' });
+  // Cliente vindo do sistema antigo, sem como conheceu/cidade/bairro: a Nova OS pede para completar.
+  db.clientes.push({ id: 'c_legado', nome: 'Rosa Antiga Exemplo', telefone: '(41) 90000-8888', tipo: 'particular' });
 
   const prefixos = ['DEM', 'TST', 'PRT', 'EXM'];
   const novoVeiculo = (i: number, placa?: string, carro = CARROS[i % CARROS.length], clienteId = db.clientes[i % NOMES.length].id): Veiculo => {
@@ -105,6 +114,7 @@ export function gerarSeed(): DB {
   vVencida.kmAtual = 91200;
   const vFrota = novoVeiculo(2, 'PRT3C67', ['Fiat', 'Strada', '1.3', 'manual'], 'c_frota');
   for (let i = 3; i < 34; i++) novoVeiculo(i);
+  novoVeiculo(34, 'EXM8L34', ['Renault', 'Sandero', '1.6', 'manual'], 'c_legado');
   vDemo.placasAnteriores = [];
 
   // ── Helpers de OS ──
@@ -158,7 +168,7 @@ export function gerarSeed(): DB {
       c = registrarItem(c, d.id, estado, {
         justificativa: estado === 'nao_aplicavel' ? 'Veículo sem diferencial/tração 4x4' : undefined,
         observacao: estado === 'pendente_avaliacao' ? 'Carro chegou com motor quente; avaliar na próxima visita' : undefined,
-        recomendacao: estado === 'atencao' || estado === 'prioritario' ? (d.servicoRelacionado ? `Serviço sugerido: ${SERVICOS[d.servicoRelacionado].nome.toLowerCase()}` : `Avaliar ${d.nome.toLowerCase()} com o técnico`) : undefined,
+        recomendacao: estado === 'atencao' || estado === 'prioritario' ? (d.servicoRelacionado ? SERVICOS[d.servicoRelacionado].nome : `${estado === 'prioritario' ? 'Trocar' : 'Revisar'} ${d.nome.toLowerCase()}`) : undefined,
       }, mec, em);
       c.itens[d.id].evidenciaIds = evIds;
     });
@@ -189,7 +199,7 @@ export function gerarSeed(): DB {
     }
   };
 
-  const concluirOS = (os: OrdemServico, v: Veiculo, fimISO: string, km: number) => {
+  const concluirOS = (os: OrdemServico, v: Veiculo, fimISO: string, km: number, c?: Checklist) => {
     os.status = 'concluido';
     os.concluidaEm = fimISO;
     os.km = km;
@@ -209,6 +219,24 @@ export function gerarSeed(): DB {
         kmPrevisto: sug.kmPrevisto, dataPrevista: sug.dataPrevista, registradoPor: os.mecanicoId!, registradoEm: fimISO,
       };
       db.manutencoes.push(m);
+    });
+    if (!c) return;
+    // Recomendações do checklist: resolvidas quando o item volta OK ou o serviço é feito; as não feitas seguem recomendadas.
+    db.manutencoes.filter(m => m.veiculoId === v.id && m.itemDefId && !m.concluidaPorOsId).forEach(m => {
+      const it = c.itens[m.itemDefId!];
+      const feito = os.servicos.some(s => s.oportunidadeId && db.oportunidades.find(o => o.id === s.oportunidadeId)?.itemDefId === m.itemDefId);
+      if (it?.estado === 'ok' || feito || it?.estado === 'atencao' || it?.estado === 'prioritario' || it?.estado === 'pendente_avaliacao') m.concluidaPorOsId = os.id;
+    });
+    c.defs.forEach(d => {
+      const it = c.itens[d.id];
+      if (!(it.estado === 'atencao' || it.estado === 'prioritario' || it.estado === 'pendente_avaliacao')) return;
+      if (db.oportunidades.find(o => o.osId === os.id && o.itemDefId === d.id)?.situacao === 'aceita') return;
+      if (d.servicoRelacionado && os.servicos.some(sv => sv.executado && sv.key === d.servicoRelacionado)) return; // feito nesta OS
+      db.manutencoes.push({
+        id: `mp_${os.id}_${d.id}`, veiculoId: v.id, osOrigemId: os.id, itemDefId: d.id, estadoItem: it.estado,
+        descricao: it.estado === 'pendente_avaliacao' ? `Avaliar ${d.nome.toLowerCase()}` : it.recomendacao || `Revisar ${d.nome.toLowerCase()}`,
+        origem: 'profissional', fonte: `Checklist da OS #${os.numero}`, registradoPor: os.mecanicoId!, registradoEm: fimISO,
+      });
     });
   };
 
@@ -248,7 +276,7 @@ export function gerarSeed(): DB {
     criarOportunidades(os, c, opts.concluir);
     if (opts.concluir) {
       const fim = new Date(new Date(os.iniciadaEm).getTime() + (35 + Math.floor(r() * 45)) * 60000).toISOString();
-      concluirOS(os, v, fim, (v.kmAtual || 30000) + 300 + Math.floor(r() * 6000));
+      concluirOS(os, v, fim, (v.kmAtual || 30000) + 300 + Math.floor(r() * 6000), c);
     }
     return { os, c };
   };
@@ -276,7 +304,7 @@ export function gerarSeed(): DB {
     concluir: true, plano: { incompleto: false, semFoto: false, estados: { filtro_cabine: 'atencao', pastilhas: 'ok', discos: 'ok' } },
   });
   set.os.km = 52300; vDemo.kmAtual = 52300;
-  db.manutencoes.filter(m => m.osOrigemId === set.os.id).forEach(m => {
+  db.manutencoes.filter(m => m.osOrigemId === set.os.id && m.servicoKey).forEach(m => {
     m.ultimaExecucao = { data: set.os.concluidaEm!, km: 52300 };
     if (m.servicoKey === 'oleoMotor') m.kmPrevisto = 52300 + 10000;
   });

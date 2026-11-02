@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ir } from '../app/nav';
-import { buscarVeiculosEClientes, corrigirPlaca, nomeDe } from '../data/api';
-import { ESTADOS, ORIGEM_LABEL, SERVICOS } from '../domain/catalogo';
+import { buscarVeiculosEClientes, corrigirPlaca, nomeDe, recomendacoesAbertas } from '../data/api';
+import { ESTADOS, ORIGEM_LABEL, RECOMENDACAO, RESPOSTA_CLIENTE, SERVICOS } from '../domain/catalogo';
 import { STATUS_MANUT_LABEL, statusManutencao, type StatusManutencao } from '../domain/manutencao';
 import { pode } from '../domain/permissions';
 import type { Usuario } from '../domain/types';
@@ -21,7 +21,7 @@ export function Veiculos({ u, termoInicial }: { u: Usuario; termoInicial: string
   return (
     <div style={{ maxWidth: 820 }}>
       <div className="page-head"><div><h1>Veículos</h1><div className="sub">Histórico completo por placa, mesmo quando a placa muda.</div></div></div>
-      <Field rotulo={`Buscar por placa, cliente${pode(u, 'cliente.ver_contato') ? ', telefone' : ''} ou número da OS`} htmlFor="busca-veiculos">
+      <Field rotulo={`Buscar por placa, cliente${pode(u, 'cliente.ver_contato') ? ', telefone' : ''}, número da OS ou pedido do Olist`} htmlFor="busca-veiculos">
         <input id="busca-veiculos" className="input" autoFocus value={termo} onChange={e => setTermo(e.target.value)} placeholder="Ex.: DEM1A23, Mariana, 7001" autoComplete="off" />
       </Field>
       {termo.trim().length >= 2 && (
@@ -62,8 +62,9 @@ export function Veiculo({ u, veiculoId }: { u: Usuario; veiculoId: string }) {
   const cli = db.clientes.find(c => c.id === v.clienteId);
   const oss = db.os.filter(o => o.veiculoId === v.id && o.status !== 'encerrada').sort((a, b) => b.abertaEm.localeCompare(a.abertaEm));
   const manut = db.manutencoes.filter(m => m.veiculoId === v.id).map(m => ({ m, st: statusManutencao(m, v.kmAtual, agoraISO()) }));
-  const abertas = manut.filter(x => x.st !== 'concluida').sort((a, b) => ['vencida', 'proxima', 'futura', 'acompanhar'].indexOf(a.st) - ['vencida', 'proxima', 'futura', 'acompanhar'].indexOf(b.st));
-  const recs = db.oportunidades.filter(o => o.veiculoId === v.id && (o.situacao === 'avaliar_depois' || o.situacao === 'recusada' || o.situacao === 'apresentada'));
+  // Recomendações do checklist não feitas (prioritário primeiro) vêm antes das manutenções por intervalo.
+  const recs = recomendacoesAbertas(db, v.id);
+  const abertas = manut.filter(x => x.st !== 'concluida' && !x.m.estadoItem).sort((a, b) => ['vencida', 'proxima', 'futura', 'acompanhar'].indexOf(a.st) - ['vencida', 'proxima', 'futura', 'acompanhar'].indexOf(b.st));
   const fotos = db.evidencias.filter(e => e.veiculoId === v.id && !e.removida).sort((a, b) => b.em.localeCompare(a.em));
 
   return (
@@ -122,8 +123,17 @@ export function Veiculo({ u, veiculoId }: { u: Usuario; veiculoId: string }) {
         </div>
         <div>
           <Card titulo="Próximas manutenções">
-            {abertas.length === 0 ? <Empty titulo="Nada registrado." /> : (
+            {abertas.length === 0 && recs.length === 0 ? <Empty titulo="Nada registrado." /> : (
               <div className="list">
+                {recs.map(r => (
+                  <div key={r.m.id} className="li" data-rec={r.m.itemDefId}>
+                    <div className="grow">
+                      <div className="ttl">{r.m.descricao}</div>
+                      <div className="meta">Recomendado na OS #{r.osNumero} em {fmtData(r.m.registradoEm)}{r.situacao && RESPOSTA_CLIENTE[r.situacao] ? ` · ${RESPOSTA_CLIENTE[r.situacao]}` : ''}</div>
+                    </div>
+                    <Badge tom={RECOMENDACAO[r.estado].tom}>{RECOMENDACAO[r.estado].interno}</Badge>
+                  </div>
+                ))}
                 {abertas.map(({ m, st }) => (
                   <div key={m.id} className="li">
                     <div className="grow">
@@ -138,19 +148,6 @@ export function Veiculo({ u, veiculoId }: { u: Usuario; veiculoId: string }) {
             )}
             <p className="tiny muted" style={{ marginTop: 8 }}>Intervalos de demonstração. Em produção, só regras aprovadas pela direção calculam km/data.</p>
           </Card>
-          {recs.length > 0 && (
-            <Card titulo="Recomendações em aberto">
-              {recs.map(r => {
-                const os = db.os.find(o => o.id === r.osId);
-                return (
-                  <div key={r.id} style={{ padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
-                    <div className="row between"><b className="small">{r.recomendacao}</b><Badge tom={r.estadoItem === 'prioritario' ? 'critico' : 'atencao'}>{ESTADOS[r.estadoItem].curto}</Badge></div>
-                    <div className="tiny muted">OS #{os?.numero} · {fmtData(r.criadaEm)} · {r.situacao === 'avaliar_depois' ? 'cliente vai avaliar depois' : r.situacao === 'recusada' ? 'recusada' : 'apresentada'}</div>
-                  </div>
-                );
-              })}
-            </Card>
-          )}
           <Card titulo="Serviços já feitos">
             {Object.entries(oss.filter(o => o.status === 'concluido').flatMap(o => o.servicos.filter(s => s.executado).map(s => ({ s, o })))
               .reduce<Record<string, { data: string; km?: number }>>((acc, { s, o }) => { if (!acc[s.key] || acc[s.key].data < o.concluidaEm!) acc[s.key] = { data: o.concluidaEm!, km: o.km }; return acc; }, {}))
