@@ -139,7 +139,7 @@ O checklist guarda uma **cópia das definições** no momento da criação. Muda
 - Telefone do cliente é obrigatório (10 ou 11 dígitos, com máscara). Cliente antigo sem telefone precisa informar antes de salvar.
 - Os serviços de câmbio aparecem conforme o câmbio do veículo.
 - **Como o cliente conheceu a Master Óleo, cidade e bairro são obrigatórios** (02/11/2026). Cidade tem sugestões de Curitiba e região, mas aceita qualquer uma. "Outro" em como conheceu pede descrição. Cliente antigo sem esses dados vê "Complete o cadastro do cliente" na próxima OS; o que for preenchido fica gravado no cliente (com evento no histórico).
-- **Nº do pedido no Olist** (opcional): o vendedor informa na abertura ou depois, nos detalhes da OS. Aparece no cartão da OS e a busca de veículos encontra pelo número do pedido.
+- **Nº do pedido no Olist** (**obrigatório** desde 02/11/2026, exceto no retorno em garantia): o vendedor informa na abertura; nos detalhes da OS dá para corrigir, mas não apagar. Aparece no cartão da OS e a busca de veículos encontra pelo número do pedido.
 - Ao escolher um veículo, a Nova OS lista o que foi recomendado nas visitas anteriores e ainda não foi feito, com o estado e a resposta do cliente, para o vendedor oferecer de novo.
 
 ### 4.10 Recomendações que o cliente não fez
@@ -149,6 +149,18 @@ O checklist guarda uma **cópia das definições** no momento da criação. Muda
 - A recomendação guarda o estado do item e mostra a resposta do cliente (não quis fazer agora, vai avaliar, apresentada sem resposta, ainda não apresentada).
 - Onde aparece: na execução (travada), no histórico do veículo (prioritário primeiro, antes das manutenções por intervalo), na Nova OS do mesmo carro, no item do checklist da próxima visita ("Recomendado antes" e o que foi dito) e no relatório do cliente ("Recomendamos fazer o quanto antes / programar"; "Apresentado em dd/mm; você preferiu deixar para depois. Continua recomendado.").
 - Some quando uma visita posterior marca o item como OK ou executa o serviço ligado a ele. Se o item continuar ruim, a recomendação nova substitui a antiga.
+
+### 4.11 Login, perfis e registro de acessos (protótipo, 02/11/2026)
+
+- **Login individual** com e-mail ou usuário e senha. A mensagem de erro é a mesma para login inexistente e senha errada ("Usuário ou senha incorretos.").
+- **A administração cria o acesso** (Admin › Usuários): nome, perfil (define o que a pessoa vê e pode fazer), login e uma **senha provisória** gerada pelo sistema. A senha provisória aparece uma única vez para ser passada à pessoa. No primeiro acesso a pessoa é obrigada a criar a própria senha; ninguém mais a vê. "Redefinir senha" gera nova provisória e invalida a anterior.
+- **Regras de senha**: mínimo de 6 caracteres; recusa sequências, repetições, a senha igual ao login e o nome da oficina.
+- **Bloqueio**: 5 senhas erradas seguidas bloqueiam o acesso por 15 minutos; a administração pode desbloquear antes. Desativar a pessoa bloqueia na hora, mesmo com a senha certa.
+- **Sessão** de 12 horas (um turno); depois pede login de novo. "Sair" encerra a sessão.
+- **Registro de acessos** (Admin › Acessos): entrou, saiu, sessão expirou, senha errada, login inexistente, bloqueado, desativado e troca de senha, com data, pessoa (ou o login digitado) e aparelho (navegador e sistema). Filtros por pessoa e resultado; contador de falhas nas últimas 24 h. Cada pessoa vê os próprios últimos acessos em **Minha conta** (clicando no nome, no topo).
+- **Contas de demonstração**: enquanto ligadas, a tela de entrada mostra as pessoas fictícias e entra-se com um toque. A direção desliga em Admin › Acessos; só é possível desligar se houver alguém da direção com senha.
+- **Senha nunca é guardada**: só o hash (PBKDF2-SHA256, 120 mil iterações, sal por pessoa). O histórico de ações não registra o hash.
+- **Limite do protótipo**: contas e registros ficam no navegador de quem testa. Não serve como segurança real nem leva contas para outros aparelhos. O login real é Fase B (D-03).
 
 ## 5. Histórico do veículo e próxima manutenção
 
@@ -242,8 +254,9 @@ Meses anteriores vêm de **fechamentos mensais imutáveis**; o mês atual é cal
 - **Falhas visíveis**: cada item mostra "Salvando… / Salvo / Falhou — tentar de novo". Os controles da demo simulam falha, modo offline e latência.
 - **Rascunho**: a Nova OS salva rascunho local e oferece recuperar após recarregar.
 - **Trilha**: todo comando gera evento com autor, data, antes/depois e motivo (Admin › Histórico).
+- **Senhas**: só o hash fica gravado (PBKDF2 com sal); nenhuma senha real ou do sistema atual aparece no código do protótipo.
 - **Acessibilidade básica**: rótulos em campos, foco visível, estado sempre escrito em texto além da cor. Contraste e leitor de tela **não foram auditados formalmente** (pendência para a Fase B).
 
 ## 12. Fora do escopo do protótipo
 
-Login real (o protótipo usa troca de usuário), envio automático de WhatsApp, integração com o Tiny ERP, armazenamento real de fotos, cálculo de folha, impressão de etiqueta, multiloja.
+Login real (o protótipo simula login com senha no próprio navegador; ver §4.11 e D-03), envio automático de WhatsApp, integração com o Tiny ERP, armazenamento real de fotos, cálculo de folha, impressão de etiqueta, multiloja.

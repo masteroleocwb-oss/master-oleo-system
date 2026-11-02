@@ -4,21 +4,34 @@ import type { Capacidade } from '../domain/permissions';
 import type { Role } from '../domain/types';
 
 // ───────────────────────── Sessão ─────────────────────────
-// Protótipo: a "sessão" é o usuário de demonstração escolhido. No produto, login individual
-// (Firebase Auth) e o perfil vem de um documento protegido, nunca do navegador.
+// Protótipo: a sessão fica neste navegador (quem entrou e desde quando). No produto, o login é do
+// Firebase Auth e o perfil vem de um documento protegido, nunca do navegador.
 
 const CHAVE = 'mo-proto:sessao';
+/** A sessão vale por um turno; depois pede login de novo. */
+export const SESSAO_HORAS = 12;
+type Sessao = { id: string; desde: string };
 const ouvintes = new Set<() => void>();
-let atual: string | null = (() => { try { return localStorage.getItem(CHAVE); } catch { return null; } })();
+let atual: Sessao | null = (() => {
+  try {
+    const r = localStorage.getItem(CHAVE);
+    if (!r) return null;
+    try { const j = JSON.parse(r); if (j?.id) return j as Sessao; } catch { /* formato antigo: só o id */ }
+    return { id: r, desde: new Date().toISOString() };
+  } catch { return null; }
+})();
 
-export const entrar = (id: string) => { atual = id; try { localStorage.setItem(CHAVE, id); } catch { /* ignora */ } ouvintes.forEach(f => f()); };
+export const entrar = (id: string) => { atual = { id, desde: new Date().toISOString() }; try { localStorage.setItem(CHAVE, JSON.stringify(atual)); } catch { /* ignora */ } ouvintes.forEach(f => f()); };
 export const sair = () => { atual = null; try { localStorage.removeItem(CHAVE); } catch { /* ignora */ } ouvintes.forEach(f => f()); };
+/** Id de quem está com a sessão vencida (para registrar a saída), ou null. */
+export const sessaoVencida = () => (atual && Date.now() - Date.parse(atual.desde) > SESSAO_HORAS * 3600e3 ? atual.id : null);
 
 export function useUsuario() {
-  const id = useSyncExternalStore(f => { ouvintes.add(f); return () => ouvintes.delete(f); }, () => atual);
+  const id = useSyncExternalStore(f => { ouvintes.add(f); return () => ouvintes.delete(f); }, () => atual?.id ?? null);
   const db = useSyncExternalStore(assinar, getDB);
   const u = id ? db.usuarios.find(x => x.id === id) : undefined;
-  return u && u.ativo ? u : null;
+  // Conta desativada, ou conta de demonstração depois que a administração desligou esse acesso: fora.
+  return u && u.ativo && !(u.demo && !u.senha && !db.acessoDemo) ? u : null;
 }
 
 // ───────────────────────── Rotas ─────────────────────────

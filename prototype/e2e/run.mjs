@@ -283,6 +283,7 @@ await fluxo('Fluxo 4 — Segunda OS do mesmo veículo; histórico mostra as duas
   await aguardarTexto('Recomendado nas visitas anteriores e ainda não feito');
   await aguardarTexto('Trocar pastilhas dianteiras');
   await preencher('#valor', '280');
+  await preencher('#pedido-olist', '104600');
   await clicar('Salvar e colocar na fila');
   await aguardarTexto('criada e colocada na fila');
   const d1 = await db();
@@ -435,6 +436,7 @@ await fluxo('Formulário incompleto e dados ausentes', async () => {
   await clicar('Salvar e colocar na fila');
   await aguardarTexto('Falta preencher');
   await aguardarTexto('Escolha um veículo ou cadastre um novo.');
+  await aguardarTexto('Informe o número do pedido do Olist.');
   await ir('/os/inexistente'); await aguardarTexto('OS não encontrada');
   await ir('/veiculos/inexistente'); await aguardarTexto('Veículo não encontrado');
   await ir('/rota/que/nao/existe'); await aguardarTexto('Página não encontrada');
@@ -447,6 +449,7 @@ await fluxo('Cliente antigo sem cadastro completo: Nova OS pede como conheceu, c
   await clicar('Sandero', { seletor: 'button.li' });
   await page.waitForSelector('[data-completar-cadastro]');
   await preencher('#valor', '199');
+  await preencher('#pedido-olist', '104601');
   await clicar('Salvar e colocar na fila');
   await aguardarTexto('Informe como o cliente conheceu a Master Óleo.');
   await foto('nova-os-completar-cadastro');
@@ -559,6 +562,69 @@ await fluxo('Retorno: mesmo mecânico, foco no problema, fotos antes/depois, rel
   await foto('retorno-relatorio');
 });
 
+console.log('Login e acessos');
+await fluxo('Login com senha: direção cria o acesso, senha errada, troca obrigatória, registro de acessos, desligar demonstração', async () => {
+  const antes = await page.evaluate(() => localStorage.getItem('mo-proto:db:v3'));
+  await entrar('u_dir');
+  await ir('/admin/usuarios');
+  await clicar('Novo usuário');
+  await preencher('#us-nome', 'Pessoa Login Teste'); await preencher('#us-role', 'mecanico');
+  await preencher('#us-login', 'Pessoa.Teste'); await preencher('#us-senha-prov', 'prov-teste-1');
+  await clicar('Salvar', { escopo: '.sheet-foot', exato: true });
+  await page.waitForSelector('[data-entregue-login]');
+  if ((await page.$eval('[data-entregue-login]', e => e.textContent)) !== 'pessoa.teste') throw new Error('Login não normalizado');
+  if ((await page.evaluate(() => localStorage.getItem('mo-proto:db:v3'))).includes('prov-teste-1')) throw new Error('Senha provisória gravada em texto');
+  await foto('admin-usuarios-acesso');
+
+  await clicar('Sair', { exato: true });
+  await page.waitForSelector('#login-usuario');
+  await preencher('#login-usuario', 'pessoa.teste'); await preencher('#login-senha', 'errada99');
+  await tocar('form.login-form button[type="submit"]');
+  await aguardarTexto('Usuário ou senha incorretos.');
+  await foto('login-erro');
+  await preencher('#login-senha', 'prov-teste-1');
+  await tocar('form.login-form button[type="submit"]');
+  await aguardarTexto('Crie a sua senha');
+  await preencher('#senha-atual', 'prov-teste-1'); await preencher('#senha-nova', '123456'); await preencher('#senha-conf', '123456');
+  await clicar('Criar minha senha e entrar');
+  await aguardarTexto('Senha fácil demais');
+  await preencher('#senha-nova', 'minha-senha-9'); await preencher('#senha-conf', 'minha-senha-9');
+  await clicar('Criar minha senha e entrar');
+  await aguardarTexto('Operação de hoje');
+  await ir('/conta');
+  await page.waitForSelector('[data-meus-acessos]');
+  for (const t of ['Trocou a senha', 'Senha errada', 'Entrou']) await aguardarTexto(t);
+  await foto('minha-conta');
+
+  await clicar('Sair', { exato: true });
+  await entrar('u_dir');
+  await ir('/admin/acessos');
+  await page.waitForSelector('[data-acesso="senha_errada"]');
+  await page.waitForSelector('[data-acesso="entrou"]');
+  await page.waitForSelector('[data-acesso="saiu"]');
+  await foto('admin-acessos');
+  // Desligar a demonstração exige alguém da direção com senha.
+  await tocar('[data-acesso-demo]');
+  await aguardarTexto('Crie antes um acesso com senha para alguém da direção');
+  await ir('/admin/usuarios');
+  await tocar('[data-acao-acesso="u_dir"]');
+  await preencher('#us-login', 'gustavo'); await preencher('#us-senha-prov', 'prov-gus-1');
+  await clicar('Criar acesso', { escopo: '.sheet-foot' });
+  await aguardarTexto('Crie a sua senha'); // a própria direção também troca a provisória
+  await preencher('#senha-atual', 'prov-gus-1'); await preencher('#senha-nova', 'direcao-ok-7'); await preencher('#senha-conf', 'direcao-ok-7');
+  await clicar('Criar minha senha e entrar');
+  await ir('/admin/acessos');
+  await tocar('[data-acesso-demo]');
+  await aguardarTexto('Desligado: só com login e senha');
+  await clicar('Sair', { exato: true });
+  await page.waitForSelector('#login-usuario');
+  if (await page.$('[data-user]')) throw new Error('Contas de demonstração ainda aparecem depois de desligadas');
+  await foto('login-sem-demo');
+  // Restaura a base para os próximos cenários (que usam as contas de demonstração).
+  await page.evaluate(b => { localStorage.setItem('mo-proto:db:v3', b); localStorage.removeItem('mo-proto:sessao'); }, antes);
+  await page.reload();
+});
+
 console.log('Navegação e celular');
 await fluxo('Todos os menus de todos os perfis abrem sem erro', async () => {
   for (const u of ['u_m2', 'u_ven', 'u_lid', 'u_dir']) {
@@ -567,7 +633,8 @@ await fluxo('Todos os menus de todos os perfis abrem sem erro', async () => {
     for (const r of rotas) { await page.goto(BASE + r); await esperar(120); const t = await texto(); if (/Página não encontrada|Acesso não permitido/.test(t)) throw new Error(`${u} → ${r}`); }
   }
   for (const r of ['visao', 'mecanicos', 'auditoria', 'excecoes', 'ocorrencias', 'retornos', 'planos', 'gestao']) { await ir(`/lideranca/${r}`); await esperar(80); }
-  for (const r of ['busca', 'catalogo', 'intervalos', 'usuarios', 'historico', 'links']) { await ir(`/admin/${r}`); await esperar(80); }
+  for (const r of ['busca', 'catalogo', 'intervalos', 'usuarios', 'acessos', 'historico', 'links']) { await ir(`/admin/${r}`); await esperar(80); }
+  await ir('/conta'); await aguardarTexto('Minha conta');
 });
 
 await fluxo('Celular (390 px): sem rolagem horizontal e checklist utilizável', async () => {

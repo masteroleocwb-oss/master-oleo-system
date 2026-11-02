@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { ir } from '../app/nav';
+import { definirAcesso, definirAcessoDemo, desbloquearAcesso, gerarSenhaProvisoria, POLITICA_ACESSO, RESULTADO_ACESSO, ultimoAcesso } from '../data/acesso';
 import { buscarVeiculosEClientes, estadoLink, nomeDe, ocultarItemPara, revogarLink, salvarItemCatalogo, salvarRegraIntervalo, salvarUsuario, voltarAMostrarItem } from '../data/api';
 import { sugestoesOcultar } from '../domain/checklist';
 import { ESTADOS, ESTADOS_ORDEM, GRUPOS, ORIGEM_LABEL, SERVICO_KEYS, SERVICOS } from '../domain/catalogo';
 import { ROLE_LABEL } from '../domain/permissions';
-import type { EstadoItem, ItemInspecaoDef, RegraIntervalo, Role, ServicoKey, Usuario } from '../domain/types';
-import { fmtData, fmtDataHora, primeiroNome } from '../domain/util';
+import type { EstadoItem, ItemInspecaoDef, RegraIntervalo, ResultadoAcesso, Role, ServicoKey, Usuario } from '../domain/types';
+import { agora, agoraISO, fmtData, fmtDataHora, primeiroNome } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Empty, Field, Placa, Sheet, Tabs, useAcao, useDB } from '../ui/components';
 
-type Aba = 'busca' | 'catalogo' | 'intervalos' | 'usuarios' | 'historico' | 'links';
+type Aba = 'busca' | 'catalogo' | 'intervalos' | 'usuarios' | 'acessos' | 'historico' | 'links';
 
 export function Admin({ u, aba }: { u: Usuario; aba?: string }) {
   const a = (aba || 'busca') as Aba;
@@ -17,12 +18,13 @@ export function Admin({ u, aba }: { u: Usuario; aba?: string }) {
       <div className="page-head"><div><h1>Administração</h1><div className="sub">Tudo o que muda aqui fica no histórico de ações, com antes e depois.</div></div></div>
       <Tabs valor={a} onChange={v => ir(`/admin/${v}`)} abas={[
         { v: 'busca', r: 'Busca' }, { v: 'catalogo', r: 'Itens do checklist' }, { v: 'intervalos', r: 'Regras de intervalo' },
-        { v: 'usuarios', r: 'Usuários' }, { v: 'historico', r: 'Histórico de ações' }, { v: 'links', r: 'Links de clientes' },
+        { v: 'usuarios', r: 'Usuários' }, { v: 'acessos', r: 'Acessos' }, { v: 'historico', r: 'Histórico de ações' }, { v: 'links', r: 'Links de clientes' },
       ]} />
       {a === 'busca' && <Busca u={u} />}
       {a === 'catalogo' && <Catalogo u={u} />}
       {a === 'intervalos' && <Intervalos u={u} />}
       {a === 'usuarios' && <Usuarios u={u} />}
+      {a === 'acessos' && <Acessos u={u} />}
       {a === 'historico' && <Historico />}
       {a === 'links' && <Links u={u} />}
     </div>
@@ -178,39 +180,183 @@ function RegraSheet({ u, r, onClose }: { u: Usuario; r: RegraIntervalo; onClose:
   );
 }
 
+type EdUsuario = { id?: string; nome: string; role: Role; ativo: boolean; nivel?: string; login?: string; senhaProv?: string };
+
+/** Situação do acesso de uma pessoa, para a tabela. */
+function situacaoAcesso(x: Usuario, acessoDemo: boolean) {
+  if (!x.ativo) return <Badge tom="muted">Desativado</Badge>;
+  if (x.bloqueadoAte && x.bloqueadoAte > agoraISO()) return <Badge tom="critico">Bloqueado até {new Date(x.bloqueadoAte).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}</Badge>;
+  if (x.senha && x.trocarSenha) return <Badge tom="atencao">Aguardando 1º acesso</Badge>;
+  if (x.senha) return <Badge tom="ok">Com senha</Badge>;
+  if (x.demo) return <Badge tom={acessoDemo ? 'info' : 'muted'}>{acessoDemo ? 'Demonstração' : 'Demonstração (desligada)'}</Badge>;
+  return <Badge tom="muted">Sem acesso</Badge>;
+}
+
 function Usuarios({ u }: { u: Usuario }) {
   const db = useDB();
-  const [ed, setEd] = useState<{ id?: string; nome: string; role: Role; ativo: boolean; nivel?: string } | null>(null);
+  const [ed, setEd] = useState<EdUsuario | null>(null);
+  const [ac, setAc] = useState<{ id: string; nome: string; login: string; senhaProv: string; redefinir: boolean } | null>(null);
+  const [entregue, setEntregue] = useState<{ nome: string; login: string; senha: string } | null>(null);
   const acao = useAcao();
+
+  const salvarEd = async () => {
+    if (!ed) return;
+    const comAcesso = !ed.id && !!(ed.login || ed.senhaProv);
+    const r = await acao.executar(async () => {
+      const id = await salvarUsuario(u, ed);
+      if (comAcesso) await definirAcesso(u, id, ed.login || '', ed.senhaProv || '');
+      return id;
+    }, comAcesso ? 'Usuário e acesso criados.' : 'Usuário salvo.');
+    if (r !== undefined) {
+      if (comAcesso) setEntregue({ nome: ed.nome, login: (ed.login || '').trim().toLowerCase(), senha: ed.senhaProv || '' });
+      setEd(null);
+    }
+  };
+  const salvarAc = async () => {
+    if (!ac) return;
+    if ((await acao.executar(() => definirAcesso(u, ac.id, ac.login, ac.senhaProv), ac.redefinir ? 'Senha redefinida.' : 'Acesso criado.')) !== undefined) {
+      setEntregue({ nome: ac.nome, login: ac.login.trim().toLowerCase(), senha: ac.senhaProv });
+      setAc(null);
+    }
+  };
+
   return (
     <div>
-      <Alerta tipo="info">No produto, cada usuário tem login próprio. Desativar bloqueia o acesso na hora e mantém o histórico do que a pessoa fez.</Alerta>
-      <div style={{ margin: '12px 0' }}><Btn onClick={() => setEd({ nome: '', role: 'mecanico', ativo: true })}>Novo usuário</Btn></div>
+      <Alerta tipo="info">
+        Cada pessoa entra com login e senha próprios. Você cria o acesso com uma <b>senha provisória</b>; no primeiro acesso a pessoa é obrigada a criar a dela,
+        que ninguém mais vê. Desativar bloqueia o acesso na hora e mantém o histórico do que a pessoa fez.
+      </Alerta>
+      {entregue && (
+        <div style={{ marginTop: 12 }} data-entregue>
+          <Alerta tipo="ok">
+            Passe para <b>{entregue.nome}</b> pessoalmente ou por mensagem privada: login <b data-entregue-login>{entregue.login}</b> e senha provisória <b data-entregue-senha style={{ fontFamily: "ui-monospace, Menlo, monospace", fontSize: 15 }}>{entregue.senha}</b>.
+            Ela não aparece de novo; se perder, use “Redefinir senha”.
+            <div style={{ marginTop: 6 }}><Btn tamanho="sm" variante="ghost" onClick={() => setEntregue(null)}>Já passei, ocultar</Btn></div>
+          </Alerta>
+        </div>
+      )}
+      <div style={{ margin: '12px 0' }}><Btn onClick={() => { setEntregue(null); setEd({ nome: '', role: 'mecanico', ativo: true, login: '', senhaProv: gerarSenhaProvisoria() }); }}>Novo usuário</Btn></div>
       <div className="tbl-wrap">
-        <table className="tbl">
-          <thead><tr><th>Nome</th><th>Perfil</th><th>Nível</th><th>Status</th><th /></tr></thead>
-          <tbody>{db.usuarios.map(x => (
-            <tr key={x.id}>
-              <td><b>{x.nome}</b></td><td>{ROLE_LABEL[x.role]}</td><td>{x.nivel || '—'}</td>
-              <td>{x.ativo ? <Badge tom="ok">Ativo</Badge> : <Badge tom="muted">Desativado</Badge>}</td>
-              <td className="row">
-                <Btn tamanho="sm" variante="ghost" onClick={() => setEd({ ...x })}>Editar</Btn>
-                {x.id !== u.id && <Btn tamanho="sm" variante={x.ativo ? 'danger' : 'sec'} carregando={acao.ocupado} onClick={() => acao.executar(() => salvarUsuario(u, { ...x, ativo: !x.ativo }), x.ativo ? 'Acesso desativado.' : 'Acesso reativado.')}>{x.ativo ? 'Desativar' : 'Reativar'}</Btn>}
-              </td>
-            </tr>))}</tbody>
+        <table className="tbl" data-tabela-usuarios>
+          <thead><tr><th>Nome</th><th>Perfil</th><th>Login</th><th>Acesso</th><th>Último acesso</th><th /></tr></thead>
+          <tbody>{db.usuarios.map(x => {
+            const ult = ultimoAcesso(db, x.id);
+            const bloqueado = !!x.bloqueadoAte && x.bloqueadoAte > agoraISO();
+            return (
+              <tr key={x.id} data-usuario={x.id}>
+                <td><b>{x.nome}</b>{x.nivel && <div className="tiny muted">{x.nivel}</div>}</td>
+                <td>{ROLE_LABEL[x.role]}</td>
+                <td className="small">{x.login || '—'}</td>
+                <td>{situacaoAcesso(x, db.acessoDemo)}</td>
+                <td className="small">{ult ? fmtDataHora(ult.em) : '—'}</td>
+                <td className="row">
+                  <Btn tamanho="sm" variante="ghost" onClick={() => setEd({ id: x.id, nome: x.nome, role: x.role, ativo: x.ativo, nivel: x.nivel })}>Editar</Btn>
+                  {x.ativo && <Btn tamanho="sm" variante="sec" data-acao-acesso={x.id} onClick={() => { setEntregue(null); setAc({ id: x.id, nome: x.nome, login: x.login || '', senhaProv: gerarSenhaProvisoria(), redefinir: !!x.senha }); }}>{x.senha ? 'Redefinir senha' : 'Criar acesso'}</Btn>}
+                  {bloqueado && <Btn tamanho="sm" variante="sec" carregando={acao.ocupado} onClick={() => acao.executar(() => desbloquearAcesso(u, x.id), 'Acesso desbloqueado.')}>Desbloquear</Btn>}
+                  {x.id !== u.id && <Btn tamanho="sm" variante={x.ativo ? 'danger' : 'sec'} carregando={acao.ocupado} onClick={() => acao.executar(() => salvarUsuario(u, { ...x, ativo: !x.ativo }), x.ativo ? 'Acesso desativado.' : 'Acesso reativado.')}>{x.ativo ? 'Desativar' : 'Reativar'}</Btn>}
+                </td>
+              </tr>);
+          })}</tbody>
         </table>
       </div>
       {ed && (
         <Sheet titulo={ed.id ? `Editar ${ed.nome}` : 'Novo usuário'} onClose={() => setEd(null)}
-          rodape={<><Btn variante="sec" onClick={() => setEd(null)}>Cancelar</Btn><Btn carregando={acao.ocupado} onClick={async () => { if ((await acao.executar(() => salvarUsuario(u, ed), 'Usuário salvo.')) !== undefined) setEd(null); }}>Salvar</Btn></>}>
+          rodape={<><Btn variante="sec" onClick={() => setEd(null)}>Cancelar</Btn><Btn carregando={acao.ocupado} onClick={salvarEd}>Salvar</Btn></>}>
           <Field rotulo="Nome" obrigatorio htmlFor="us-nome"><input id="us-nome" className="input" value={ed.nome} onChange={e => setEd({ ...ed, nome: e.target.value })} /></Field>
           <div className="grid k2">
-            <Field rotulo="Perfil" htmlFor="us-role"><select id="us-role" className="input" value={ed.role} onChange={e => setEd({ ...ed, role: e.target.value as Role })}>{(Object.keys(ROLE_LABEL) as Role[]).filter(r => r !== 'comercial' || ed.role === 'comercial').map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></Field>
+            <Field rotulo="Perfil" htmlFor="us-role" dica="Define o que a pessoa vê e pode fazer."><select id="us-role" className="input" value={ed.role} onChange={e => setEd({ ...ed, role: e.target.value as Role })}>{(Object.keys(ROLE_LABEL) as Role[]).filter(r => r !== 'comercial' || ed.role === 'comercial').map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></Field>
             <Field rotulo="Nível (se mecânico)" htmlFor="us-niv"><input id="us-niv" className="input" value={ed.nivel || ''} onChange={e => setEd({ ...ed, nivel: e.target.value })} placeholder="Ex.: N3" /></Field>
           </div>
+          {!ed.id && <>
+            <div className="section-title" style={{ marginTop: 6 }}>Acesso</div>
+            <CamposAcesso login={ed.login || ''} senha={ed.senhaProv || ''} onLogin={v => setEd({ ...ed, login: v })} onSenha={v => setEd({ ...ed, senhaProv: v })} />
+            <p className="tiny muted">Deixe o login em branco para cadastrar sem acesso (dá para criar depois).</p>
+          </>}
           {acao.erro && <Alerta tipo="crit">{acao.erro}</Alerta>}
         </Sheet>
       )}
+      {ac && (
+        <Sheet titulo={ac.redefinir ? `Redefinir senha de ${ac.nome}` : `Criar acesso para ${ac.nome}`} onClose={() => setAc(null)}
+          rodape={<><Btn variante="sec" onClick={() => setAc(null)}>Cancelar</Btn><Btn carregando={acao.ocupado} onClick={salvarAc}>{ac.redefinir ? 'Redefinir senha' : 'Criar acesso'}</Btn></>}>
+          {ac.redefinir && <Alerta tipo="warn">A senha atual deixa de valer agora. No próximo acesso a pessoa entra com a provisória e cria uma nova.</Alerta>}
+          <CamposAcesso login={ac.login} senha={ac.senhaProv} onLogin={v => setAc({ ...ac, login: v })} onSenha={v => setAc({ ...ac, senhaProv: v })} />
+          {acao.erro && <Alerta tipo="crit">{acao.erro}</Alerta>}
+        </Sheet>
+      )}
+    </div>
+  );
+}
+
+function CamposAcesso({ login, senha, onLogin, onSenha }: { login: string; senha: string; onLogin: (v: string) => void; onSenha: (v: string) => void }) {
+  return (
+    <div className="grid k2">
+      <Field rotulo="Login (e-mail ou usuário)" htmlFor="us-login" dica="Ex.: joao.silva ou o e-mail da pessoa.">
+        <input id="us-login" className="input" autoCapitalize="none" autoComplete="off" value={login} onChange={e => onLogin(e.target.value)} />
+      </Field>
+      <Field rotulo="Senha provisória" htmlFor="us-senha-prov" dica={`Mínimo ${POLITICA_ACESSO.senhaMin} caracteres. A pessoa troca no primeiro acesso.`}>
+        <div className="row nowrap">
+          <input id="us-senha-prov" className="input" style={{ fontFamily: "ui-monospace, Menlo, monospace" }} autoComplete="off" value={senha} onChange={e => onSenha(e.target.value)} />
+          <Btn tamanho="sm" variante="ghost" onClick={() => onSenha(gerarSenhaProvisoria())}>Gerar outra</Btn>
+        </div>
+      </Field>
+    </div>
+  );
+}
+
+const RESULTADOS = Object.keys(RESULTADO_ACESSO) as ResultadoAcesso[];
+
+function Acessos({ u }: { u: Usuario }) {
+  const db = useDB();
+  const acao = useAcao();
+  const [quem, setQuem] = useState('');
+  const [res, setRes] = useState<'' | 'falhas' | ResultadoAcesso>('');
+  const falha = (r: ResultadoAcesso) => r === 'senha_errada' || r === 'usuario_inexistente' || r === 'bloqueado' || r === 'desativado';
+  const desde24h = new Date(agora().getTime() - 24 * 3600e3).toISOString();
+  const falhas24 = db.acessos.filter(a => a.em >= desde24h && falha(a.resultado)).length;
+  const lista = [...db.acessos].reverse()
+    .filter(a => (!quem || a.usuarioId === quem) && (!res || (res === 'falhas' ? falha(a.resultado) : a.resultado === res)))
+    .slice(0, 300);
+  const comSenhaDirecao = db.usuarios.some(x => x.ativo && x.senha && x.role === 'direcao');
+  return (
+    <div>
+      <Card titulo="Contas de demonstração">
+        <p className="small" style={{ marginBottom: 8 }}>
+          Enquanto estiver ligado, a tela de entrada mostra as pessoas fictícias e qualquer um entra com um toque, sem senha.
+          Desligue depois de criar os acessos do time (é preciso ter pelo menos uma pessoa da direção com senha).
+        </p>
+        <div className="row">
+          <Badge tom={db.acessoDemo ? 'atencao' : 'ok'}>{db.acessoDemo ? 'Ligado: entra sem senha' : 'Desligado: só com login e senha'}</Badge>
+          <Btn tamanho="sm" variante={db.acessoDemo ? 'danger' : 'sec'} data-acesso-demo carregando={acao.ocupado}
+            onClick={() => acao.executar(() => definirAcessoDemo(u, !db.acessoDemo), db.acessoDemo ? 'Contas de demonstração desligadas.' : 'Contas de demonstração ligadas.')}>
+            {db.acessoDemo ? 'Desligar contas de demonstração' : 'Ligar contas de demonstração'}
+          </Btn>
+        </div>
+        {db.acessoDemo && !comSenhaDirecao && <p className="tiny muted" style={{ marginTop: 6 }}>Para desligar, crie antes o acesso com senha de alguém da direção em Usuários.</p>}
+        {acao.erro && <div style={{ marginTop: 8 }}><Alerta tipo="crit">{acao.erro}</Alerta></div>}
+      </Card>
+      <div className="row" style={{ margin: '12px 0' }}>
+        <Badge tom={falhas24 ? 'atencao' : 'muted'}>{falhas24} tentativa(s) com falha nas últimas 24 h</Badge>
+        <span className="small muted">Bloqueio automático após {POLITICA_ACESSO.maxTentativas} senhas erradas seguidas, por {POLITICA_ACESSO.bloqueioMin} min. Sessão vale {POLITICA_ACESSO.sessaoHoras} h.</span>
+      </div>
+      <div className="grid k2" style={{ marginBottom: 12 }}>
+        <Field rotulo="Pessoa" htmlFor="ac-quem"><select id="ac-quem" className="input" value={quem} onChange={e => setQuem(e.target.value)}><option value="">Todas</option>{db.usuarios.map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></Field>
+        <Field rotulo="Resultado" htmlFor="ac-res"><select id="ac-res" className="input" value={res} onChange={e => setRes(e.target.value as typeof res)}><option value="">Todos</option><option value="falhas">Só falhas</option>{RESULTADOS.map(r => <option key={r} value={r}>{RESULTADO_ACESSO[r].rotulo}</option>)}</select></Field>
+      </div>
+      {lista.length === 0 ? <Card><Empty titulo="Nenhum acesso registrado ainda." /></Card> : (
+        <div className="tbl-wrap">
+          <table className="tbl" data-tabela-acessos>
+            <thead><tr><th>Quando</th><th>Pessoa</th><th>Resultado</th><th>Aparelho</th></tr></thead>
+            <tbody>{lista.map(a => (
+              <tr key={a.id} data-acesso={a.resultado}>
+                <td className="small" style={{ whiteSpace: 'nowrap' }}>{fmtDataHora(a.em)}</td>
+                <td className="small">{a.usuarioId ? nomeDe(db, a.usuarioId) : <span className="muted">login digitado: {a.loginDigitado || '—'}</span>}</td>
+                <td><Badge tom={RESULTADO_ACESSO[a.resultado].tom}>{RESULTADO_ACESSO[a.resultado].rotulo}</Badge></td>
+                <td className="small">{a.dispositivo}</td>
+              </tr>))}</tbody>
+          </table>
+        </div>
+      )}
+      <p className="tiny muted" style={{ marginTop: 8 }}>Neste beta o registro fica neste navegador. No sistema real ele é gravado no servidor e não pode ser apagado por quem usa o sistema.</p>
     </div>
   );
 }

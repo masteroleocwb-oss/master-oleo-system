@@ -70,7 +70,8 @@ p { margin: 0; }
 }
 .topbar .logo { height: 26px; width: auto; display: block; }
 .topbar .spacer { flex: 1; }
-.topbar .who { text-align: right; font-size: 13px; line-height: 1.2; }
+.topbar .who { text-align: right; font-size: 13px; line-height: 1.2; text-decoration: none; color: inherit; border-radius: 6px; padding: 2px 6px; }
+.topbar a.who:hover { background: var(--surface-2); }
 .topbar .who b { display: block; color: var(--navy); font-size: 14px; }
 .topbar .who span { color: var(--text-3); }
 

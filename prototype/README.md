@@ -40,7 +40,9 @@ Caminho do Chrome diferente do padrão do macOS: `CHROME_PATH=/caminho/do/chrome
 
 O perfil Comercial fica para o futuro e não aparece na demonstração.
 
-A tela inicial mostra os cartões dos usuários; um toque entra com o perfil (não há senha no protótipo — o login real é decisão da Fase B).
+A tela inicial tem o **login com usuário e senha** e, abaixo, os cartões das contas de demonstração (um toque entra, sem senha), enquanto a direção não desligar em Admin › Acessos.
+
+Para testar o login: entre como **Gustavo Reis** → Administração › Usuários → **Novo usuário** (ou **Criar acesso** numa pessoa) → anote a senha provisória → **Sair** → entre com o login e a provisória → crie a sua senha → veja **Minha conta** (clique no nome) e Admin › Acessos. Tudo fica só neste navegador; o login real do time é Fase B (D-03).
 
 | Usuário | Perfil | Para demonstrar |
 | --- | --- | --- |

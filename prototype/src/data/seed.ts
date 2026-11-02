@@ -76,10 +76,10 @@ export function gerarSeed(): DB {
   const criadoEm = '2026-01-05T12:00:00.000Z';
 
   const db: DB = {
-    versao: 1, geradoEm: agoraISO, usuarios: USUARIOS(criadoEm), clientes: [], veiculos: [], os: [], checklists: [], evidencias: [],
+    versao: 1, geradoEm: agoraISO, usuarios: USUARIOS(criadoEm).map(u => ({ ...u, demo: true })), clientes: [], veiculos: [], os: [], checklists: [], evidencias: [],
     oportunidades: [], catalogo: CATALOGO_INICIAL.map(d => ({ ...d })), regrasIntervalo: REGRAS_INICIAIS.map(x => ({ ...x })),
     manutencoes: [], compartilhamentos: [], metas: [], politicas: [], ocorrencias: [], auditorias: [], planosAcao: [],
-    diasExcecao: [], fechamentos: [], eventos: [], contadorOS: 7000, rodizio: { dia: hoje, status: {} },
+    diasExcecao: [], fechamentos: [], eventos: [], acessos: [], acessoDemo: true, contadorOS: 7000, rodizio: { dia: hoje, status: {} },
   };
 
   // ── Clientes e veículos ──
@@ -241,8 +241,11 @@ export function gerarSeed(): DB {
   };
 
   const abrir = (v: Veiculo, abertaEm: string, extra: Partial<OrdemServico> = {}): OrdemServico => {
+    const n = numero();
     const os: OrdemServico = {
-      id: `os${db.contadorOS + 1}`, numero: numero(), status: 'aguardando', veiculoId: v.id, clienteId: v.clienteId, vendedorId: vendedor(),
+      id: `os${db.contadorOS + 1}`, numero: n, status: 'aguardando', veiculoId: v.id, clienteId: v.clienteId, vendedorId: vendedor(),
+      // Pedido fictício do Olist (obrigatório na abertura, exceto retorno em garantia).
+      pedidoOlist: extra.retornoDeOsId ? undefined : String(96000 + n * 3),
       abertaEm, servicos: servicosBase(v), valorInicial: Math.round(240 + r() * 700), criadaPor: 'u_ven', ...extra,
     };
     os.naoFazerTesteFreio = os.servicos.some(s => s.key === 'fluidoFreio') || undefined;

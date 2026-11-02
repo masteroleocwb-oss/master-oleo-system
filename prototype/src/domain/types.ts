@@ -11,6 +11,29 @@ export interface Usuario {
   /** Nível de carreira (proposta do playbook, só informativo). */
   nivel?: string;
   criadoEm: string;
+  /** Conta de demonstração: entra sem senha (pode ser desligado no Admin). */
+  demo?: boolean;
+  /** Login individual (e-mail ou nome de usuário), único. */
+  login?: string;
+  /** Senha guardada só como hash PBKDF2 com sal próprio — nunca em texto. */
+  senha?: { hash: string; sal: string };
+  /** Senha provisória definida pela administração: troca obrigatória no primeiro acesso. */
+  trocarSenha?: boolean;
+  tentativasFalhas?: number;
+  bloqueadoAte?: string;
+}
+
+export type ResultadoAcesso = 'entrou' | 'entrou_demo' | 'saiu' | 'senha_errada' | 'usuario_inexistente' | 'desativado' | 'bloqueado' | 'senha_trocada' | 'sessao_expirada';
+
+/** Registro de acesso: quem, quando, de onde e o resultado. Só a direção vê a lista completa. */
+export interface RegistroAcesso {
+  id: string;
+  em: string;
+  usuarioId?: string;
+  /** O que foi digitado no campo de login (para enxergar tentativas em contas que não existem). */
+  loginDigitado?: string;
+  resultado: ResultadoAcesso;
+  dispositivo: string;
 }
 
 export interface Cliente {
@@ -455,6 +478,9 @@ export interface DB {
   diasExcecao: DiaExcecao[];
   fechamentos: FechamentoMensal[];
   eventos: Evento[];
+  acessos: RegistroAcesso[];
+  /** Admin pode desligar o acesso pelas contas de demonstração. */
+  acessoDemo: boolean;
   contadorOS: number;
   rodizio: Rodizio;
 }

@@ -1,17 +1,18 @@
 # Plano e resultado dos testes do protótipo
 
 > Ambiente: protótipo isolado (`prototype/`), dados fictícios, sem conexão com a base de produção.
-> Última execução completa: **26/10/2026**, no macOS com Node 25 e Chrome do sistema (puppeteer-core).
+> Última execução completa: **02/11/2026**, no macOS com Node 25 e Chrome do sistema (puppeteer-core).
 
 ## 1. Resumo
 
 | Camada | Ferramenta | Resultado |
 | --- | --- | --- |
 | Regras de domínio | vitest (`src/domain/dominio.test.ts`) | **16/16** |
-| Camada de serviço: permissões, transação, projeção | vitest (`src/data/api.test.ts`) | **27/27** |
-| Fluxos ponta a ponta no navegador | puppeteer (`e2e/run.mjs`) | **20/20 cenários** |
+| Camada de serviço: permissões, transação, projeção | vitest (`src/data/api.test.ts`) | **28/28** |
+| Login, senha, bloqueio e registro de acessos | vitest (`src/data/acesso.test.ts`) | **7/7** |
+| Fluxos ponta a ponta no navegador | puppeteer (`e2e/run.mjs`) | **21/21 cenários** |
 | Isolamento: nenhuma referência a Firebase/Google/credenciais | `scripts/check-isolamento.mjs` | **OK** |
-| Build de produção do protótipo | `tsc -b && vite build` | **OK** (JS 424 kB, 126 kB gzip) |
+| Build de produção do protótipo | `tsc -b && vite build` | **OK** (JS 457 kB, 137 kB gzip) |
 | Requisições de rede fora do protótipo durante o E2E | monitor do puppeteer | **0** |
 | Erros de JavaScript durante o E2E | monitor do puppeteer | **0** |
 
@@ -42,6 +43,8 @@ O E2E sobe o Vite em `127.0.0.1:5199`, usa o Chrome instalado (`/Applications/Go
 
 | Cenário | Como é testado | Resultado |
 | --- | --- | --- |
+| Login com senha e acessos | Direção (conta de demonstração) cria uma pessoa com login e senha provisória (a senha não fica gravada em texto); sai; senha errada mostra "Usuário ou senha incorretos."; com a provisória cai na troca obrigatória ("123456" é recusada); entra; Minha conta mostra os acessos; Admin › Acessos lista senha errada, entrou e saiu; desligar a demonstração é recusado até a direção ter senha; depois de desligar, a tela de entrada não mostra mais as contas fictícias | ✓ |
+| Pedido do Olist obrigatório | Nova OS vazia mostra "Informe o número do pedido do Olist."; os fluxos 1 e 4 e o cliente antigo informam o pedido | ✓ |
 | Erro de salvamento | Liga "falhar o próximo salvamento" nos controles da demo; o item mostra "Falhou — tentar de novo"; ao tentar de novo, salva | ✓ |
 | Formulário incompleto | Salvar a Nova OS vazia mostra "Falta preencher" e o motivo | ✓ |
 | Dados ausentes | OS, veículo e rota inexistentes mostram mensagem própria, sem tela branca | ✓ |
@@ -99,6 +102,17 @@ O E2E sobe o Vite em `127.0.0.1:5199`, usa o Chrome instalado (`/Applications/Go
   - ocorrência com decisão humana;
   - exceção autorizada não conta como completo.
 
+**Acesso** (`acesso.test.ts`):
+
+- A administração cria o acesso; a senha provisória não aparece em nenhum lugar da base (só o hash); o primeiro acesso exige trocar; a provisória deixa de valer.
+- Login inexistente e senha errada dão a mesma mensagem e ficam registrados (com o login digitado).
+- 5 senhas erradas bloqueiam por 15 min (nem a senha certa entra); depois do prazo, entra; a direção desbloqueia; outro perfil não.
+- Pessoa desativada não entra, mesmo com a senha certa.
+- Login único (sem diferenciar maiúsculas), formato validado, só a administração cria; o histórico de alteração do usuário não guarda o hash.
+- Contas de demonstração entram até a direção desligar; desligar exige alguém da direção com senha.
+- Regras de senha (tamanho, sequências, igual ao login, nome da oficina).
+- Pedido do Olist obrigatório na abertura (exceto retorno) e não pode ser apagado depois (`api.test.ts`).
+
 ## 5. Problemas encontrados e corrigidos durante os testes
 
 | # | Problema | Como apareceu | Correção |
@@ -120,6 +134,8 @@ O E2E sobe o Vite em `127.0.0.1:5199`, usa o Chrome instalado (`/Applications/Go
 | 15 | Legenda vazia mostrava "· imagem demonstrativa" no relatório | E2E, captura do retorno | Separador só entre partes preenchidas |
 | 17 | Link beta em branco a partir do dia 1º do mês: a base de demonstração não achava OS do mês para montar o retorno | Relato do usuário (02/11/2026) | Histórico de no mínimo 3 semanas; teste gera a base no dia 1º, em domingos e na virada do ano; link beta passou a ser um arquivo único |
 | 18 | Recomendação de óleo numa OS que trocou o óleo | Revisão visual | Item cujo serviço foi feito na mesma OS não vira recomendação |
+| 19 | Lista de senhas fáceis repetia um valor fixo do sistema atual, que ia para o código público do beta | Revisão do arquivo do beta antes de publicar | Lista genérica + regra "não use o nome da oficina"; o arquivo publicado foi conferido |
+| 20 | Edição de usuário copiava o hash da senha para o histórico de ações (antes/depois) | Revisão de código | `salvarUsuario` só grava os campos de cadastro e retira o hash do histórico; teste unitário |
 | 16 | `confirm()` do navegador não funciona no link beta (visualizador embutido) | Preparação do link beta | Confirmação na própria janela de controles da demo; botão de imprimir só fora do visualizador |
 
 ## 6. Roteiro de teste manual por perfil

@@ -110,7 +110,8 @@ export const validarNovaOS = (i: NovaOSInput, clienteAtual?: Partial<Cliente>): 
   if (!i.veiculoId && !i.clienteId && !i.novoCliente?.nome?.trim()) e.push('Informe o cliente.');
   if (i.novoVeiculo && !i.clienteId) e.push(...faltasCadastroCliente(cadastroFinal(undefined, i.novoCliente)));
   if (i.veiculoId) e.push(...faltasCadastroCliente(cadastroFinal(clienteAtual, i.completarCliente)));
-  if (i.pedidoOlist && !/^[\w.\-/]{1,30}$/.test(i.pedidoOlist.trim())) e.push('Número do pedido do Olist inválido.');
+  if (!retorno && !i.pedidoOlist?.trim()) e.push('Informe o número do pedido do Olist.');
+  else if (i.pedidoOlist?.trim() && !/^[\w.\-/]{1,30}$/.test(i.pedidoOlist.trim())) e.push('Número do pedido do Olist inválido.');
   if (!i.vendedorId) e.push('Selecione o vendedor.');
   if (retorno && !i.problemaRelatado?.trim()) e.push('Descreva o problema que o cliente relatou.');
   if (!retorno && !i.servicos.length) e.push('Selecione pelo menos um serviço.');
@@ -760,6 +761,7 @@ export async function definirPedidoOlist(u: Usuario, osId: string, pedido: strin
   if (p && !/^[\w.\-/]{1,30}$/.test(p)) throw new ErroValidacao('Número do pedido do Olist inválido.');
   return transacao(d => {
     const os = osPorId(d, osId);
+    if (!p && !os.retornoDeOsId) throw new ErroValidacao('O pedido do Olist é obrigatório; informe o número correto em vez de apagar.');
     const antes = os.pedidoOlist;
     os.pedidoOlist = p || undefined;
     evento(d, u.id, 'os.pedido_olist', 'os', os.id, p ? `Pedido Olist ${p} informado na OS #${os.numero}` : `Pedido Olist removido da OS #${os.numero}`, { antes, depois: os.pedidoOlist });
@@ -978,21 +980,25 @@ export async function voltarAMostrarItem(u: Usuario, defId: string, indice: numb
   });
 }
 
-export async function salvarUsuario(u: Usuario, x: { id?: string; nome: string; role: Role; ativo: boolean; nivel?: string }) {
+export async function salvarUsuario(u: Usuario, x: { id?: string; nome: string; role: Role; ativo: boolean; nivel?: string }): Promise<string> {
   exigir(u, 'admin.usuarios');
   if (!x.nome.trim()) throw new ErroValidacao('Informe o nome.');
   if (x.id === u.id && !x.ativo) throw new ErroValidacao('Você não pode desativar o próprio acesso.');
+  // Só os campos de cadastro: login e senha mudam por definirAcesso, e o hash nunca vai para o histórico.
+  const campos = { nome: x.nome.trim(), role: x.role, ativo: x.ativo, nivel: x.nivel || undefined };
+  const semSegredo = ({ senha: _s, ...resto }: Usuario) => resto;
   return transacao(d => {
     if (x.id) {
       const i = d.usuarios.findIndex(y => y.id === x.id);
       const antes = d.usuarios[i];
-      d.usuarios[i] = { ...antes, ...x, nome: x.nome.trim() };
-      evento(d, u.id, 'usuario.alterado', 'usuario', x.id, `${x.nome}: ${antes.role}/${antes.ativo ? 'ativo' : 'inativo'} → ${x.role}/${x.ativo ? 'ativo' : 'inativo'}`, { antes, depois: d.usuarios[i] });
-    } else {
-      const novo: Usuario = { id: novoId('u'), nome: x.nome.trim(), role: x.role, ativo: x.ativo, nivel: x.nivel, criadoEm: agoraISO() };
-      d.usuarios.push(novo);
-      evento(d, u.id, 'usuario.criado', 'usuario', novo.id, `Usuário ${novo.nome} criado (${novo.role})`);
+      d.usuarios[i] = { ...antes, ...campos };
+      evento(d, u.id, 'usuario.alterado', 'usuario', x.id, `${campos.nome}: ${antes.role}/${antes.ativo ? 'ativo' : 'inativo'} → ${x.role}/${x.ativo ? 'ativo' : 'inativo'}`, { antes: semSegredo(antes), depois: semSegredo(d.usuarios[i]) });
+      return x.id;
     }
+    const novo: Usuario = { id: novoId('u'), ...campos, criadoEm: agoraISO() };
+    d.usuarios.push(novo);
+    evento(d, u.id, 'usuario.criado', 'usuario', novo.id, `Usuário ${novo.nome} criado (${novo.role})`);
+    return novo.id;
   });
 }
 

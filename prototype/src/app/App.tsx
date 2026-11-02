@@ -1,9 +1,11 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { registrarSaida } from '../data/acesso';
 import { painelHoje } from '../data/metricas';
 import { pode, ROLE_LABEL, type Capacidade } from '../domain/permissions';
 import type { Usuario } from '../domain/types';
 import { Admin } from '../screens/Admin';
 import { Checklist } from '../screens/Checklist';
+import { MinhaConta, TrocarSenha } from '../screens/Conta';
 import { DetalhesOS } from '../screens/DetalhesOS';
 import { Execucao } from '../screens/Execucao';
 import { Retorno } from '../screens/Retorno';
@@ -17,7 +19,7 @@ import { Performance } from '../screens/Performance';
 import { RelatorioPublico } from '../screens/RelatorioPublico';
 import { Veiculo, Veiculos } from '../screens/Veiculos';
 import { Btn, DemoBanner, DemoControles, Empty, useDB } from '../ui/components';
-import { ir, navPorPerfil, rotaInicial, sair, useRota, useUsuario } from './nav';
+import { ir, navPorPerfil, rotaInicial, sair, sessaoVencida, useRota, useUsuario } from './nav';
 
 const LOGO = './brand/logo-master-oleo.png';
 
@@ -38,6 +40,14 @@ export function App() {
   const db = useDB();
   const [ctrl, setCtrl] = useState(false);
 
+  // Sessão de um turno: passou do prazo, registra e pede login de novo.
+  useEffect(() => {
+    const ver = () => { const id = sessaoVencida(); if (id) { registrarSaida(id, 'sessao_expirada'); sair(); ir('/login'); } };
+    ver();
+    const t = setInterval(ver, 60_000);
+    return () => clearInterval(t);
+  }, []);
+
   // Relatório do cliente: público, sem login, sem navegação interna.
   if (partes[0] === 'r') {
     return <>
@@ -51,6 +61,21 @@ export function App() {
     return <>
       <DemoBanner onControles={() => setCtrl(true)} />
       <Login />
+      {ctrl && <DemoControles onClose={() => setCtrl(false)} />}
+    </>;
+  }
+
+  const sairDaConta = () => { registrarSaida(u.id); sair(); ir('/login'); };
+
+  // Primeiro acesso com senha provisória (ou senha redefinida): só entra depois de criar a própria senha.
+  if (u.trocarSenha && u.senha) {
+    return <>
+      <DemoBanner onControles={() => setCtrl(true)} />
+      <div className="login-wrap">
+        <div className="login-hero"><img src={LOGO} alt="Master Óleo" /><h1>Olá, {u.nome.split(' ')[0]}</h1></div>
+        <div className="card" style={{ maxWidth: 480 }}><h2 style={{ marginBottom: 10 }}>Crie a sua senha</h2><TrocarSenha u={u} obrigatoria /></div>
+        <div style={{ marginTop: 12 }}><Btn variante="ghost" tamanho="sm" onClick={sairDaConta}>Sair</Btn></div>
+      </div>
       {ctrl && <DemoControles onClose={() => setCtrl(false)} />}
     </>;
   }
@@ -79,6 +104,7 @@ export function App() {
   else if (a === 'oportunidades') tela = guard('oportunidade.ver', <Oportunidades u={u} />);
   else if (a === 'lideranca') tela = guard('performance.time', <Lideranca u={u} aba={b} />);
   else if (a === 'metas') tela = guard('metas.ver', <Metas u={u} aba={b} />);
+  else if (a === 'conta') tela = <MinhaConta u={u} />;
   else if (a === 'admin') tela = guard('admin.historico', <Admin u={u} aba={b} />);
   else tela = <div className="card"><Empty titulo="Página não encontrada"><Btn onClick={() => ir(rotaInicial(u.role))}>Ir para o início</Btn></Empty></div>;
 
@@ -90,8 +116,8 @@ export function App() {
       <header className="topbar">
         <a href={`#${rotaInicial(u.role)}`} aria-label="Início"><img className="logo" src={LOGO} alt="Master Óleo" /></a>
         <div className="spacer" />
-        <div className="who"><b>{u.nome}</b><span>{ROLE_LABEL[u.role]}</span></div>
-        <Btn variante="sec" tamanho="sm" onClick={() => { sair(); ir('/login'); }}>Trocar usuário</Btn>
+        <a className="who" href="#/conta" title="Minha conta"><b>{u.nome}</b><span>{ROLE_LABEL[u.role]}{u.demo ? ' · demonstração' : ''}</span></a>
+        <Btn variante="sec" tamanho="sm" onClick={sairDaConta}>Sair</Btn>
       </header>
       <div className="layout">
         <nav className="sidenav" aria-label="Navegação principal">

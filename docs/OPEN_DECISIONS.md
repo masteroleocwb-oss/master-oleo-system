@@ -61,10 +61,11 @@ Legenda de bloqueio:
 
 ## D-03 — Login individual
 
-- **Estado atual**: senhas compartilhadas e "modo ADM" por aparelho; nenhuma ação é atribuível a uma pessoa. O protótipo simula login por troca de usuário.
+- **Estado atual**: senhas compartilhadas e "modo ADM" por aparelho; nenhuma ação é atribuível a uma pessoa. Desde 02/11/2026 o protótipo simula o fluxo completo (PRODUCT_SPEC §4.11): a administração cria o acesso com senha provisória, a pessoa cria a própria senha no primeiro acesso, bloqueio após 5 erros, sessão de 12 h e registro de acessos. No protótipo isso fica no navegador; serve para validar o fluxo, não como segurança.
 - **Alternativas**: (a) e-mail + senha (Firebase Auth); (b) usuário + PIN de 4–6 dígitos no tablet da oficina, com sessão curta; (c) login com Google.
 - **Impacto**: sem login individual, auditoria, ocorrências, metas individuais e trilha não têm valor de prova.
 - **Recomendação**: (b) para a bancada (rápido, sem e-mail) e (a) para liderança e direção. A senha do dia (`master`+data) é aposentada.
+- **Como fica na Fase B** (proposta, depende de aprovação): Firebase Authentication; perfil (role) num documento por pessoa que só a direção altera, protegido pelas regras; registro de acesso gravado no servidor (a pessoa não consegue apagar); remoção das senhas fixas do código. Ordem segura: criar as contas de todo o time e testar **antes** de fechar as regras (D-02), para a oficina não ficar sem sistema.
 - **Aprovador**: direção. **Bloqueia.**
 
 ## D-04 — Critérios do checklist e exigência de foto
@@ -168,8 +169,8 @@ Legenda de bloqueio:
 
 ## D-16 — Integração com o Tiny ERP (Olist)
 
-- **Estado atual**: citada no planejamento, sem chave de API nem escopo definido. O protótipo não integra. Desde 02/11/2026 o vendedor digita o **nº do pedido no Olist** na OS (opcional), o que já permite cruzar OS e pedido manualmente.
-- **Pergunta**: o nº do pedido deve ser obrigatório para fechar a OS? No futuro, buscar o pedido pelo número e conferir valor/itens automaticamente?
+- **Estado atual**: citada no planejamento, sem chave de API nem escopo definido. O protótipo não integra. Desde 02/11/2026 o vendedor digita o **nº do pedido no Olist** na abertura da OS, **obrigatório** (decisão da direção em 02/11/2026; exceto retorno em garantia). Isso já permite cruzar OS e pedido manualmente.
+- **Pergunta**: no futuro, buscar o pedido pelo número e conferir valor/itens automaticamente?
 - **Recomendação**: definir o que sincronizar (cliente, veículo, valor da OS?) depois da etapa 2. A chave fica só no servidor, nunca no front-end.
 - **Aprovador**: direção. Não bloqueia.
 

@@ -308,7 +308,8 @@ export function NovaOS({ u }: { u: Usuario }) {
               <input id="valor" className="input" inputMode="decimal" value={f.valor} onChange={e => set({ valor: e.target.value.replace(/[^\d,.]/g, '') })} placeholder="0,00" />
             </Field>
           )}
-          <Field rotulo="Nº do pedido no Olist" htmlFor="pedido-olist" dica="Se ainda não tiver, dá para informar depois na OS.">
+          <Field rotulo="Nº do pedido no Olist" obrigatorio={!retorno} htmlFor="pedido-olist" dica={retorno ? 'Opcional no retorno (garantia).' : 'O número do pedido que o vendedor lançou no Olist.'}
+            erro={tentou && !retorno && !f.pedidoOlist?.trim() ? 'Informe o número do pedido' : null}>
             <input id="pedido-olist" className="input" inputMode="numeric" value={f.pedidoOlist || ''} onChange={e => set({ pedidoOlist: e.target.value.replace(/[^\w.\-/]/g, '').slice(0, 30) })} placeholder="Ex.: 104523" />
           </Field>
           <Field rotulo="Vendedor" obrigatorio htmlFor="vendedor">
