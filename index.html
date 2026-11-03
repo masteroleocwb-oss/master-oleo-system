@@ -7414,6 +7414,13 @@
             if (USAR_EMULADOR && !a.emulatorConfig) a.useEmulator('http://127.0.0.1:9099', { disableWarnings: true });
             return a;
         };
+        // Banco visto pela conta recém-criada (app 'criador'), para gravar o perfil inicial como ela mesma.
+        const dbCriador = () => {
+            const f = authCriador().app.firestore();
+            if (USAR_EMULADOR && !f._mo_emulador) { f.useEmulator('127.0.0.1', 8080); f._mo_emulador = true; }
+            return f;
+        };
+        const DOC_INICIO = () => db.collection('sistema').doc('inicio');
 
         const sairDaConta = async (resultado = 'saiu') => {
             await registrarAcesso(resultado);
@@ -7451,10 +7458,10 @@
             const [ocupado, setOcupado] = useState(false);
             const [primeiraConta, setPrimeiraConta] = useState(false);
 
-            // Configuração inicial: só aparece enquanto não existe nenhum usuário (e a base ainda permite ler).
+            // Configuração inicial: só aparece enquanto a conta da direção ainda não foi criada.
             useEffect(() => {
-                db.collection('usuarios').limit(1).get()
-                    .then(s => setPrimeiraConta(s.empty))
+                DOC_INICIO().get()
+                    .then(s => setPrimeiraConta(!s.exists))
                     .catch(() => setPrimeiraConta(false));
             }, []);
 
@@ -7537,14 +7544,23 @@
                 if (f.senha !== f.conf) { setErro('A confirmação não é igual à senha.'); return; }
                 setOcupado(true); setErro('');
                 try {
-                    const vazio = (await db.collection('usuarios').limit(1).get()).empty;
-                    if (!vazio) { setErro('Já existe usuário cadastrado. Entre com o seu login.'); setOcupado(false); return; }
+                    if ((await DOC_INICIO().get()).exists) { setErro('A conta da direção já foi criada. Entre com o seu login.'); setOcupado(false); return; }
                     const a2 = authCriador();
-                    const cred = await a2.createUserWithEmailAndPassword(em, f.senha);
-                    await db.collection('usuarios').doc(cred.user.uid).set({
+                    let cred;
+                    try { cred = await a2.createUserWithEmailAndPassword(em, f.senha); }
+                    catch (err) {
+                        // Tentativa anterior criou o login mas não o perfil: retoma com a mesma senha.
+                        if (err.code !== 'auth/email-already-in-use') throw err;
+                        cred = await a2.signInWithEmailAndPassword(em, f.senha);
+                    }
+                    const uid = cred.user.uid, agora = firebase.firestore.FieldValue.serverTimestamp();
+                    const d2 = dbCriador(), lote = d2.batch();
+                    lote.set(d2.collection('usuarios').doc(uid), {
                         nome: f.nome.trim(), email: em, perfil: 'direcao', ativo: true, trocarSenha: false,
-                        criadoEm: firebase.firestore.FieldValue.serverTimestamp(), criadoPor: cred.user.uid
+                        criadoEm: agora, criadoPor: uid
                     });
+                    lote.set(d2.collection('sistema').doc('inicio'), { uid, email: em, em: agora });
+                    await lote.commit();
                     await a2.signOut();
                     localStorage.setItem(CHAVE_SESSAO, String(Date.now()));
                     await auth.signInWithEmailAndPassword(em, f.senha);
