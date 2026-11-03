@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { entrar, ir, rotaInicial } from '../app/nav';
 import { entrarComSenha, entrarDemo } from '../data/acesso';
+import * as nuvem from '../data/nuvem';
 import { ROLE_LABEL } from '../domain/permissions';
 import type { Role } from '../domain/types';
 import { Alerta, Avatar, Badge, Btn, Field, useDB } from '../ui/components';
@@ -93,6 +94,54 @@ export function Login() {
         <a className="btn sec sm" href="#/r/Dm0Expir5mQ1wE7rT3yU9i">Link expirado</a>
         <a className="btn sec sm" href="#/r/7001">Link inválido (número da OS)</a>
       </div>
+    </div>
+  );
+}
+
+/** Login na base real: e-mail e senha do Firebase (as mesmas contas do sistema atual). */
+export function LoginReal({ aviso }: { aviso?: string }) {
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+  const [ver, setVer] = useState(false);
+  const [msg, setMsg] = useState<{ tipo: 'crit' | 'info'; texto: string } | null>(aviso ? { tipo: 'info', texto: aviso } : null);
+  const [ocupado, setOcupado] = useState(false);
+  const enviar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !senha) { setMsg({ tipo: 'crit', texto: 'Informe o e-mail e a senha.' }); return; }
+    setOcupado(true); setMsg(null);
+    try { await nuvem.entrar(email, senha); ir('/'); }
+    catch (err) { setMsg({ tipo: 'crit', texto: (err as Error).message }); setSenha(''); }
+    finally { setOcupado(false); }
+  };
+  const esqueci = async () => {
+    if (!email.trim()) { setMsg({ tipo: 'crit', texto: 'Digite o seu e-mail no campo acima e toque de novo em "Esqueci minha senha".' }); return; }
+    setOcupado(true);
+    try { await nuvem.esqueciSenha(email); setMsg({ tipo: 'info', texto: 'Se o e-mail estiver cadastrado, chega em instantes um link para criar uma nova senha. Confira também o spam.' }); }
+    catch (err) { setMsg({ tipo: 'crit', texto: (err as Error).message }); }
+    finally { setOcupado(false); }
+  };
+  return (
+    <div className="login-wrap">
+      <div className="login-hero">
+        <img src="./brand/logo-master-oleo.png" alt="Master Óleo" />
+        <h1>Plataforma de operação e inspeção técnica</h1>
+      </div>
+      <form className="card login-form" onSubmit={enviar} aria-label="Entrar">
+        <h2 style={{ marginBottom: 10 }}>Entrar</h2>
+        <Field rotulo="E-mail" htmlFor="login-email">
+          <input id="login-email" className="input" type="email" autoComplete="username" autoCapitalize="none" value={email} onChange={e => setEmail(e.target.value)} />
+        </Field>
+        <Field rotulo="Senha" htmlFor="login-senha">
+          <div className="row nowrap">
+            <input id="login-senha" className="input" type={ver ? 'text' : 'password'} autoComplete="current-password" value={senha} onChange={e => setSenha(e.target.value)} />
+            <Btn variante="ghost" tamanho="sm" onClick={() => setVer(!ver)} aria-label={ver ? 'Esconder senha' : 'Mostrar senha'}>{ver ? 'Esconder' : 'Mostrar'}</Btn>
+          </div>
+        </Field>
+        {msg && <div style={{ marginTop: 10 }}><Alerta tipo={msg.tipo}>{msg.texto}</Alerta></div>}
+        <div style={{ marginTop: 12 }}><Btn type="submit" block carregando={ocupado}>Entrar</Btn></div>
+        <div style={{ marginTop: 8, textAlign: 'center' }}><Btn variante="ghost" tamanho="sm" onClick={esqueci} disabled={ocupado}>Esqueci minha senha</Btn></div>
+        <p className="small muted" style={{ marginTop: 10 }}>Use o mesmo e-mail e a mesma senha do sistema atual. Cada entrada fica registrada; não compartilhe a sua senha.</p>
+      </form>
     </div>
   );
 }

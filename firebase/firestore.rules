@@ -1,0 +1,104 @@
+rules_version = '2';
+// Master Óleo — regras com login individual (Fase B) + sistema novo (piloto).
+// Inclui tudo das regras em uso hoje; só acrescenta as coleções do sistema novo e deixa o time
+// ler a lista de usuários (nome e perfil), que o sistema novo usa no rodízio e nas telas.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function logado() { return request.auth != null; }
+    function meuPerfil() { return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data; }
+    function ativo() {
+      return logado()
+        && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid))
+        && meuPerfil().ativo == true;
+    }
+    function direcao() { return ativo() && meuPerfil().perfil == 'direcao'; }
+    function perfilValido(d) { return d.perfil in ['direcao', 'lider', 'vendedor', 'mecanico'] && d.ativo is bool; }
+
+    // Dados da oficina: só quem tem perfil ativo.
+    match /orders/{id} { allow read, write: if ativo(); }
+    match /config/{id} { allow read, write: if ativo(); }
+
+    // Perfis: cada um lê o próprio; a direção lê e altera todos (menos o próprio perfil/ativo).
+    match /usuarios/{uid} {
+      allow read: if (logado() && request.auth.uid == uid) || ativo();
+      allow create: if (direcao() && perfilValido(request.resource.data)) || (
+          // Configuração inicial: a primeira conta vira direção, uma única vez (junto com sistema/inicio).
+          logado() && request.auth.uid == uid
+          && !exists(/databases/$(database)/documents/sistema/inicio)
+          && getAfter(/databases/$(database)/documents/sistema/inicio).data.uid == uid
+          && request.resource.data.perfil == 'direcao' && request.resource.data.ativo == true
+          && request.resource.data.email == request.auth.token.email
+        );
+      allow update: if (
+          direcao() && perfilValido(request.resource.data)
+          && (!('nomeLegado' in request.resource.data) || request.resource.data.nomeLegado == null || (request.resource.data.nomeLegado is string && request.resource.data.nomeLegado.size() <= 40))
+          && (uid != request.auth.uid
+              || (request.resource.data.perfil == resource.data.perfil && request.resource.data.ativo == resource.data.ativo))
+        ) || (
+          logado() && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['trocarSenha', 'senhaTrocadaEm', 'ultimoAcessoEm'])
+          && (!('trocarSenha' in request.resource.data.diff(resource.data).affectedKeys()) || request.resource.data.trocarSenha == false)
+        );
+      allow delete: if false; // desativar, nunca apagar
+    }
+
+    // Marca de que a conta da direção já foi criada (some o botão de configuração inicial).
+    match /sistema/{id} {
+      allow get: if id == 'inicio';
+      allow create: if id == 'inicio' && logado()
+        && request.resource.data.keys().hasOnly(['uid', 'email', 'em'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.em == request.time
+        && getAfter(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.perfil == 'direcao';
+      allow update, delete: if false;
+    }
+
+    // ───── Sistema novo (piloto) ─────
+    // Dados da operação: quem tem perfil ativo lê e grava; nada se apaga (só recomendações ainda não tratadas).
+    match /checklists/{id} { allow read, create, update: if ativo(); }
+    match /evidencias/{id} { allow read, create, update: if ativo(); }
+    match /oportunidades/{id} { allow read, create, update, delete: if ativo(); }
+    match /manutencoes/{id} { allow read, create, update: if ativo(); }
+    match /compartilhamentos/{id} { allow read, create, update: if ativo(); }
+    match /auditorias/{id} { allow read, create, update: if ativo(); }
+    match /diasExcecao/{id} { allow read, create, update: if ativo(); }
+    match /planosAcao/{id} { allow read, create, update: if ativo(); }
+    match /ocorrencias/{id} { allow read, create, update: if ativo(); }
+    match /metas/{id} { allow read, create, update: if ativo(); }
+    match /fechamentos/{id} { allow read: if ativo(); allow create: if direcao(); }
+    // Configuração do checklist, intervalos e políticas: todos leem, só a direção altera.
+    match /catalogo/{id} { allow read: if ativo(); allow create, update: if direcao(); }
+    match /regrasIntervalo/{id} { allow read: if ativo(); allow create, update: if direcao(); }
+    match /politicas/{id} { allow read: if ativo(); allow create, update: if direcao(); }
+    // Histórico: cada um só acrescenta eventos em nome próprio; ninguém edita nem apaga.
+    match /eventos/{id} {
+      allow read: if ativo();
+      allow create: if ativo() && request.resource.data.por == request.auth.uid;
+    }
+    // Relatório do cliente: lido só pelo token exato do link (sem login, sem listar).
+    match /relatorios/{token} {
+      allow get: if true;
+      allow create, update: if ativo();
+    }
+
+    // Registro de acessos: só se acrescenta; ninguém edita nem apaga. A direção lê.
+    match /acessos/{id} {
+      function registroValido(d) {
+        return d.keys().hasOnly(['resultado', 'uid', 'email', 'nome', 'alvo', 'dispositivo', 'em'])
+          && d.resultado is string && d.resultado.size() <= 40
+          && d.email is string && d.email.size() <= 120
+          && d.dispositivo is string && d.dispositivo.size() <= 80
+          && d.em == request.time;
+      }
+      allow read: if direcao();
+      allow create: if registroValido(request.resource.data) && (
+          (logado() && request.resource.data.uid == request.auth.uid)
+          || (!logado() && request.resource.data.uid == null
+              && request.resource.data.resultado in ['senha_errada', 'bloqueado']
+              && request.resource.data.alvo == null && request.resource.data.nome == null)
+        );
+      allow update, delete: if false;
+    }
+  }
+}

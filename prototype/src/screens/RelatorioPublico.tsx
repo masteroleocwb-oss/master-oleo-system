@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { obterRelatorioPublico, type ResultadoPublico } from '../data/api';
+import { obterRelatorioPublico, obterRelatorioPublicoReal, type ResultadoPublico } from '../data/api';
+import { MODO_REAL } from '../data/modo';
 import { ESTADOS, ORIGEM_LABEL, RECOMENDACAO } from '../domain/catalogo';
 import type { EstadoItem } from '../domain/types';
 import { fmtData, fmtDataHora, fmtKm } from '../domain/util';
@@ -15,7 +16,8 @@ export function RelatorioPublico({ token }: { token: string }) {
     // Conta um acesso por abertura (o modo estrito do React roda o efeito duas vezes em desenvolvimento).
     if (carregado.current === token) return;
     carregado.current = token;
-    setR(obterRelatorioPublico(token));
+    if (MODO_REAL) void obterRelatorioPublicoReal(token).then(setR);
+    else setR(obterRelatorioPublico(token));
     document.title = 'Relatório do seu veículo · Master Óleo';
   }, [token]);
   if (!r) return null;

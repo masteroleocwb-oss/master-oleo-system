@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { registrarSaida } from '../data/acesso';
+import { MODO_REAL } from '../data/modo';
+import * as nuvem from '../data/nuvem';
 import { painelHoje } from '../data/metricas';
 import { pode, ROLE_LABEL, type Capacidade } from '../domain/permissions';
 import type { Usuario } from '../domain/types';
@@ -10,7 +12,7 @@ import { DetalhesOS } from '../screens/DetalhesOS';
 import { Execucao } from '../screens/Execucao';
 import { Retorno } from '../screens/Retorno';
 import { Lideranca } from '../screens/Lideranca';
-import { Login } from '../screens/Login';
+import { Login, LoginReal } from '../screens/Login';
 import { Metas } from '../screens/Metas';
 import { NovaOS } from '../screens/NovaOS';
 import { Operacao } from '../screens/Operacao';
@@ -51,15 +53,45 @@ export function App() {
   // Relatório do cliente: público, sem login, sem navegação interna.
   if (partes[0] === 'r') {
     return <>
-      <DemoBanner onControles={() => setCtrl(true)} />
+      {!MODO_REAL && <DemoBanner onControles={() => setCtrl(true)} />}
       <RelatorioPublico token={partes[1] || ''} />
       {ctrl && <DemoControles onClose={() => setCtrl(false)} />}
     </>;
   }
 
+  if (MODO_REAL) {
+    const est = nuvem.getEstado();
+    if (est.estado === 'desconectado') return <LoginReal />;
+    if (est.estado === 'carregando') return <div className="login-wrap"><div className="login-hero"><img src={LOGO} alt="Master Óleo" /><h1>Carregando os dados da oficina…</h1></div></div>;
+    const sairJa = (motivo = 'saiu') => { void nuvem.sair(motivo); };
+    if (est.estado === 'erro' || !u) {
+      const semPerfil = est.estado !== 'erro';
+      return (
+        <div className="login-wrap">
+          <div className="login-hero"><img src={LOGO} alt="Master Óleo" /></div>
+          <div className="card" style={{ maxWidth: 480 }}>
+            <Empty titulo={semPerfil ? 'Este login não tem acesso ativo ao sistema' : 'Não foi possível carregar os dados'}>
+              <p className="small" style={{ margin: '6px 0 14px' }}>{semPerfil ? 'Fale com a direção para liberar o seu perfil.' : est.erro}</p>
+              <Btn onClick={() => sairJa(semPerfil ? 'sem_perfil' : 'saiu')}>Sair</Btn>
+            </Empty>
+          </div>
+        </div>
+      );
+    }
+    if (u.trocarSenha) {
+      return (
+        <div className="login-wrap">
+          <div className="login-hero"><img src={LOGO} alt="Master Óleo" /><h1>Olá, {u.nome.split(' ')[0]}</h1></div>
+          <div className="card" style={{ maxWidth: 480 }}><h2 style={{ marginBottom: 10 }}>Crie a sua senha</h2><TrocarSenha u={u} obrigatoria /></div>
+          <div style={{ marginTop: 12 }}><Btn variante="ghost" tamanho="sm" onClick={() => sairJa()}>Sair</Btn></div>
+        </div>
+      );
+    }
+  }
+
   if (!u || partes[0] === 'login') {
     return <>
-      <DemoBanner onControles={() => setCtrl(true)} />
+      {!MODO_REAL && <DemoBanner onControles={() => setCtrl(true)} />}
       <Login />
       {ctrl && <DemoControles onClose={() => setCtrl(false)} />}
     </>;
@@ -70,7 +102,7 @@ export function App() {
   // Primeiro acesso com senha provisória (ou senha redefinida): só entra depois de criar a própria senha.
   if (u.trocarSenha && u.senha) {
     return <>
-      <DemoBanner onControles={() => setCtrl(true)} />
+      {!MODO_REAL && <DemoBanner onControles={() => setCtrl(true)} />}
       <div className="login-wrap">
         <div className="login-hero"><img src={LOGO} alt="Master Óleo" /><h1>Olá, {u.nome.split(' ')[0]}</h1></div>
         <div className="card" style={{ maxWidth: 480 }}><h2 style={{ marginBottom: 10 }}>Crie a sua senha</h2><TrocarSenha u={u} obrigatoria /></div>
@@ -112,7 +144,7 @@ export function App() {
 
   return (
     <>
-      <DemoBanner onControles={() => setCtrl(true)} />
+      {!MODO_REAL && <DemoBanner onControles={() => setCtrl(true)} />}
       <header className="topbar">
         <a href={`#${rotaInicial(u.role)}`} aria-label="Início"><img className="logo" src={LOGO} alt="Master Óleo" /></a>
         <div className="spacer" />

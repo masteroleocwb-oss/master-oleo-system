@@ -22,6 +22,8 @@ interface Form {
   /** Como conheceu, cidade e bairro (cliente novo, ou cliente antigo que ainda não tem). */
   comoConheceu?: string; comoConheceuDetalhe?: string; cidade?: string; bairro?: string;
   pedidoOlist?: string;
+  /** Km rodados por mês (texto do campo; vazio = usar o do cadastro). */
+  kmMes?: string;
   retorno?: boolean; retornoDeOsId?: string; problema?: string;
   vendedorId: string;
   servicos: Partial<Record<ServicoKey, { marca?: string; quantidade?: string; codigo?: string }>>;
@@ -36,7 +38,7 @@ const VAZIO = (vendedorId: string): Form => ({
 
 export function NovaOS({ u }: { u: Usuario }) {
   const db = useDB();
-  const vendedores = db.usuarios.filter(x => (x.role === 'vendedor' || x.role === 'lider') && x.ativo);
+  const vendedores = db.usuarios.filter(x => (x.role === 'vendedor' || x.role === 'lider' || x.role === 'direcao') && x.ativo);
   const [f, setF] = useState<Form>(() => VAZIO(u.role === 'vendedor' ? u.id : ''));
   const [rascunho, setRascunho] = useState<Form | null>(() => { try { const r = localStorage.getItem(RASCUNHO); return r ? JSON.parse(r) : null; } catch { return null; } });
   const [salvoLocal, setSalvoLocal] = useState<SaveState>('ocioso');
@@ -70,6 +72,8 @@ export function NovaOS({ u }: { u: Usuario }) {
   } : null;
   const osAnteriores = veiculo ? db.os.filter(o => o.veiculoId === veiculo.id && o.status === 'concluido').sort((a, b) => b.concluidaEm!.localeCompare(a.concluidaEm!)) : [];
   const retorno = !!f.retorno && !!veiculo;
+  const kmMesTexto = f.kmMes ?? (veiculo?.kmPorMes ? String(veiculo.kmPorMes) : '');
+  const kmPorMes = Number(kmMesTexto.replace(/\D/g, '')) || undefined;
 
   const entrada: NovaOSInput = {
     veiculoId: f.veiculoId,
@@ -77,6 +81,7 @@ export function NovaOS({ u }: { u: Usuario }) {
     novoCliente: f.novo ? { nome: f.clienteNome, telefone: f.clienteTel, ...dadosDigitados } as NovaOSInput['novoCliente'] : undefined,
     completarCliente: veiculo ? { ...(clienteSemTel ? { telefone: f.telExistente } : {}), ...dadosDigitados } : undefined,
     pedidoOlist: f.pedidoOlist,
+    kmPorMes,
     retornoDeOsId: retorno ? f.retornoDeOsId : undefined,
     problemaRelatado: retorno ? f.problema : undefined,
     vendedorId: f.vendedorId,
@@ -131,6 +136,13 @@ export function NovaOS({ u }: { u: Usuario }) {
     </>
   );
 
+  const campoKmMes = (veiculo || f.novo) && (
+    <Field rotulo="Quantos km o carro roda por mês?" obrigatorio htmlFor="km-mes" dica="Pergunte ao cliente. Ajuda a prever a próxima troca e a chamar o cliente na hora certa."
+      erro={tentou && !(kmPorMes! > 0) ? 'Informe os km por mês' : tentou && kmPorMes! > 20000 ? 'Confira o número' : null}>
+      <input id="km-mes" className="input" inputMode="numeric" value={kmMesTexto} onChange={e => set({ kmMes: e.target.value.replace(/\D/g, '').slice(0, 5) })} placeholder="Ex.: 1500" />
+    </Field>
+  );
+
   return (
     <div style={{ maxWidth: 760 }}>
       <a className="back" href="#/operacao">‹ Operação</a>
@@ -156,7 +168,7 @@ export function NovaOS({ u }: { u: Usuario }) {
           <div className="stack">
             <div className="row between">
               <div className="row"><Placa placa={veiculo.placa} grande /><div><b>{veiculo.marca} {veiculo.modelo} {veiculo.ano}</b><div className="small muted">{veiculo.motor} · câmbio {veiculo.cambio} · {fmtKm(veiculo.kmAtual)}</div></div></div>
-              <Btn variante="ghost" tamanho="sm" onClick={() => set({ veiculoId: undefined })}>Trocar</Btn>
+              <Btn variante="ghost" tamanho="sm" onClick={() => set({ veiculoId: undefined, kmMes: undefined })}>Trocar</Btn>
             </div>
             <div className="small">Cliente: <b>{cliente?.nome}</b>{cliente?.telefone ? ` · ${cliente.telefone}` : ''}{cliente?.bairro ? ` · ${cliente.bairro}, ${cliente.cidade}` : ''}{cliente?.tipo === 'frota' && <> <Badge tom="muted">Frota</Badge></>}</div>
             {faltaNoCadastro && (faltaNoCadastro.comoConheceu || faltaNoCadastro.cidade || faltaNoCadastro.bairro) && (
@@ -165,6 +177,7 @@ export function NovaOS({ u }: { u: Usuario }) {
                 <div className="grid k2">{camposCadastro(faltaNoCadastro)}</div>
               </div>
             )}
+            {campoKmMes}
             {clienteSemTel && (
               <Field rotulo="Telefone do cliente" obrigatorio htmlFor="cli-tel-existente" dica="Este cliente está sem telefone no cadastro." erro={tentou && !telefoneValido(f.telExistente) ? 'Informe o telefone com DDD' : null}>
                 <input id="cli-tel-existente" className="input" inputMode="tel" value={f.telExistente || ''} onChange={e => set({ telExistente: fmtTelefone(e.target.value) })} placeholder="(41) 99999-9999" />
@@ -206,7 +219,7 @@ export function NovaOS({ u }: { u: Usuario }) {
             {resultados.length > 0 && (
               <div className="list" style={{ marginTop: 10 }}>
                 {resultados.map(r => (
-                  <button key={r.veiculo.id} className="li" onClick={() => set({ veiculoId: r.veiculo.id })}>
+                  <button key={r.veiculo.id} className="li" onClick={() => set({ veiculoId: r.veiculo.id, kmMes: undefined })}>
                     <Placa placa={r.veiculo.placa} />
                     <div className="grow"><div className="ttl">{r.veiculo.marca} {r.veiculo.modelo}</div><div className="meta">{r.cliente?.nome} · {r.visitas} visita(s)</div></div>
                     <span className="chev">›</span>
@@ -256,6 +269,7 @@ export function NovaOS({ u }: { u: Usuario }) {
                 <input id="cli-tel" className="input" inputMode="tel" value={f.clienteTel} onChange={e => set({ clienteTel: fmtTelefone(e.target.value) })} placeholder="(41) 99999-9999" />
               </Field>
               {camposCadastro({ comoConheceu: true, cidade: true, bairro: true })}
+              {campoKmMes}
             </div>
             {placaJaExiste && <div style={{ marginTop: 10 }}><Alerta tipo="info">Esta placa já está cadastrada. <Btn variante="ghost" tamanho="sm" onClick={() => set({ novo: false, veiculoId: placaJaExiste.id })}>Usar o cadastro existente</Btn></Alerta></div>}
             <div style={{ marginTop: 10 }}><Btn variante="ghost" tamanho="sm" onClick={() => set({ novo: false })}>‹ Voltar para a busca</Btn></div>

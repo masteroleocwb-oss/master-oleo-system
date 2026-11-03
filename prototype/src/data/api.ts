@@ -10,6 +10,9 @@ import type {
   Pausa, Role, ServicoKey, ServicoOS, SituacaoOportunidade, Usuario, Veiculo,
 } from '../domain/types';
 import { addDias, agoraISO, diaKey, fmtPlaca, hojeKey, novoId, novoToken, normalizarPlaca, placaValida, primeiroNome, telefoneValido } from '../domain/util';
+import { idCliente, idVeiculo } from './legado';
+import { MODO_REAL } from './modo';
+import { definirProjetor } from './nuvem';
 import { getDB, mutarSemLatencia, transacao } from './store';
 
 export class ErroValidacao extends Error {
@@ -65,6 +68,8 @@ export interface CadastroCliente { telefone: string; comoConheceu: string; comoC
 export interface NovaOSInput {
   veiculoId?: string;
   novoVeiculo?: { placa: string; marca: string; modelo: string; ano: number; motor: string; cambio: Cambio; combustivel: Veiculo['combustivel'] };
+  /** Quanto o carro roda por mês (obrigatório: ajuda a prever a próxima troca e a recompra). */
+  kmPorMes?: number;
   clienteId?: string;
   novoCliente?: { nome: string } & CadastroCliente;
   /** Cliente já cadastrado: completa (ou corrige) telefone, como conheceu, cidade e bairro. */
@@ -113,6 +118,8 @@ export const validarNovaOS = (i: NovaOSInput, clienteAtual?: Partial<Cliente>): 
   if (!retorno && !i.pedidoOlist?.trim()) e.push('Informe o número do pedido do Olist.');
   else if (i.pedidoOlist?.trim() && !/^[\w.\-/]{1,30}$/.test(i.pedidoOlist.trim())) e.push('Número do pedido do Olist inválido.');
   if (!i.vendedorId) e.push('Selecione o vendedor.');
+  if (!(i.kmPorMes! > 0)) e.push('Informe quantos km o carro roda por mês.');
+  else if (i.kmPorMes! > 20000) e.push('Km por mês fora do normal: confira o número.');
   if (retorno && !i.problemaRelatado?.trim()) e.push('Descreva o problema que o cliente relatou.');
   if (!retorno && !i.servicos.length) e.push('Selecione pelo menos um serviço.');
   if (!retorno && !(i.valorInicial > 0)) e.push('Informe o valor da venda inicial.');
@@ -149,15 +156,19 @@ export async function abrirOS(u: Usuario, i: NovaOSInput) {
       else {
         let clienteId = i.clienteId;
         if (!clienteId) {
-          const c: Cliente = { id: novoId('c'), nome: i.novoCliente!.nome.trim(), tipo: 'particular', ...cadastroFinal(undefined, i.novoCliente) };
+          const c: Cliente = { id: idCliente(placa), nome: i.novoCliente!.nome.trim(), tipo: 'particular', ...cadastroFinal(undefined, i.novoCliente) };
           d.clientes.push(c);
           clienteId = c.id;
           evento(d, u.id, 'cliente.criado', 'cliente', c.id, `Cliente ${c.nome} cadastrado`);
         }
-        veiculo = { id: novoId('v'), ...i.novoVeiculo!, placa, placasAnteriores: [], clienteId };
+        veiculo = { id: idVeiculo(placa), ...i.novoVeiculo!, placa, placasAnteriores: [], clienteId };
         d.veiculos.push(veiculo);
         evento(d, u.id, 'veiculo.criado', 'veiculo', veiculo.id, `Veículo ${fmtPlaca(placa)} cadastrado`);
       }
+    }
+    if (i.kmPorMes && veiculo.kmPorMes !== i.kmPorMes) {
+      evento(d, u.id, 'veiculo.km_mes', 'veiculo', veiculo.id, `Roda ${i.kmPorMes.toLocaleString('pt-BR')} km por mês`, { antes: veiculo.kmPorMes, depois: i.kmPorMes });
+      veiculo.kmPorMes = i.kmPorMes;
     }
     // Numeração dentro da transação: dois cadastros simultâneos nunca recebem o mesmo número.
     let origem: OrdemServico | undefined;
@@ -182,23 +193,30 @@ export async function abrirOS(u: Usuario, i: NovaOSInput) {
 // ───────────────────────── Fila e rodízio ─────────────────────────
 
 /**
- * Fila do rodízio (mesma regra do sistema atual): entre os mecânicos disponíveis e sem OS em andamento,
- * a vez é de quem começou a última OS há mais tempo hoje (quem ainda não pegou nenhuma vem primeiro).
+ * Fila do rodízio (mesma regra do sistema atual): entre os mecânicos disponíveis e sem OS em andamento iniciada hoje,
+ * a vez é de quem concluiu o último carro há mais tempo hoje (quem ainda não concluiu nenhum vem primeiro);
+ * empate: menos carros no último dia com movimento; depois, ordem alfabética.
  * Almoço e ausência tiram da fila sem mudar a posição; o motivo fica registrado.
  */
 export const filaRodizio = (d: DB) => {
   const hoje = hojeKey();
   const status = d.rodizio.dia === hoje ? d.rodizio.status : {};
+  const diaDa = (o: OrdemServico) => diaKey(o.concluidaEm || o.abertaEm);
+  const conta = (o: OrdemServico) => o.status === 'andamento' || o.status === 'concluido' || o.status === 'pausada';
+  const diaOntem = [...new Set(d.os.map(diaDa))].filter(x => x < hoje).sort().at(-1);
   return d.usuarios
     .filter(x => x.role === 'mecanico' && x.ativo)
     .map(m => {
-      const doDia = d.os.filter(o => o.mecanicoId === m.id && o.iniciadaEm && diaKey(o.iniciadaEm) === hoje);
-      const ultima = doDia.map(o => o.iniciadaEm!).sort().at(-1);
-      const ocupado = d.os.some(o => o.mecanicoId === m.id && o.status === 'andamento');
-      const pausadas = d.os.filter(o => o.mecanicoId === m.id && o.status === 'pausada').length;
-      return { mecanico: m, status: status[m.id] || 'disponivel', ultima, carrosHoje: doDia.length, ocupado, pausadas };
+      const minhas = d.os.filter(o => o.mecanicoId === m.id);
+      const doDia = minhas.filter(o => diaDa(o) === hoje);
+      const ultima = doDia.filter(o => o.status === 'concluido' && o.concluidaEm).map(o => o.concluidaEm!).sort().at(-1);
+      // "Em atendimento" só conta OS iniciada HOJE (OS esquecida aberta de outro dia não trava).
+      const ocupado = minhas.some(o => o.status === 'andamento' && diaKey(o.iniciadaEm || o.abertaEm) === hoje);
+      const carrosOntem = diaOntem ? minhas.filter(o => diaDa(o) === diaOntem && conta(o)).length : 0;
+      const pausadas = minhas.filter(o => o.status === 'pausada').length;
+      return { mecanico: m, status: status[m.id] || 'disponivel', ultima, carrosHoje: doDia.filter(conta).length, carrosOntem, ocupado, pausadas };
     })
-    .sort((a, b) => (a.ultima || '').localeCompare(b.ultima || '') || a.mecanico.nome.localeCompare(b.mecanico.nome));
+    .sort((a, b) => (a.ultima || '').localeCompare(b.ultima || '') || a.carrosOntem - b.carrosOntem || a.mecanico.nome.localeCompare(b.mecanico.nome));
 };
 
 export const proximoDaFila = (d: DB) => filaRodizio(d).find(x => x.status === 'disponivel' && !x.ocupado)?.mecanico;
@@ -980,12 +998,12 @@ export async function voltarAMostrarItem(u: Usuario, defId: string, indice: numb
   });
 }
 
-export async function salvarUsuario(u: Usuario, x: { id?: string; nome: string; role: Role; ativo: boolean; nivel?: string }): Promise<string> {
+export async function salvarUsuario(u: Usuario, x: { id?: string; nome: string; role: Role; ativo: boolean; nivel?: string; nomeLegado?: string }): Promise<string> {
   exigir(u, 'admin.usuarios');
   if (!x.nome.trim()) throw new ErroValidacao('Informe o nome.');
   if (x.id === u.id && !x.ativo) throw new ErroValidacao('Você não pode desativar o próprio acesso.');
   // Só os campos de cadastro: login e senha mudam por definirAcesso, e o hash nunca vai para o histórico.
-  const campos = { nome: x.nome.trim(), role: x.role, ativo: x.ativo, nivel: x.nivel || undefined };
+  const campos = { nome: x.nome.trim(), role: x.role, ativo: x.ativo, nivel: x.nivel || undefined, ...(x.nomeLegado !== undefined ? { nomeLegado: x.nomeLegado.trim() || undefined } : {}) };
   const semSegredo = ({ senha: _s, ...resto }: Usuario) => resto;
   return transacao(d => {
     if (x.id) {
@@ -1004,6 +1022,7 @@ export async function salvarUsuario(u: Usuario, x: { id?: string; nome: string; 
 
 export async function corrigirPlaca(u: Usuario, veiculoId: string, novaPlaca: string, motivo: string) {
   exigir(u, 'veiculo.corrigir_cadastro');
+  if (MODO_REAL) throw new ErroValidacao('No piloto, a placa é corrigida no sistema atual (Editar OS).');
   if (!placaValida(novaPlaca)) throw new ErroValidacao('Placa inválida.');
   if (!motivo.trim()) throw new ErroValidacao('Informe o motivo da alteração.');
   return transacao(d => {
@@ -1036,6 +1055,17 @@ export async function definirVisibilidadeFoto(u: Usuario, evidenciaId: string, v
     e.visivelCliente = visivel;
     evento(d, u.id, 'evidencia.visibilidade', 'evidencia', e.id, `Foto ${visivel ? 'visível' : 'oculta'} no relatório do cliente`);
   });
+}
+
+definirProjetor((d, osId) => { const os = d.os.find(o => o.id === osId); return os ? projetarRelatorio(d, os) : null; });
+
+/** Relatório pelo link na base real: lê a cópia restrita gravada quando o link foi gerado (sem login). */
+export async function obterRelatorioPublicoReal(token: string): Promise<ResultadoPublico> {
+  const { lerRelatorio } = await import('./nuvem');
+  const r = await lerRelatorio(token);
+  if (!r || !r.relatorio) return { estado: r?.revogadoEm ? 'revogado' : 'indisponivel' };
+  const est = estadoLink({ revogadoEm: r.revogadoEm || undefined, expiraEm: r.expiraEm || undefined });
+  return est === 'ativo' ? { estado: 'ok', relatorio: r.relatorio as RelatorioPublico } : { estado: est };
 }
 
 export const nomeDe = (d: DB, id?: string) => d.usuarios.find(x => x.id === id)?.nome || (id === 'sistema' ? 'Sistema' : id || '—');

@@ -6,6 +6,8 @@ import { exigir } from '../domain/permissions';
 import type { DB, RegistroAcesso, ResultadoAcesso, Usuario } from '../domain/types';
 import { agora, agoraISO, novoId } from '../domain/util';
 import { ErroValidacao } from './api';
+import { MODO_REAL } from './modo';
+import * as nuvem from './nuvem';
 import { getDB, mutarSemLatencia, transacao } from './store';
 
 export class ErroAcesso extends Error {
@@ -122,11 +124,23 @@ export function entrarDemo(usuarioId: string): Usuario {
 }
 
 export function registrarSaida(usuarioId: string, motivo: 'saiu' | 'sessao_expirada' = 'saiu') {
+  if (MODO_REAL) { void nuvem.sair(motivo); return; }
   mutarSemLatencia(d => registrar(d, motivo, usuarioId));
 }
 
 /** A própria pessoa troca a senha (obrigatório no primeiro acesso com senha provisória). */
 export async function trocarMinhaSenha(u: Usuario, atual: string, nova: string, confirmacao: string) {
+  if (MODO_REAL) {
+    if (!atual) throw new ErroValidacao('Informe a senha atual.');
+    if (nova !== confirmacao) throw new ErroValidacao('A confirmação não é igual à nova senha.');
+    if (nova === atual) throw new ErroValidacao('A nova senha precisa ser diferente da atual.');
+    if (nova.length < 8) throw new ErroValidacao('A senha precisa ter pelo menos 8 caracteres.');
+    const p = problemaSenha(nova, u.email?.split('@')[0]);
+    if (p) throw new ErroValidacao(p);
+    if (u.email && nova.toLowerCase().includes(u.email.split('@')[0].toLowerCase())) throw new ErroValidacao('Não use o seu e-mail na senha.');
+    try { await nuvem.trocarSenha(atual, nova); } catch (e) { throw new ErroValidacao((e as Error).message); }
+    return;
+  }
   const x = getDB().usuarios.find(y => y.id === u.id);
   if (!x?.senha) throw new ErroValidacao('Esta conta não usa senha.');
   if (!iguais((await hashSenha(atual, x.senha.sal)).hash, x.senha.hash)) throw new ErroValidacao('A senha atual não confere.');

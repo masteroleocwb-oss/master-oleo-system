@@ -176,14 +176,14 @@ export function Operacao({ u }: { u: Usuario }) {
 
         <div>
           <Card titulo="Rodízio" acao={proximo && <Badge tom="info">Vez: {primeiroNome(proximo.nome)}</Badge>}>
-            <p className="small muted" style={{ marginBottom: 10 }}>A vez é de quem começou a última OS há mais tempo. Almoço e ausência tiram da fila sem mudar a posição. Retorno vai para o mesmo mecânico. Se o previsto estiver indisponível, outro mecânico pode assumir informando o motivo.</p>
+            <p className="small muted" style={{ marginBottom: 10 }}>A vez é de quem terminou o último carro há mais tempo hoje (quem ainda não terminou nenhum vem primeiro; empate: menos carros no último dia). Almoço e ausência tiram da fila sem mudar a posição. Retorno vai para o mesmo mecânico. Se o previsto estiver indisponível, outro mecânico pode assumir informando o motivo.</p>
             <div className="list">
               {fila.map((f, i) => (
                 <div className="li" key={f.mecanico.id}>
                   <span className={`fila-pos ${proximo?.id === f.mecanico.id ? 'next' : ''}`}>{i + 1}</span>
                   <div className="grow">
                     <div className="ttl">{f.mecanico.nome}</div>
-                    <div className="meta">{f.carrosHoje} carro(s) hoje{f.ultima ? ` · último início ${fmtHora(f.ultima)}` : ''}{f.pausadas ? ` · ${f.pausadas} pausada(s)` : ''}</div>
+                    <div className="meta">{f.carrosHoje} carro(s) hoje{f.ultima ? ` · terminou o último às ${fmtHora(f.ultima)}` : ''}{f.pausadas ? ` · ${f.pausadas} pausada(s)` : ''}</div>
                   </div>
                   {f.ocupado ? <Badge tom="info">Em OS</Badge> : <Badge tom={f.status === 'disponivel' ? 'ok' : 'atencao'}>{ROD_LABEL[f.status]}</Badge>}
                   {pode(u, 'rodizio.gerenciar') && (

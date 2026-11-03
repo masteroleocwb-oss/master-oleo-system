@@ -126,7 +126,7 @@ await fluxo('Fluxo 1 — OS completa (abrir → checklist → evidência → fin
   await aguardarTexto('Informe o telefone com DDD');
   for (const t of ['Informe como o cliente conheceu a Master Óleo.', 'Informe a cidade do cliente.', 'Informe o bairro do cliente.']) await aguardarTexto(t);
   await preencher('#cli-como', 'Instagram'); await preencher('#cli-cidade', 'Curitiba'); await preencher('#cli-bairro', 'Água Verde');
-  await preencher('#pedido-olist', '104523');
+  await preencher('#pedido-olist', '104523'); await preencher('#km-mes', '1500');
   await preencher('#cli-tel', '41900000001');
   if ((await page.$eval('#cli-tel', e => e.value)) !== '(41) 90000-0001') throw new Error('Máscara do telefone não aplicada');
   await clicar('Salvar e colocar na fila');
@@ -283,7 +283,7 @@ await fluxo('Fluxo 4 — Segunda OS do mesmo veículo; histórico mostra as duas
   await aguardarTexto('Recomendado nas visitas anteriores e ainda não feito');
   await aguardarTexto('Trocar pastilhas dianteiras');
   await preencher('#valor', '280');
-  await preencher('#pedido-olist', '104600');
+  await preencher('#pedido-olist', '104600'); await preencher('#km-mes', '1500');
   await clicar('Salvar e colocar na fila');
   await aguardarTexto('criada e colocada na fila');
   const d1 = await db();
@@ -449,7 +449,7 @@ await fluxo('Cliente antigo sem cadastro completo: Nova OS pede como conheceu, c
   await clicar('Sandero', { seletor: 'button.li' });
   await page.waitForSelector('[data-completar-cadastro]');
   await preencher('#valor', '199');
-  await preencher('#pedido-olist', '104601');
+  await preencher('#pedido-olist', '104601'); await preencher('#km-mes', '1500');
   await clicar('Salvar e colocar na fila');
   await aguardarTexto('Informe como o cliente conheceu a Master Óleo.');
   await foto('nova-os-completar-cadastro');

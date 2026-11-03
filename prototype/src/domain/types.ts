@@ -21,6 +21,10 @@ export interface Usuario {
   trocarSenha?: boolean;
   tentativasFalhas?: number;
   bloqueadoAte?: string;
+  /** E-mail de login (base real). */
+  email?: string;
+  /** Como a pessoa aparece no sistema atual (vendedor/lubrificador), para as OS dos dois sistemas baterem. */
+  nomeLegado?: string;
 }
 
 export type ResultadoAcesso = 'entrou' | 'entrou_demo' | 'saiu' | 'senha_errada' | 'usuario_inexistente' | 'desativado' | 'bloqueado' | 'senha_trocada' | 'sessao_expirada';
@@ -63,6 +67,8 @@ export interface Veiculo {
   clienteId: string;
   kmAtual?: number;
   kmAtualEm?: string;
+  /** Quanto o carro roda por mês, informado pelo vendedor (ajuda a prever a próxima troca). */
+  kmPorMes?: number;
 }
 
 export type StatusOS = 'aguardando' | 'andamento' | 'pausada' | 'concluido' | 'cancelada' | 'encerrada';

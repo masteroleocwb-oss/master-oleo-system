@@ -1,4 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { MODO_REAL } from '../data/modo';
+import * as nuvem from '../data/nuvem';
 import { assinar, getDB } from '../data/store';
 import type { Capacidade } from '../domain/permissions';
 import type { Role } from '../domain/types';
@@ -24,11 +26,16 @@ let atual: Sessao | null = (() => {
 export const entrar = (id: string) => { atual = { id, desde: new Date().toISOString() }; try { localStorage.setItem(CHAVE, JSON.stringify(atual)); } catch { /* ignora */ } ouvintes.forEach(f => f()); };
 export const sair = () => { atual = null; try { localStorage.removeItem(CHAVE); } catch { /* ignora */ } ouvintes.forEach(f => f()); };
 /** Id de quem está com a sessão vencida (para registrar a saída), ou null. */
-export const sessaoVencida = () => (atual && Date.now() - Date.parse(atual.desde) > SESSAO_HORAS * 3600e3 ? atual.id : null);
+export const sessaoVencida = () => (MODO_REAL ? (nuvem.sessaoVencida() ? nuvem.getEstado().uid : null) : atual && Date.now() - Date.parse(atual.desde) > SESSAO_HORAS * 3600e3 ? atual.id : null);
 
 export function useUsuario() {
   const id = useSyncExternalStore(f => { ouvintes.add(f); return () => ouvintes.delete(f); }, () => atual?.id ?? null);
   const db = useSyncExternalStore(assinar, getDB);
+  if (MODO_REAL) {
+    const uid = nuvem.getEstado().uid;
+    const ur = uid ? db.usuarios.find(x => x.id === uid) : undefined;
+    return ur && ur.ativo ? ur : null;
+  }
   const u = id ? db.usuarios.find(x => x.id === id) : undefined;
   // Conta desativada, ou conta de demonstração depois que a administração desligou esse acesso: fora.
   return u && u.ativo && !(u.demo && !u.senha && !db.acessoDemo) ? u : null;

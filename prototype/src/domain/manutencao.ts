@@ -1,7 +1,7 @@
 // Próximas manutenções: nunca inventa intervalo. Sem regra validada, gera só
 // "acompanhar", sem data ou km apresentados como confirmados.
 import type { ManutencaoPrevista, RegraIntervalo, ServicoKey, Veiculo } from './types';
-import { addMeses } from './util';
+import { addDias, addMeses } from './util';
 
 export type StatusManutencao = 'futura' | 'proxima' | 'vencida' | 'concluida' | 'acompanhar';
 
@@ -31,7 +31,7 @@ export interface Sugestao {
   opcoesKm?: number[];
 }
 
-export const sugerirProxima = (servico: ServicoKey, nome: string, regras: RegraIntervalo[], v: Pick<Veiculo, 'cambio'>, dataISO: string, km?: number, intervaloKm?: number): Sugestao => {
+export const sugerirProxima = (servico: ServicoKey, nome: string, regras: RegraIntervalo[], v: Pick<Veiculo, 'cambio' | 'kmPorMes'>, dataISO: string, km?: number, intervaloKm?: number): Sugestao => {
   const regra = regraPara(regras, servico, v);
   if (!regra) return { servicoKey: servico, descricao: nome, confirmavel: false, motivo: 'Sem regra de intervalo cadastrada' };
   if (!regra.validada || (!regra.km && !regra.meses && !regra.opcoesKm?.length)) {
@@ -44,11 +44,21 @@ export const sugerirProxima = (servico: ServicoKey, nome: string, regras: RegraI
     descricao: nome,
     regra,
     kmPrevisto: kmRegra && km != null ? km + kmRegra : undefined,
-    dataPrevista: regra.meses ? addMeses(dataISO, regra.meses) : undefined,
+    dataPrevista: dataPrevistaPor(dataISO, regra.meses, kmRegra, v.kmPorMes),
     confirmavel: true,
     opcoesKm: regra.opcoesKm,
     motivo: [kmRegra ? `${kmRegra.toLocaleString('pt-BR')} km` : regra.opcoesKm ? `${regra.opcoesKm.map(x => x / 1000).join(', ')} mil km (conforme o óleo)` : null, regra.meses ? `${regra.meses} meses` : null].filter(Boolean).join(' ou ') + ', o que vier primeiro',
   };
+};
+
+/**
+ * Data provável: o que vier primeiro entre o prazo da regra e o dia em que o carro deve chegar ao km
+ * (pelos km que o cliente diz rodar por mês).
+ */
+export const dataPrevistaPor = (dataISO: string, meses?: number, kmIntervalo?: number, kmPorMes?: number) => {
+  const porPrazo = meses ? addMeses(dataISO, meses) : undefined;
+  const porKm = kmIntervalo && kmPorMes && kmPorMes > 0 ? addDias(dataISO, Math.round((kmIntervalo / kmPorMes) * 30.4)) : undefined;
+  return porPrazo && porKm ? (porKm < porPrazo ? porKm : porPrazo) : porPrazo || porKm;
 };
 
 /** Texto único para "próxima": km ou data, o que vier primeiro. */
