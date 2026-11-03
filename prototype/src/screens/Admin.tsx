@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { ir } from '../app/nav';
 import { definirAcesso, definirAcessoDemo, desbloquearAcesso, gerarSenhaProvisoria, POLITICA_ACESSO, RESULTADO_ACESSO, ultimoAcesso } from '../data/acesso';
+import { nomeLegadoDe } from '../data/legado';
+import { MODO_REAL } from '../data/modo';
 import { buscarVeiculosEClientes, estadoLink, nomeDe, ocultarItemPara, revogarLink, salvarItemCatalogo, salvarRegraIntervalo, salvarUsuario, voltarAMostrarItem } from '../data/api';
 import { sugestoesOcultar } from '../domain/checklist';
 import { ESTADOS, ESTADOS_ORDEM, GRUPOS, ORIGEM_LABEL, SERVICO_KEYS, SERVICOS } from '../domain/catalogo';
@@ -23,7 +25,7 @@ export function Admin({ u, aba }: { u: Usuario; aba?: string }) {
       {a === 'busca' && <Busca u={u} />}
       {a === 'catalogo' && <Catalogo u={u} />}
       {a === 'intervalos' && <Intervalos u={u} />}
-      {a === 'usuarios' && <Usuarios u={u} />}
+      {a === 'usuarios' && (MODO_REAL ? <UsuariosReal u={u} /> : <Usuarios u={u} />)}
       {a === 'acessos' && <Acessos u={u} />}
       {a === 'historico' && <Historico />}
       {a === 'links' && <Links u={u} />}
@@ -319,7 +321,7 @@ function Acessos({ u }: { u: Usuario }) {
   const comSenhaDirecao = db.usuarios.some(x => x.ativo && x.senha && x.role === 'direcao');
   return (
     <div>
-      <Card titulo="Contas de demonstração">
+      {!MODO_REAL && <Card titulo="Contas de demonstração">
         <p className="small" style={{ marginBottom: 8 }}>
           Enquanto estiver ligado, a tela de entrada mostra as pessoas fictícias e qualquer um entra com um toque, sem senha.
           Desligue depois de criar os acessos do time (é preciso ter pelo menos uma pessoa da direção com senha).
@@ -333,10 +335,10 @@ function Acessos({ u }: { u: Usuario }) {
         </div>
         {db.acessoDemo && !comSenhaDirecao && <p className="tiny muted" style={{ marginTop: 6 }}>Para desligar, crie antes o acesso com senha de alguém da direção em Usuários.</p>}
         {acao.erro && <div style={{ marginTop: 8 }}><Alerta tipo="crit">{acao.erro}</Alerta></div>}
-      </Card>
+      </Card>}
       <div className="row" style={{ margin: '12px 0' }}>
         <Badge tom={falhas24 ? 'atencao' : 'muted'}>{falhas24} tentativa(s) com falha nas últimas 24 h</Badge>
-        <span className="small muted">Bloqueio automático após {POLITICA_ACESSO.maxTentativas} senhas erradas seguidas, por {POLITICA_ACESSO.bloqueioMin} min. Sessão vale {POLITICA_ACESSO.sessaoHoras} h.</span>
+        <span className="small muted">{MODO_REAL ? 'Muitas senhas erradas seguidas bloqueiam o login por alguns minutos (proteção do Firebase). Sessão vale 12 h.' : `Bloqueio automático após ${POLITICA_ACESSO.maxTentativas} senhas erradas seguidas, por ${POLITICA_ACESSO.bloqueioMin} min. Sessão vale ${POLITICA_ACESSO.sessaoHoras} h.`}</span>
       </div>
       <div className="grid k2" style={{ marginBottom: 12 }}>
         <Field rotulo="Pessoa" htmlFor="ac-quem"><select id="ac-quem" className="input" value={quem} onChange={e => setQuem(e.target.value)}><option value="">Todas</option>{db.usuarios.map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></Field>
@@ -350,13 +352,13 @@ function Acessos({ u }: { u: Usuario }) {
               <tr key={a.id} data-acesso={a.resultado}>
                 <td className="small" style={{ whiteSpace: 'nowrap' }}>{fmtDataHora(a.em)}</td>
                 <td className="small">{a.usuarioId ? nomeDe(db, a.usuarioId) : <span className="muted">login digitado: {a.loginDigitado || '—'}</span>}</td>
-                <td><Badge tom={RESULTADO_ACESSO[a.resultado].tom}>{RESULTADO_ACESSO[a.resultado].rotulo}</Badge></td>
+                <td><Badge tom={RESULTADO_ACESSO[a.resultado]?.tom || 'muted'}>{RESULTADO_ACESSO[a.resultado]?.rotulo || a.resultado}</Badge></td>
                 <td className="small">{a.dispositivo}</td>
               </tr>))}</tbody>
           </table>
         </div>
       )}
-      <p className="tiny muted" style={{ marginTop: 8 }}>Neste beta o registro fica neste navegador. No sistema real ele é gravado no servidor e não pode ser apagado por quem usa o sistema.</p>
+      <p className="tiny muted" style={{ marginTop: 8 }}>{MODO_REAL ? 'Mesmo registro do sistema atual: gravado no servidor, ninguém edita nem apaga. Mostra os 400 mais recentes.' : 'Neste beta o registro fica neste navegador. No sistema real ele é gravado no servidor e não pode ser apagado por quem usa o sistema.'}</p>
     </div>
   );
 }
@@ -413,6 +415,73 @@ function Links({ u }: { u: Usuario }) {
           );
         })}</tbody>
       </table>
+    </div>
+  );
+}
+
+const PERFIS_REAIS: Role[] = ['direcao', 'lider', 'vendedor', 'mecanico'];
+
+/**
+ * Usuários na base real: as contas (e-mail e senha) são criadas no 👥 Usuários do sistema atual.
+ * Aqui a direção ajusta perfil, nível e o nome com que a pessoa aparece no sistema atual,
+ * para que vendedor e lubrificador das OS batam nos dois sistemas (comissão e rodízio).
+ */
+function UsuariosReal({ u }: { u: Usuario }) {
+  const db = useDB();
+  const acao = useAcao();
+  const [ed, setEd] = useState<{ id: string; nome: string; role: Role; ativo: boolean; nivel?: string; nomeLegado: string } | null>(null);
+  const reais = db.usuarios.filter(x => !x.id.startsWith('legado:'));
+  const desde = new Date(agora().getTime() - 60 * 864e5).toISOString();
+  const semConta = db.usuarios.filter(x => x.id.startsWith('legado:')).map(x => ({
+    x, oss: db.os.filter(o => (o.mecanicoId === x.id || o.vendedorId === x.id) && o.abertaEm >= desde).length,
+  })).filter(y => y.oss > 0).sort((a, b) => b.oss - a.oss);
+  const nomesAtuais = [...new Set(db.usuarios.filter(x => x.id.startsWith('legado:')).map(x => x.nome))].sort();
+  return (
+    <div>
+      <Alerta tipo="info">
+        As contas são criadas no <b>👥 Usuários do sistema atual</b> (e-mail e senha provisória). Aqui você ajusta perfil, nível e o
+        <b> nome no sistema atual</b>: é por ele que as OS dos dois sistemas reconhecem o vendedor e o mecânico (comissão e rodízio).
+      </Alerta>
+      {semConta.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <Alerta tipo="warn">
+            <b>Nomes do sistema atual que ainda não estão ligados a uma conta</b> (últimos 60 dias). Edite a conta da pessoa e coloque o nome exatamente como abaixo:
+            <ul style={{ margin: '4px 0 0', paddingLeft: 18 }} data-sem-conta>{semConta.map(y => <li key={y.x.id}><b>{y.x.nome}</b> · {y.oss} OS · {ROLE_LABEL[y.x.role]}</li>)}</ul>
+          </Alerta>
+        </div>
+      )}
+      <div className="tbl-wrap" style={{ marginTop: 12 }}>
+        <table className="tbl" data-tabela-usuarios>
+          <thead><tr><th>Nome</th><th>Perfil</th><th>E-mail</th><th>Nome no sistema atual</th><th>Situação</th><th /></tr></thead>
+          <tbody>{reais.map(x => (
+            <tr key={x.id} data-usuario={x.id}>
+              <td><b>{x.nome}</b>{x.nivel && <div className="tiny muted">{x.nivel}</div>}</td>
+              <td>{ROLE_LABEL[x.role]}</td>
+              <td className="small">{x.email || '—'}</td>
+              <td className="small">{x.role === 'vendedor' || x.role === 'mecanico' || x.nomeLegado ? (x.nomeLegado || <span className="muted">{nomeLegadoDe(x)} (automático)</span>) : '—'}</td>
+              <td>{!x.ativo ? <Badge tom="muted">Desativado</Badge> : x.trocarSenha ? <Badge tom="atencao">Aguardando 1º acesso</Badge> : <Badge tom="ok">Ativo</Badge>}</td>
+              <td className="row">
+                <Btn tamanho="sm" variante="ghost" onClick={() => setEd({ id: x.id, nome: x.nome, role: x.role, ativo: x.ativo, nivel: x.nivel, nomeLegado: x.nomeLegado || '' })}>Editar</Btn>
+                {x.id !== u.id && <Btn tamanho="sm" variante={x.ativo ? 'danger' : 'sec'} carregando={acao.ocupado} onClick={() => acao.executar(() => salvarUsuario(u, { ...x, ativo: !x.ativo }), x.ativo ? 'Acesso desativado.' : 'Acesso reativado.')}>{x.ativo ? 'Desativar' : 'Reativar'}</Btn>}
+              </td>
+            </tr>))}</tbody>
+        </table>
+      </div>
+      {ed && (
+        <Sheet titulo={`Editar ${ed.nome}`} onClose={() => setEd(null)}
+          rodape={<><Btn variante="sec" onClick={() => setEd(null)}>Cancelar</Btn><Btn carregando={acao.ocupado} onClick={async () => { if ((await acao.executar(() => salvarUsuario(u, ed), 'Usuário salvo.')) !== undefined) setEd(null); }}>Salvar</Btn></>}>
+          <Field rotulo="Nome" obrigatorio htmlFor="us-nome"><input id="us-nome" className="input" value={ed.nome} onChange={e => setEd({ ...ed, nome: e.target.value })} /></Field>
+          <div className="grid k2">
+            <Field rotulo="Perfil" htmlFor="us-role"><select id="us-role" className="input" value={ed.role} disabled={ed.id === u.id} onChange={e => setEd({ ...ed, role: e.target.value as Role })}>{PERFIS_REAIS.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></Field>
+            <Field rotulo="Nível (se mecânico)" htmlFor="us-niv"><input id="us-niv" className="input" value={ed.nivel || ''} onChange={e => setEd({ ...ed, nivel: e.target.value })} placeholder="Ex.: N3" /></Field>
+          </div>
+          <Field rotulo="Nome no sistema atual" htmlFor="us-legado" dica="Como a pessoa aparece como vendedor ou lubrificador nas OS (ex.: Faust, Cadu, Caio). Em branco = primeiro nome.">
+            <input id="us-legado" className="input" list="nomes-atuais" value={ed.nomeLegado} maxLength={40} onChange={e => setEd({ ...ed, nomeLegado: e.target.value })} />
+            <datalist id="nomes-atuais">{nomesAtuais.map(n => <option key={n} value={n} />)}</datalist>
+          </Field>
+          {acao.erro && <Alerta tipo="crit">{acao.erro}</Alerta>}
+        </Sheet>
+      )}
     </div>
   );
 }
