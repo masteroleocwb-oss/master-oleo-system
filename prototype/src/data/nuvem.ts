@@ -9,7 +9,7 @@ import {
   signInWithEmailAndPassword, signOut, updatePassword, type Auth, type User,
 } from 'firebase/auth';
 import {
-  addDoc, collection, connectFirestoreEmulator, deleteField, doc, FieldPath, getDocs, initializeFirestore, limit, onSnapshot, orderBy,
+  addDoc, collection, connectFirestoreEmulator, deleteField, doc, FieldPath, getDocs, getDocsFromCache, initializeFirestore, limit, onSnapshot, orderBy,
   persistentLocalCache, persistentMultipleTabManager, query, runTransaction, serverTimestamp, where, type DocumentData, type Firestore, type Unsubscribe,
 } from 'firebase/firestore';
 import { connectStorageEmulator, getDownloadURL, getStorage, ref as refStorage, uploadString, type FirebaseStorage } from 'firebase/storage';
@@ -166,6 +166,7 @@ async function aoMudarLogin(u: User | null) {
   raw.orders.clear(); raw.usuarios.clear(); raw.global = {}; raw.acessos = [];
   CHAVES.forEach(c => raw.col[c].clear());
   Object.assign(carregou, { orders: false, usuarios: false, global: false });
+  pediuAntigas = false; placasBuscadas.clear();
   uidAtual = u?.uid ?? null;
   if (!u) { estado = 'desconectado'; db = dbVazio(); notificar(); return; }
   // Sessão aberta fora da tela de login (ou vencida): sai.
@@ -178,11 +179,13 @@ async function aoMudarLogin(u: User | null) {
     erroCarga = code === 'permission-denied' ? 'Seu login não tem permissão para ver os dados. Fale com a direção.' : 'Não foi possível carregar os dados. Verifique a conexão.';
     estado = 'erro'; notificar();
   };
-  // OS dos últimos 120 dias ao vivo; o histórico completo chega em seguida, uma vez.
-  const desdeISO = new Date(Date.now() - 120 * 864e5).toISOString();
+  // OS dos últimos 90 dias ao vivo (mesma janela do sistema atual). O histórico antigo vem depois,
+  // conforme o perfil (ver carregarAntigas), para não ler a coleção inteira a cada login.
+  const desdeISO = new Date(Date.now() - JANELA_DIAS * 864e5).toISOString();
   assinaturas.push(onSnapshot(query(collection(fs, 'orders'), where('dataHora', '>=', desdeISO)), s => {
     s.docChanges().forEach(ch => { if (ch.type === 'removed') raw.orders.delete(ch.doc.id); else raw.orders.set(ch.doc.id, ch.doc.data()); });
-    if (!carregou.orders) { carregou.orders = true; void carregarHistorico(); }
+    if (!carregou.orders) { carregou.orders = true; carregarAntigas(u.uid); }
+    void buscarPlacasAbertas();
     agendar();
   }, falha));
   assinaturas.push(onSnapshot(collection(fs, 'usuarios'), s => {
@@ -190,6 +193,7 @@ async function aoMudarLogin(u: User | null) {
     if (!carregou.usuarios) {
       carregou.usuarios = true;
       if (raw.usuarios.get(u.uid)?.perfil === 'direcao') assinarAcessos();
+      carregarAntigas(u.uid);
     }
     agendar();
   }, falha));
@@ -203,12 +207,61 @@ async function aoMudarLogin(u: User | null) {
   }
 }
 
+const JANELA_DIAS = 90;
+const CHAVE_HISTORICO = 'mo2:historicoEm';
+const HISTORICO_VALE_DIAS = 45;
+/** Quem busca cliente antigo por nome/telefone ou vê indicadores precisa do histórico inteiro. */
+const PERFIS_HISTORICO = ['direcao', 'lider', 'vendedor'];
+let pediuAntigas = false;
+const placasBuscadas = new Set<string>();
+
+/** Depois de saber o perfil: histórico inteiro para quem precisa; os demais recebem só o das placas em atendimento. */
+function carregarAntigas(uid: string) {
+  if (pediuAntigas || !carregou.orders || !carregou.usuarios) return;
+  pediuAntigas = true;
+  if (PERFIS_HISTORICO.includes(raw.usuarios.get(uid)?.perfil)) void carregarHistorico();
+  else void buscarPlacasAbertas();
+}
+
+/**
+ * Histórico completo: lido do servidor uma vez por aparelho e guardado no cache local do navegador.
+ * Nos logins seguintes vem do cache (sem custo); as OS recentes chegam pela janela ao vivo.
+ */
 async function carregarHistorico() {
   try {
-    const s = await getDocs(collection(fs, 'orders'));
+    const marca = Number(localStorage.getItem(CHAVE_HISTORICO) || 0);
+    let s = null;
+    if (!USAR_EMULADOR && marca && Date.now() - marca < HISTORICO_VALE_DIAS * 864e5) {
+      s = await getDocsFromCache(collection(fs, 'orders')).catch(() => null);
+      if (s && s.size < 100) s = null;
+    }
+    if (!s) {
+      s = await getDocs(collection(fs, 'orders'));
+      localStorage.setItem(CHAVE_HISTORICO, String(Date.now()));
+    }
     s.forEach(d => { if (!raw.orders.has(d.id)) raw.orders.set(d.id, d.data()); });
     agendar();
   } catch (e) { console.warn('Histórico completo indisponível', e); }
+}
+
+/** Sem o histórico inteiro: busca as OS antigas só das placas que estão em atendimento (km, últimas trocas). */
+async function buscarPlacasAbertas() {
+  if (!pediuAntigas || PERFIS_HISTORICO.includes(raw.usuarios.get(uidAtual ?? '')?.perfil)) return;
+  const novas = new Set<string>();
+  for (const o of raw.orders.values()) {
+    if (o.status !== 'aguardando' && o.status !== 'andamento') continue;
+    const p = String(o.placa || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (p && !placasBuscadas.has(p)) { placasBuscadas.add(p); novas.add(p); }
+  }
+  // Formatos gravados pelo sistema atual: "ABC1234" e "ABC-1234". Até 30 valores por consulta.
+  const valores = [...novas].flatMap(p => [p, `${p.slice(0, 3)}-${p.slice(3)}`]);
+  for (let i = 0; i < valores.length; i += 30) {
+    try {
+      const s = await getDocs(query(collection(fs, 'orders'), where('placa', 'in', valores.slice(i, i + 30))));
+      s.forEach(d => { if (!raw.orders.has(d.id)) raw.orders.set(d.id, d.data()); });
+      agendar();
+    } catch (e) { console.warn('Histórico da placa indisponível', e); }
+  }
 }
 
 function assinarAcessos() {
