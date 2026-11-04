@@ -8,6 +8,7 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
     <style>
@@ -654,6 +655,13 @@
         }
         const db = firebase.firestore();
         const storage = firebase.storage();
+        const auth = firebase.auth();
+        // Teste local com o emulador do Firebase (só em localhost com ?emulador=1; nunca em produção).
+        const USAR_EMULADOR = ['localhost', '127.0.0.1'].includes(location.hostname) && new URLSearchParams(location.search).has('emulador');
+        if (USAR_EMULADOR) {
+            auth.useEmulator('http://127.0.0.1:9099', { disableWarnings: true });
+            db.useEmulator('127.0.0.1', 8080);
+        }
 
         // ============================================
         // FUNÇÕES DE UPLOAD DE IMAGENS FIREBASE STORAGE
@@ -698,9 +706,6 @@
         // CONFIGURAÇÕES GLOBAIS DO SISTEMA
         // ============================================
         const SYSTEM_CONFIG = {
-            // Senha para acessar configurações
-            ADMIN_PASSWORD: 'admin2026',
-            
             // Metas por técnico (salvas em localStorage)
             // Leo não tem meta, por isso não está na lista
             METAS: JSON.parse(localStorage.getItem('metasTecnicos') || JSON.stringify({
@@ -858,9 +863,7 @@
         // ============================================
         // Quem NÃO entra no rodízio: gestão (Italo = chefe, Leo = dono) e inativos.
         const RODIZIO_EXCLUIDOS = ['Italo', 'Leo', 'Luis', 'Pedro', 'Bruno', 'Sem lubrificador', '—'];
-        const RODIZIO_SENHA_CHEFE = 'italo123';
-        // Senha operacional: marcar/desmarcar almoço e remover OS em andamento.
-        const SENHA_OPERACIONAL = 'master123';
+        // Painel do chefe, almoço e remover OS em andamento: liberados pelo perfil (liderança e direção).
 
         // ============================================
         // HORA DO SERVIDOR (igual em todos os aparelhos)
@@ -1030,40 +1033,6 @@
                 minute: '2-digit',
                 second: '2-digit'
             });
-        };
-
-        // ============================================
-        // SENHA DIÁRIA DE ACESSO (rotativa)
-        // ============================================
-        // Formato: "master" + DDMMAAAA (ex.: master04082026).
-        // A senha "vira" todo dia às 5h da manhã, horário de Brasília — antes das 5h
-        // ainda vale a senha do dia anterior. É pedida uma vez por dia, por aparelho.
-        const getSenhaInfo = () => {
-            // Extrai dia/mês/ano/hora já no fuso de Brasília, independente do fuso do aparelho.
-            const partes = {};
-            new Intl.DateTimeFormat('en-GB', {
-                timeZone: 'America/Sao_Paulo',
-                year: 'numeric', month: '2-digit', day: '2-digit',
-                hour: '2-digit', hour12: false
-            }).formatToParts(agoraServidor()).forEach(p => { partes[p.type] = p.value; });
-
-            let ano = parseInt(partes.year, 10);
-            let mes = parseInt(partes.month, 10);
-            let dia = parseInt(partes.day, 10);
-            let hora = parseInt(partes.hour, 10) % 24; // meia-noite pode vir como "24"
-
-            // Usa UTC só como calendário puro (sem influência de fuso) para subtrair 1 dia.
-            const d = new Date(Date.UTC(ano, mes - 1, dia));
-            if (hora < 5) d.setUTCDate(d.getUTCDate() - 1);
-
-            const dd = String(d.getUTCDate()).padStart(2, '0');
-            const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-            const yyyy = d.getUTCFullYear();
-
-            return {
-                senha: `master${dd}${mm}${yyyy}`,
-                chaveDia: `${yyyy}-${mm}-${dd}` // identificador do "dia de senha" atual
-            };
         };
 
         // Função para formatar data/hora para input
@@ -2376,7 +2345,9 @@
         // ============================================
         // COMPONENTE PRINCIPAL: APP
         // ============================================
-        function App() {
+        function App({ usuario, onSair }) {
+            const podeGerir = pode(usuario, 'gerir');
+            const [showUsuarios, setShowUsuarios] = useState(false);
             const [orders, setOrders] = useState([]);
             const [loading, setLoading] = useState(true);
             const [showNewOrderModal, setShowNewOrderModal] = useState(false);
@@ -2413,7 +2384,7 @@
             const [volumetriaLubrificador, setVolumetriaLubrificador] = useState('todos');
             
             // NOVOS ESTADOS v5.0
-            const [isAdmin, setIsAdmin] = useState(false); // Controle ADM
+            const [isAdmin, setIsAdmin] = useState(() => pode(usuario, 'adm')); // Controle ADM (perfil Direção)
             const [expandedLubrificador, setExpandedLubrificador] = useState(null); // Accordion volumetria
             const [fatorAjuste, setFatorAjuste] = useState(() => {
                 return parseFloat(localStorage.getItem('fatorAjuste') || '0');
@@ -2421,7 +2392,7 @@
             const [comissaoConfig, setComissaoConfig] = useState(GLOBAL_COMISSAO); // Senhas + ajustes de comissão (global)
             const [metasUpsell, setMetasUpsell] = useState(GLOBAL_METAS_UPSELL); // Metas de upsell por item (global)
             const [rodizio, setRodizio] = useState(GLOBAL_RODIZIO); // Estado do rodízio (global)
-            const [chefeAutorizado, setChefeAutorizado] = useState(false); // Painel do chefe desbloqueado
+            const [chefeAutorizado, setChefeAutorizado] = useState(() => podeGerir); // Painel do chefe (liderança e direção)
             const [showEditHorarioModal, setShowEditHorarioModal] = useState(false); // Modal editar horários
             const [showEditUpsellModal, setShowEditUpsellModal] = useState(false); // Modal editar upsell
             const [selectedUpsellOrder, setSelectedUpsellOrder] = useState(null); // Ordem selecionada para editar upsell
@@ -2794,19 +2765,15 @@
                 }
             };
 
-            // Almoço: marcar e desmarcar exige a senha operacional.
+            // Almoço: marcar e desmarcar é da liderança e da direção.
             const alterarAlmoco = (nome, st) => {
-                const s = prompt(st === 'almoco' ? `Senha para marcar ${nome} no almoço:` : `Senha para tirar ${nome} do almoço:`);
-                if (s === null) return;
-                if (s !== SENHA_OPERACIONAL) { alert('Senha incorreta.'); return; }
+                if (!podeGerir) { alert('Marcar ou tirar do almoço é com a liderança ou a direção.'); return; }
                 setStatusMec(nome, st);
             };
 
-            // Remover OS em andamento (exige senha operacional + confirmação).
+            // Remover OS em andamento (liderança/direção + confirmação).
             const removerOrdemEmAndamento = async (order) => {
-                const s = prompt(`Senha para remover a OS #${order.numeroOrdem} (em andamento):`);
-                if (s === null) return;
-                if (s !== SENHA_OPERACIONAL) { alert('Senha incorreta.'); return; }
+                if (!podeGerir) { alert('Remover OS em andamento é com a liderança ou a direção.'); return; }
                 if (!confirm(`Remover PERMANENTEMENTE a OS #${order.numeroOrdem} — ${order.placa || ''} · ${order.cliente || ''}?\n\nEssa ação não pode ser desfeita.`)) return;
                 try {
                     await db.collection('orders').doc(order.id).delete();
@@ -2852,8 +2819,21 @@
                             <button className="btn btn-secondary" onClick={loadOrders}>
                                 🔄 Atualizar
                             </button>
+                            {pode(usuario, 'usuarios') && (
+                                <button className="btn btn-secondary" onClick={() => setShowUsuarios(true)}>
+                                    👥 Usuários
+                                </button>
+                            )}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <div style={{ textAlign: 'right', lineHeight: 1.2 }}>
+                                <div style={{ fontWeight: 700, color: '#2d3748', fontSize: '14px' }}>👤 {usuario.nome}</div>
+                                <div style={{ color: '#718096', fontSize: '12px' }}>{PERFIS[usuario.perfil] || usuario.perfil}</div>
+                            </div>
+                            <button className="btn btn-secondary" onClick={onSair}>Sair</button>
                         </div>
                     </div>
+                    {showUsuarios && <UsuariosModal usuario={usuario} onClose={() => setShowUsuarios(false)} />}
                     
                     {/* NAVEGAÇÃO POR ABAS */}
                     <div style={{
@@ -2964,9 +2944,8 @@
                         onAlmoco={alterarAlmoco}
                         chefeAutorizado={chefeAutorizado}
                         onAutorizarChefe={() => {
-                            const s = prompt('Senha do chefe de oficina:');
-                            if (s === RODIZIO_SENHA_CHEFE) setChefeAutorizado(true);
-                            else if (s !== null) alert('Senha incorreta.');
+                            if (podeGerir) setChefeAutorizado(true);
+                            else alert('O painel do chefe é da liderança e da direção.');
                         }}
                         onSairChefe={() => setChefeAutorizado(false)}
                     />
@@ -3302,6 +3281,7 @@
                                 loadOrders(); // Recarregar para recalcular alertas
                             }}
                             onAdminAuth={(isAdm) => setIsAdmin(isAdm)}
+                            podeAdm={pode(usuario, 'adm')}
                             lubrificadores={[...new Set(orders.map(o => normalizarLubrificador(o.lubrificador)).filter(Boolean))].sort().filter(l => !LUBRIFICADORES_INATIVOS.includes(l))}
                         />
                     )}
@@ -6380,10 +6360,10 @@
         // ============================================
         // MODAL: CONFIGURAÇÕES
         // ============================================
-        function ConfiguracoesModal({ onClose, onSave, onAdminAuth, lubrificadores = [] }) {
+        function ConfiguracoesModal({ onClose, onSave, onAdminAuth, podeAdm, lubrificadores = [] }) {
             const [tab, setTab] = useState('metas'); // 'metas', 'periodo', 'alertas', 'avancado'
-            const [senha, setSenha] = useState('');
-            const [autenticado, setAutenticado] = useState(false);
+            const autenticado = !!podeAdm; // Configurações são da direção (perfil do login)
+            useEffect(() => { if (podeAdm && onAdminAuth) onAdminAuth(true); }, [podeAdm]);
             const [metas, setMetas] = useState(SYSTEM_CONFIG.METAS);
             const [alertasEnabled, setAlertasEnabled] = useState(SYSTEM_CONFIG.ALERTAS_ENABLED);
             const [fatorAjusteLocal, setFatorAjusteLocal] = useState(() => {
@@ -6436,15 +6416,6 @@
                 });
             };
 
-            const handleLogin = () => {
-                if (senha === SYSTEM_CONFIG.ADMIN_PASSWORD) {
-                    setAutenticado(true);
-                    if (onAdminAuth) onAdminAuth(true); // Notificar que é ADM
-                } else {
-                    alert('❌ Senha incorreta!');
-                }
-            };
-
             const handleSalvar = async () => {
                 // Salvar metas
                 salvarMetas(metas);
@@ -6482,8 +6453,8 @@
 
             if (!autenticado) {
                 return (
-                    <div className="modal-overlay">
-                        <div className="modal-container" style={{ maxWidth: '500px' }}>
+                    <div className="modal">
+                        <div className="modal-content" style={{ maxWidth: '500px' }}>
                             <div className="modal-header">
                                 <div className="modal-title">🔒 Acesso Restrito</div>
                                 <button className="close-btn" onClick={onClose}>✕</button>
@@ -6493,20 +6464,10 @@
                                     <div style={{ fontSize: '60px', marginBottom: '20px' }}>⚙️</div>
                                     <h3 style={{ marginBottom: '10px' }}>Configurações do Sistema</h3>
                                     <p style={{ color: '#718096', marginBottom: '30px' }}>
-                                        Digite a senha de administrador para continuar
+                                        As configurações são da direção. Se você precisa mudar algo, fale com a direção.
                                     </p>
-                                    <input 
-                                        type="password"
-                                        value={senha}
-                                        onChange={(e) => setSenha(e.target.value)}
-                                        onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-                                        placeholder="Senha"
-                                        className="form-input"
-                                        style={{ marginBottom: '20px', textAlign: 'center', fontSize: '16px' }}
-                                        autoFocus
-                                    />
-                                    <button className="btn btn-primary" style={{ width: '100%' }} onClick={handleLogin}>
-                                        🔓 Acessar
+                                    <button className="btn btn-primary" style={{ width: '100%' }} onClick={onClose}>
+                                        Voltar
                                     </button>
                                 </div>
                             </div>
@@ -7365,84 +7326,627 @@
         }
 
         // ============================================
-        // PORTÃO DE SENHA DIÁRIA
+        // LOGIN INDIVIDUAL, PERFIS E REGISTRO DE ACESSOS
         // ============================================
-        // Bloqueia o app até o operador digitar a senha do dia. Depois de liberado,
-        // grava o "dia de senha" no aparelho e não pede de novo até a próxima virada (5h).
-        const CHAVE_ACESSO = 'acessoLiberadoDia';
+        // Cada pessoa entra com o próprio e-mail e senha (Firebase Authentication).
+        // O perfil fica em usuarios/{uid} e só a direção altera (regras do Firestore).
+        // Entradas, saídas e tentativas erradas ficam em "acessos": ninguém edita nem apaga.
+        const PERFIS = { direcao: 'Direção', lider: 'Liderança', vendedor: 'Vendedor', mecanico: 'Mecânico' };
+        const PERMISSOES = {
+            adm: ['direcao'],            // Configurações (metas, fator de ajuste, comissões)
+            usuarios: ['direcao'],       // criar contas, mudar perfil, ver registro de acessos
+            gerir: ['direcao', 'lider'], // painel do chefe, almoço, remover OS em andamento
+        };
+        const pode = (u, acao) => !!u && (PERMISSOES[acao] || []).includes(u.perfil);
+        const SESSAO_HORAS = 12; // um turno; depois pede login de novo
+        const CHAVE_SESSAO = 'mo:sessaoDesde';
+        const SENHA_MIN = 8;
 
-        function PortaoDeSenha({ onLiberado }) {
-            const [valor, setValor] = React.useState('');
-            const [erro, setErro] = React.useState('');
+        const RESULTADOS_ACESSO = {
+            entrou: { rotulo: 'Entrou', cor: '#2f855a' },
+            saiu: { rotulo: 'Saiu', cor: '#718096' },
+            sessao_expirada: { rotulo: 'Sessão expirou', cor: '#718096' },
+            senha_trocada: { rotulo: 'Trocou a senha', cor: '#2b6cb0' },
+            senha_errada: { rotulo: 'E-mail ou senha errados', cor: '#c05621' },
+            bloqueado: { rotulo: 'Bloqueado (muitas tentativas)', cor: '#c53030' },
+            desativado: { rotulo: 'Acesso desativado', cor: '#c53030' },
+            sem_perfil: { rotulo: 'Login sem perfil', cor: '#c53030' },
+            conta_criada: { rotulo: 'Criou conta', cor: '#2b6cb0' },
+            perfil_alterado: { rotulo: 'Mudou perfil', cor: '#2b6cb0' },
+            conta_desativada: { rotulo: 'Desativou conta', cor: '#c53030' },
+            conta_reativada: { rotulo: 'Reativou conta', cor: '#2b6cb0' },
+            link_senha_enviado: { rotulo: 'Enviou link de senha', cor: '#2b6cb0' },
+        };
 
-            const tentar = (e) => {
-                if (e) e.preventDefault();
-                const { senha, chaveDia } = getSenhaInfo();
-                if (valor.trim().toLowerCase() === senha.toLowerCase()) {
-                    localStorage.setItem(CHAVE_ACESSO, chaveDia);
-                    onLiberado();
-                } else {
-                    setErro('Senha incorreta. Confira a senha do dia com o responsável.');
-                    setValor('');
+        const dispositivoResumo = () => {
+            const ua = navigator.userAgent || '';
+            const nav = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Navegador';
+            const so = /iPhone|iPad/.test(ua) ? 'iPhone/iPad' : /Android/.test(ua) ? 'Android' : /Mac OS X/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : 'outro';
+            return `${nav} · ${so}${/Mobile/.test(ua) ? ' (celular)' : ''}`;
+        };
+
+        // Grava no registro de acessos. Nunca trava a tela se falhar.
+        const registrarAcesso = (resultado, dados = {}) => {
+            const u = auth.currentUser;
+            return db.collection('acessos').add({
+                resultado,
+                uid: u ? u.uid : null,
+                email: String(dados.email || (u && u.email) || '').toLowerCase().slice(0, 120),
+                nome: dados.nome ? String(dados.nome).slice(0, 80) : null,
+                alvo: dados.alvo ? String(dados.alvo).slice(0, 120) : null,
+                dispositivo: dispositivoResumo(),
+                em: firebase.firestore.FieldValue.serverTimestamp()
+            }).catch(e => console.warn('Registro de acesso não gravado:', e && e.code));
+        };
+
+        const problemaSenha = (s, email) => {
+            if (s.length < SENHA_MIN) return `A senha precisa ter pelo menos ${SENHA_MIN} caracteres.`;
+            if (/^(.)\1+$/.test(s) || /^(0?123456789?|12345678|87654321|abcdefgh|qwertyui|senha\d*)$/i.test(s)) return 'Senha fácil demais. Evite sequências e repetições.';
+            if (/master|[oó]leo|oficina/i.test(s)) return 'Não use o nome da oficina na senha.';
+            const usuarioEmail = String(email || '').split('@')[0].toLowerCase();
+            if (usuarioEmail && s.toLowerCase().includes(usuarioEmail)) return 'A senha não pode conter o seu e-mail.';
+            return null;
+        };
+
+        // Senha provisória diferente para cada pessoa, sem caracteres confusos (0/O, 1/l).
+        const gerarSenhaProvisoria = () => {
+            const alf = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            const b = crypto.getRandomValues(new Uint8Array(10));
+            return Array.from(b, x => alf[x % alf.length]).join('');
+        };
+
+        const mensagemErroAuth = (e) => {
+            const c = (e && e.code) || '';
+            if (['auth/wrong-password', 'auth/user-not-found', 'auth/invalid-credential', 'auth/invalid-login-credentials', 'auth/invalid-email', 'auth/user-disabled'].includes(c)) return 'E-mail ou senha incorretos.';
+            if (c === 'auth/too-many-requests') return 'Muitas tentativas erradas. O acesso foi bloqueado por alguns minutos. Use "Esqueci minha senha" ou fale com a direção.';
+            if (c === 'auth/network-request-failed') return 'Sem conexão com a internet. Verifique e tente de novo.';
+            if (c === 'auth/email-already-in-use') return 'Já existe um login com este e-mail.';
+            if (c === 'auth/weak-password') return `Senha fraca: use pelo menos ${SENHA_MIN} caracteres.`;
+            if (c === 'auth/requires-recent-login') return 'Por segurança, saia e entre de novo antes de trocar a senha.';
+            if (c === 'auth/operation-not-allowed') return 'O login por e-mail e senha ainda não foi ativado no Firebase.';
+            return 'Não foi possível concluir. Tente de novo.';
+        };
+
+        // App auxiliar só para CRIAR contas: criar pelo app principal trocaria a sessão de quem está criando.
+        const authCriador = () => {
+            const app = firebase.apps.find(a => a.name === 'criador') || firebase.initializeApp(firebaseConfig, 'criador');
+            const a = app.auth();
+            if (USAR_EMULADOR && !a.emulatorConfig) a.useEmulator('http://127.0.0.1:9099', { disableWarnings: true });
+            return a;
+        };
+        // Banco visto pela conta recém-criada (app 'criador'), para gravar o perfil inicial como ela mesma.
+        const dbCriador = () => {
+            const f = authCriador().app.firestore();
+            if (USAR_EMULADOR && !f._mo_emulador) { f.useEmulator('127.0.0.1', 8080); f._mo_emulador = true; }
+            return f;
+        };
+        const DOC_INICIO = () => db.collection('sistema').doc('inicio');
+
+        const sairDaConta = async (resultado = 'saiu') => {
+            await registrarAcesso(resultado);
+            localStorage.removeItem(CHAVE_SESSAO);
+            await auth.signOut();
+        };
+
+        const estiloCaixaLogin = {
+            background: 'white', borderRadius: '18px', padding: '32px 28px',
+            boxShadow: '0 15px 40px rgba(0,0,0,0.25)', width: '100%', maxWidth: '400px'
+        };
+        const estiloCampo = (erro) => ({
+            width: '100%', padding: '12px 14px', fontSize: '16px',
+            border: '2px solid ' + (erro ? '#e53e3e' : '#e2e8f0'),
+            borderRadius: '10px', boxSizing: 'border-box', marginBottom: '12px'
+        });
+        const estiloBotaoLogin = {
+            width: '100%', padding: '12px', fontSize: '16px', fontWeight: 'bold',
+            border: 'none', borderRadius: '10px', cursor: 'pointer',
+            background: 'linear-gradient(135deg, #E31B23 0%, #0066CC 100%)', color: 'white'
+        };
+        const estiloLink = { background: 'none', border: 'none', color: '#0066CC', cursor: 'pointer', fontSize: '14px', padding: '6px 0' };
+        const rotuloLogin = { display: 'block', textAlign: 'left', fontSize: '13px', fontWeight: 600, color: '#4a5568', marginBottom: '4px' };
+
+        function CentroLogin({ children }) {
+            return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>{children}</div>;
+        }
+
+        function TelaLogin({ aviso }) {
+            const [email, setEmail] = useState('');
+            const [senha, setSenha] = useState('');
+            const [ver, setVer] = useState(false);
+            const [erro, setErro] = useState('');
+            const [info, setInfo] = useState(aviso || '');
+            const [ocupado, setOcupado] = useState(false);
+            const [primeiraConta, setPrimeiraConta] = useState(false);
+
+            // Configuração inicial: só aparece enquanto a conta da direção ainda não foi criada.
+            useEffect(() => {
+                DOC_INICIO().get()
+                    .then(s => setPrimeiraConta(!s.exists))
+                    .catch(() => setPrimeiraConta(false));
+            }, []);
+
+            const entrar = async (e) => {
+                e.preventDefault();
+                const em = email.trim().toLowerCase();
+                if (!em || !senha) { setErro('Informe o e-mail e a senha.'); return; }
+                setOcupado(true); setErro(''); setInfo('');
+                localStorage.setItem(CHAVE_SESSAO, String(Date.now()));
+                try {
+                    const cred = await auth.signInWithEmailAndPassword(em, senha);
+                    await registrarAcesso('entrou');
+                    db.collection('usuarios').doc(cred.user.uid).update({ ultimoAcessoEm: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+                } catch (err) {
+                    localStorage.removeItem(CHAVE_SESSAO);
+                    const c = err && err.code;
+                    if (c === 'auth/too-many-requests') registrarAcesso('bloqueado', { email: em });
+                    else if (c !== 'auth/network-request-failed') registrarAcesso('senha_errada', { email: em });
+                    setErro(mensagemErroAuth(err));
+                    setSenha('');
+                    setOcupado(false);
                 }
             };
 
+            const esqueci = async () => {
+                const em = email.trim().toLowerCase();
+                if (!em) { setErro('Digite o seu e-mail acima e toque de novo em "Esqueci minha senha".'); return; }
+                setErro('');
+                try { await auth.sendPasswordResetEmail(em); } catch (err) { if (err && err.code === 'auth/network-request-failed') { setErro(mensagemErroAuth(err)); return; } }
+                // Mesma mensagem exista ou não a conta (não revela quem tem login).
+                setInfo(`Se ${em} tiver acesso, chega em alguns minutos um e-mail para criar uma nova senha. Confira também o spam.`);
+            };
+
+            if (primeiraConta === 'criar') return <PrimeiraConta onVoltar={() => setPrimeiraConta(false)} />;
+
             return (
-                <div style={{
-                    minHeight: '100vh', display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', padding: '20px'
-                }}>
-                    <form onSubmit={tentar} style={{
-                        background: 'white', borderRadius: '18px', padding: '40px 32px',
-                        boxShadow: '0 15px 40px rgba(0,0,0,0.25)', width: '100%', maxWidth: '380px',
-                        textAlign: 'center'
-                    }}>
-                        <div style={{ fontSize: '46px', marginBottom: '8px' }}>🔒</div>
-                        <h2 style={{ margin: '0 0 6px 0', color: '#2d3748' }}>Master Óleo Curitiba</h2>
-                        <p style={{ margin: '0 0 22px 0', color: '#718096', fontSize: '14px' }}>
-                            Digite a senha do dia para acessar o sistema.
-                        </p>
-                        <input
-                            type="password"
-                            value={valor}
-                            autoFocus
-                            onChange={(e) => { setValor(e.target.value); if (erro) setErro(''); }}
-                            placeholder="Senha do dia"
-                            style={{
-                                width: '100%', padding: '12px 14px', fontSize: '16px',
-                                border: '2px solid ' + (erro ? '#e53e3e' : '#e2e8f0'),
-                                borderRadius: '10px', boxSizing: 'border-box', marginBottom: '12px'
-                            }}
-                        />
-                        {erro && (
-                            <div style={{ color: '#e53e3e', fontSize: '13px', marginBottom: '12px' }}>
-                                {erro}
+                <CentroLogin>
+                    <form onSubmit={entrar} style={estiloCaixaLogin} aria-label="Entrar">
+                        <div style={{ textAlign: 'center', marginBottom: '18px' }}>
+                            <div style={{ fontSize: '40px' }}>🚗</div>
+                            <h2 style={{ margin: '4px 0', color: '#2d3748' }}>Master Óleo Curitiba</h2>
+                            <p style={{ margin: 0, color: '#718096', fontSize: '14px' }}>Entre com o seu e-mail e a sua senha.</p>
+                        </div>
+                        <label style={rotuloLogin} htmlFor="login-email">E-mail</label>
+                        <input id="login-email" type="email" autoComplete="username" autoCapitalize="none" value={email}
+                            onChange={e => { setEmail(e.target.value); if (erro) setErro(''); }} style={estiloCampo(false)} autoFocus />
+                        <label style={rotuloLogin} htmlFor="login-senha">Senha</label>
+                        <div style={{ position: 'relative' }}>
+                            <input id="login-senha" type={ver ? 'text' : 'password'} autoComplete="current-password" value={senha}
+                                onChange={e => { setSenha(e.target.value); if (erro) setErro(''); }} style={{ ...estiloCampo(!!erro), paddingRight: '80px' }} />
+                            <button type="button" onClick={() => setVer(!ver)} style={{ ...estiloLink, position: 'absolute', right: '12px', top: '8px' }}>{ver ? 'Esconder' : 'Mostrar'}</button>
+                        </div>
+                        {erro && <div role="alert" style={{ color: '#c53030', fontSize: '14px', marginBottom: '12px' }}>{erro}</div>}
+                        {info && <div style={{ color: '#2b6cb0', background: '#ebf8ff', borderRadius: '8px', padding: '10px', fontSize: '13px', marginBottom: '12px' }}>{info}</div>}
+                        <button type="submit" disabled={ocupado} style={{ ...estiloBotaoLogin, opacity: ocupado ? 0.7 : 1 }}>{ocupado ? 'Entrando…' : 'Entrar'}</button>
+                        <div style={{ textAlign: 'center', marginTop: '10px' }}>
+                            <button type="button" onClick={esqueci} style={estiloLink}>Esqueci minha senha</button>
+                        </div>
+                        <p style={{ color: '#a0aec0', fontSize: '12px', textAlign: 'center', margin: '8px 0 0' }}>Cada entrada fica registrada. Não compartilhe a sua senha.</p>
+                        {primeiraConta === true && (
+                            <div style={{ marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '12px', textAlign: 'center' }}>
+                                <button type="button" onClick={() => setPrimeiraConta('criar')} style={estiloLink}>Configuração inicial: criar a conta da direção</button>
                             </div>
                         )}
-                        <button type="submit" className="btn btn-primary" style={{
-                            width: '100%', padding: '12px', fontSize: '16px', fontWeight: 'bold',
-                            border: 'none', borderRadius: '10px', cursor: 'pointer',
-                            background: 'linear-gradient(135deg, #E31B23 0%, #0066CC 100%)', color: 'white'
-                        }}>
-                            Entrar
-                        </button>
                     </form>
+                </CentroLogin>
+            );
+        }
+
+        // Só funciona enquanto não existe nenhum usuário: cria a primeira conta, já como Direção.
+        function PrimeiraConta({ onVoltar }) {
+            const [f, setF] = useState({ nome: '', email: '', senha: '', conf: '' });
+            const [erro, setErro] = useState('');
+            const [ocupado, setOcupado] = useState(false);
+            const criar = async (e) => {
+                e.preventDefault();
+                const em = f.email.trim().toLowerCase();
+                if (!f.nome.trim() || !em) { setErro('Informe nome e e-mail.'); return; }
+                const p = problemaSenha(f.senha, em); if (p) { setErro(p); return; }
+                if (f.senha !== f.conf) { setErro('A confirmação não é igual à senha.'); return; }
+                setOcupado(true); setErro('');
+                try {
+                    if ((await DOC_INICIO().get()).exists) { setErro('A conta da direção já foi criada. Entre com o seu login.'); setOcupado(false); return; }
+                    const a2 = authCriador();
+                    let cred;
+                    try { cred = await a2.createUserWithEmailAndPassword(em, f.senha); }
+                    catch (err) {
+                        // Tentativa anterior criou o login mas não o perfil: retoma com a mesma senha.
+                        if (err.code !== 'auth/email-already-in-use') throw err;
+                        cred = await a2.signInWithEmailAndPassword(em, f.senha);
+                    }
+                    const uid = cred.user.uid, agora = firebase.firestore.FieldValue.serverTimestamp();
+                    const d2 = dbCriador(), lote = d2.batch();
+                    lote.set(d2.collection('usuarios').doc(uid), {
+                        nome: f.nome.trim(), email: em, perfil: 'direcao', ativo: true, trocarSenha: false,
+                        criadoEm: agora, criadoPor: uid
+                    });
+                    lote.set(d2.collection('sistema').doc('inicio'), { uid, email: em, em: agora });
+                    await lote.commit();
+                    await a2.signOut();
+                    localStorage.setItem(CHAVE_SESSAO, String(Date.now()));
+                    await auth.signInWithEmailAndPassword(em, f.senha);
+                    await registrarAcesso('conta_criada', { alvo: em, nome: f.nome.trim() });
+                    await registrarAcesso('entrou');
+                } catch (err) {
+                    setErro(mensagemErroAuth(err));
+                    setOcupado(false);
+                }
+            };
+            const campo = (k, rot, tipo = 'text', ac) => (
+                <>
+                    <label style={rotuloLogin} htmlFor={`pc-${k}`}>{rot}</label>
+                    <input id={`pc-${k}`} type={tipo} autoComplete={ac} value={f[k]} onChange={e => setF({ ...f, [k]: e.target.value })} style={estiloCampo(false)} />
+                </>
+            );
+            return (
+                <CentroLogin>
+                    <form onSubmit={criar} style={estiloCaixaLogin}>
+                        <h2 style={{ margin: '0 0 6px', color: '#2d3748' }}>Configuração inicial</h2>
+                        <p style={{ margin: '0 0 16px', color: '#718096', fontSize: '14px' }}>Crie a conta da direção. Depois, em 👥 Usuários, você cria as contas do time.</p>
+                        {campo('nome', 'Seu nome')}
+                        {campo('email', 'Seu e-mail', 'email', 'username')}
+                        {campo('senha', `Senha (mínimo ${SENHA_MIN} caracteres)`, 'password', 'new-password')}
+                        {campo('conf', 'Repita a senha', 'password', 'new-password')}
+                        {erro && <div role="alert" style={{ color: '#c53030', fontSize: '14px', marginBottom: '12px' }}>{erro}</div>}
+                        <button type="submit" disabled={ocupado} style={estiloBotaoLogin}>{ocupado ? 'Criando…' : 'Criar conta da direção'}</button>
+                        <div style={{ textAlign: 'center', marginTop: '10px' }}><button type="button" onClick={onVoltar} style={estiloLink}>Voltar</button></div>
+                    </form>
+                </CentroLogin>
+            );
+        }
+
+        // Primeiro acesso com senha provisória: só entra depois de criar a própria senha.
+        function TrocarSenhaObrigatoria({ usuario }) {
+            const [f, setF] = useState({ atual: '', nova: '', conf: '' });
+            const [ver, setVer] = useState(false);
+            const [erro, setErro] = useState('');
+            const [ocupado, setOcupado] = useState(false);
+            const salvar = async (e) => {
+                e.preventDefault();
+                const p = problemaSenha(f.nova, usuario.email); if (p) { setErro(p); return; }
+                if (f.nova !== f.conf) { setErro('A confirmação não é igual à nova senha.'); return; }
+                if (f.nova === f.atual) { setErro('A nova senha precisa ser diferente da provisória.'); return; }
+                setOcupado(true); setErro('');
+                try {
+                    const user = auth.currentUser;
+                    await user.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(user.email, f.atual));
+                    await user.updatePassword(f.nova);
+                    await registrarAcesso('senha_trocada');
+                    await db.collection('usuarios').doc(user.uid).update({ trocarSenha: false, senhaTrocadaEm: firebase.firestore.FieldValue.serverTimestamp() });
+                } catch (err) {
+                    const c = err && err.code;
+                    setErro(['auth/wrong-password', 'auth/invalid-credential', 'auth/invalid-login-credentials'].includes(c) ? 'A senha provisória não confere.' : mensagemErroAuth(err));
+                    setOcupado(false);
+                }
+            };
+            const tipo = ver ? 'text' : 'password';
+            return (
+                <CentroLogin>
+                    <form onSubmit={salvar} style={estiloCaixaLogin}>
+                        <h2 style={{ margin: '0 0 6px', color: '#2d3748' }}>Olá, {String(usuario.nome || '').split(' ')[0]}!</h2>
+                        <p style={{ margin: '0 0 16px', color: '#718096', fontSize: '14px' }}>Você entrou com uma <b>senha provisória</b>. Crie a sua senha pessoal para continuar. Ninguém da administração vê a sua senha.</p>
+                        <label style={rotuloLogin} htmlFor="ts-atual">Senha provisória</label>
+                        <input id="ts-atual" type={tipo} autoComplete="current-password" value={f.atual} onChange={e => setF({ ...f, atual: e.target.value })} style={estiloCampo(false)} />
+                        <label style={rotuloLogin} htmlFor="ts-nova">Nova senha (mínimo {SENHA_MIN} caracteres)</label>
+                        <input id="ts-nova" type={tipo} autoComplete="new-password" value={f.nova} onChange={e => setF({ ...f, nova: e.target.value })} style={estiloCampo(false)} />
+                        <label style={rotuloLogin} htmlFor="ts-conf">Repita a nova senha</label>
+                        <input id="ts-conf" type={tipo} autoComplete="new-password" value={f.conf} onChange={e => setF({ ...f, conf: e.target.value })} style={estiloCampo(false)} />
+                        <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '14px', color: '#4a5568', marginBottom: '12px' }}>
+                            <input type="checkbox" checked={ver} onChange={e => setVer(e.target.checked)} /> Mostrar senhas
+                        </label>
+                        {erro && <div role="alert" style={{ color: '#c53030', fontSize: '14px', marginBottom: '12px' }}>{erro}</div>}
+                        <button type="submit" disabled={ocupado} style={estiloBotaoLogin}>{ocupado ? 'Salvando…' : 'Criar minha senha e entrar'}</button>
+                        <div style={{ textAlign: 'center', marginTop: '10px' }}><button type="button" onClick={() => sairDaConta()} style={estiloLink}>Sair</button></div>
+                    </form>
+                </CentroLogin>
+            );
+        }
+
+        // Converte "Liderança", "mecânico", "ADM"... no código do perfil.
+        const perfilDeTexto = (t) => {
+            const x = String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+            if (/^(direcao|diretor|diretoria|adm|admin|administrador|dono|socio)$/.test(x)) return 'direcao';
+            if (/^(lider|lideranca|chefe|chefe de oficina|gerente|supervisor)$/.test(x)) return 'lider';
+            if (/^(vendedor|vendedora|vendas|balcao|atendente|consultor)$/.test(x)) return 'vendedor';
+            if (/^(mecanico|mecanica|lubrificador|tecnico|operador)$/.test(x)) return 'mecanico';
+            return null;
+        };
+
+        // Cada linha: nome; e-mail; perfil (em qualquer ordem; separador ; , ou tab).
+        const lerListaContas = (texto, existentes) => {
+            const vistos = new Set();
+            return texto.split('\n').map(l => l.trim()).filter(Boolean).map((linha, i) => {
+                const partes = linha.split(/[;\t,]/).map(p => p.trim()).filter(Boolean);
+                const email = (partes.find(p => p.includes('@')) || '').toLowerCase();
+                const perfilTxt = partes.find(p => perfilDeTexto(p));
+                const nome = partes.filter(p => p !== email && p.toLowerCase() !== email && p !== perfilTxt).join(' ');
+                const perfil = perfilDeTexto(perfilTxt);
+                let problema = null;
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) problema = 'E-mail inválido ou ausente';
+                else if (!perfil) problema = 'Perfil não reconhecido (use Direção, Liderança, Vendedor ou Mecânico)';
+                else if (!nome) problema = 'Nome ausente';
+                else if (vistos.has(email)) problema = 'E-mail repetido na lista';
+                else if (existentes.some(u => u.email === email)) problema = 'Já tem conta';
+                vistos.add(email);
+                return { linha: i + 1, nome, email, perfil, problema };
+            });
+        };
+
+        const fmtQuando = (ts) => {
+            const d = ts && ts.toDate ? ts.toDate() : null;
+            return d ? d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+        };
+
+        function UsuariosModal({ usuario, onClose }) {
+            const [aba, setAba] = useState('equipe');
+            const [lista, setLista] = useState([]);
+            const [texto, setTexto] = useState('');
+            const [criando, setCriando] = useState(false);
+            const [criados, setCriados] = useState(null);
+            const [acessos, setAcessos] = useState(null);
+            const [filtro, setFiltro] = useState('');
+            const [soFalhas, setSoFalhas] = useState(false);
+            const [msg, setMsg] = useState('');
+
+            useEffect(() => db.collection('usuarios').onSnapshot(
+                s => setLista(s.docs.map(d => ({ uid: d.id, ...d.data() })).sort((a, b) => String(a.nome).localeCompare(String(b.nome)))),
+                e => setMsg('Não foi possível carregar os usuários: ' + (e && e.code))
+            ), []);
+
+            const carregarAcessos = () => {
+                setAcessos(null);
+                db.collection('acessos').orderBy('em', 'desc').limit(400).get()
+                    .then(s => setAcessos(s.docs.map(d => ({ id: d.id, ...d.data() }))))
+                    .catch(e => { setAcessos([]); setMsg('Não foi possível carregar os acessos: ' + (e && e.code)); });
+            };
+            useEffect(() => { if (aba === 'acessos' && acessos === null) carregarAcessos(); }, [aba]);
+
+            const previa = texto.trim() ? lerListaContas(texto, lista) : [];
+            const validas = previa.filter(p => !p.problema);
+
+            const criarContas = async () => {
+                if (!validas.length) return;
+                if (!confirm(`Criar ${validas.length} conta(s)? Cada pessoa recebe uma senha provisória diferente, mostrada uma única vez.`)) return;
+                setCriando(true); setMsg('');
+                const a2 = authCriador();
+                const res = [];
+                for (const p of validas) {
+                    const senha = gerarSenhaProvisoria();
+                    try {
+                        const cred = await a2.createUserWithEmailAndPassword(p.email, senha);
+                        await db.collection('usuarios').doc(cred.user.uid).set({
+                            nome: p.nome, email: p.email, perfil: p.perfil, ativo: true, trocarSenha: true,
+                            criadoEm: firebase.firestore.FieldValue.serverTimestamp(), criadoPor: usuario.uid
+                        });
+                        await a2.signOut();
+                        registrarAcesso('conta_criada', { alvo: p.email, nome: p.nome });
+                        res.push({ ...p, senha, ok: true });
+                    } catch (err) {
+                        try { await a2.signOut(); } catch (e2) { /* ignora */ }
+                        res.push({ ...p, ok: false, erro: mensagemErroAuth(err) });
+                    }
+                }
+                setCriados(res);
+                setTexto(res.filter(r => !r.ok).map(r => `${r.nome}; ${r.email}; ${PERFIS[r.perfil]}`).join('\n'));
+                setCriando(false);
+            };
+
+            const textoParaPassar = (criados || []).filter(r => r.ok).map(r =>
+                `${r.nome} (${PERFIS[r.perfil]})\nSite: ${location.origin}\nE-mail: ${r.email}\nSenha provisória: ${r.senha}\nNo primeiro acesso o sistema pede para você criar a sua senha.`
+            ).join('\n\n');
+
+            const imprimir = () => {
+                const w = window.open('', '_blank');
+                if (!w) { alert('Libere as janelas pop-up para imprimir.'); return; }
+                const esc = (x) => String(x).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+                w.document.write(`<html><head><title>Acessos Master Óleo</title><style>body{font-family:sans-serif;padding:20px}.c{border:1px dashed #999;padding:14px;margin:0 0 14px;page-break-inside:avoid}b{font-family:monospace;font-size:18px}</style></head><body>` +
+                    criados.filter(r => r.ok).map(r => `<div class="c"><div><strong>${esc(r.nome)}</strong> — ${esc(PERFIS[r.perfil])}</div><div>Site: ${esc(location.origin)}</div><div>E-mail: ${esc(r.email)}</div><div>Senha provisória: <b>${esc(r.senha)}</b></div><div style="font-size:12px;color:#555">No primeiro acesso o sistema pede para você criar a sua senha.</div></div>`).join('') +
+                    `</body></html>`);
+                w.document.close(); w.focus(); w.print();
+            };
+
+            const alterar = async (u, campos, resultado, msgOk) => {
+                try {
+                    await db.collection('usuarios').doc(u.uid).update({ ...campos, atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(), atualizadoPor: usuario.uid });
+                    registrarAcesso(resultado, { alvo: u.email, nome: u.nome });
+                    setMsg(msgOk);
+                } catch (e) { setMsg('Não foi possível salvar: ' + (e && e.code)); }
+            };
+            const enviarLink = async (u) => {
+                if (!confirm(`Enviar para ${u.email} um e-mail com link para criar nova senha?`)) return;
+                try { await auth.sendPasswordResetEmail(u.email); registrarAcesso('link_senha_enviado', { alvo: u.email, nome: u.nome }); setMsg(`Link enviado para ${u.email}. Peça para conferir o spam.`); }
+                catch (e) { setMsg(mensagemErroAuth(e)); }
+            };
+
+            const nomePorUid = Object.fromEntries(lista.map(u => [u.uid, u.nome]));
+            const falha = (r) => ['senha_errada', 'bloqueado', 'desativado', 'sem_perfil'].includes(r);
+            const desde24h = Date.now() - 24 * 3600e3;
+            const acessosFiltrados = (acessos || []).filter(a =>
+                (!soFalhas || falha(a.resultado)) &&
+                (!filtro || `${a.email} ${a.nome || ''} ${nomePorUid[a.uid] || ''} ${a.alvo || ''}`.toLowerCase().includes(filtro.toLowerCase())));
+            const falhas24 = (acessos || []).filter(a => falha(a.resultado) && a.em && a.em.toMillis() >= desde24h).length;
+
+            const th = { textAlign: 'left', padding: '8px', fontSize: '12px', color: '#718096', borderBottom: '2px solid #e2e8f0', whiteSpace: 'nowrap' };
+            const td = { padding: '8px', fontSize: '14px', borderBottom: '1px solid #edf2f7', verticalAlign: 'top' };
+            const abaBtn = (v, r) => (
+                <button onClick={() => { setAba(v); setMsg(''); }} style={{ padding: '10px 16px', border: 'none', background: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '15px', color: aba === v ? '#0066CC' : '#4a5568', borderBottom: aba === v ? '3px solid #0066CC' : '3px solid transparent' }}>{r}</button>
+            );
+
+            return (
+                <div className="modal">
+                    <div className="modal-content" style={{ maxWidth: '980px' }}>
+                        <div className="modal-header">
+                            <div className="modal-title">👥 Usuários e acessos</div>
+                            <button className="close-btn" onClick={onClose}>✕</button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ display: 'flex', gap: '6px', borderBottom: '2px solid #e2e8f0', marginBottom: '16px', flexWrap: 'wrap' }}>
+                                {abaBtn('equipe', `Equipe (${lista.length})`)}{abaBtn('criar', 'Criar contas')}{abaBtn('acessos', 'Registro de acessos')}
+                            </div>
+                            {msg && <div style={{ background: '#ebf8ff', color: '#2b6cb0', padding: '10px', borderRadius: '8px', marginBottom: '12px', fontSize: '14px' }}>{msg}</div>}
+
+                            {aba === 'equipe' && (
+                                <div style={{ overflowX: 'auto' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                        <thead><tr><th style={th}>Nome</th><th style={th}>E-mail</th><th style={th}>Perfil</th><th style={th}>Situação</th><th style={th}>Último acesso</th><th style={th}></th></tr></thead>
+                                        <tbody>{lista.map(u => {
+                                            const eu = u.uid === usuario.uid;
+                                            return (
+                                                <tr key={u.uid} style={{ opacity: u.ativo ? 1 : 0.55 }}>
+                                                    <td style={td}><b>{u.nome}</b>{eu && <span style={{ color: '#718096' }}> (você)</span>}</td>
+                                                    <td style={td}>{u.email}</td>
+                                                    <td style={td}>
+                                                        <select value={u.perfil} disabled={eu} onChange={e => alterar(u, { perfil: e.target.value }, 'perfil_alterado', `Perfil de ${u.nome} agora é ${PERFIS[e.target.value]}.`)} style={{ padding: '6px', borderRadius: '6px', border: '1px solid #cbd5e0' }}>
+                                                            {Object.entries(PERFIS).map(([k, r]) => <option key={k} value={k}>{r}</option>)}
+                                                        </select>
+                                                    </td>
+                                                    <td style={td}>{!u.ativo ? 'Desativado' : u.trocarSenha ? 'Aguardando 1º acesso' : 'Ativo'}</td>
+                                                    <td style={td}>{fmtQuando(u.ultimoAcessoEm)}</td>
+                                                    <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                                                        <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '13px', marginRight: '6px' }} onClick={() => enviarLink(u)}>Link de nova senha</button>
+                                                        {!eu && <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '13px', color: u.ativo ? '#c53030' : undefined }}
+                                                            onClick={() => { if (u.ativo && !confirm(`Desativar o acesso de ${u.nome}? A pessoa sai na hora e não consegue mais entrar. O histórico é mantido.`)) return; alterar(u, { ativo: !u.ativo }, u.ativo ? 'conta_desativada' : 'conta_reativada', u.ativo ? `${u.nome} desativado.` : `${u.nome} reativado.`); }}>
+                                                            {u.ativo ? 'Desativar' : 'Reativar'}</button>}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}</tbody>
+                                    </table>
+                                    <p style={{ color: '#718096', fontSize: '13px', marginTop: '10px' }}>Esqueceu a senha? Use "Link de nova senha": a pessoa recebe um e-mail para criar outra. Ninguém vê a senha de ninguém.</p>
+                                </div>
+                            )}
+
+                            {aba === 'criar' && (
+                                <div>
+                                    {criados && (
+                                        <div style={{ background: '#f0fff4', border: '1px solid #9ae6b4', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
+                                            <b>{criados.filter(r => r.ok).length} conta(s) criada(s).</b> Anote ou imprima agora: as senhas provisórias não aparecem de novo.
+                                            <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px' }}>
+                                                <thead><tr><th style={th}>Nome</th><th style={th}>E-mail</th><th style={th}>Perfil</th><th style={th}>Senha provisória</th></tr></thead>
+                                                <tbody>{criados.map(r => (
+                                                    <tr key={r.email}><td style={td}>{r.nome}</td><td style={td}>{r.email}</td><td style={td}>{PERFIS[r.perfil]}</td>
+                                                        <td style={td}>{r.ok ? <b style={{ fontFamily: 'monospace', fontSize: '16px' }}>{r.senha}</b> : <span style={{ color: '#c53030' }}>Não criada: {r.erro}</span>}</td></tr>
+                                                ))}</tbody>
+                                            </table>
+                                            <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                                                <button className="btn btn-secondary" onClick={() => navigator.clipboard.writeText(textoParaPassar).then(() => setMsg('Copiado. Mande para cada pessoa no privado.'))}>📋 Copiar mensagens</button>
+                                                <button className="btn btn-secondary" onClick={imprimir}>🖨️ Imprimir</button>
+                                                <button className="btn btn-secondary" onClick={() => setCriados(null)}>Já passei, ocultar</button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    <p style={{ color: '#4a5568', fontSize: '14px', marginBottom: '8px' }}>
+                                        Cole uma pessoa por linha: <b>nome; e-mail; perfil</b>. Perfis: Direção, Liderança, Vendedor, Mecânico.
+                                    </p>
+                                    <textarea value={texto} onChange={e => setTexto(e.target.value)} rows={8} placeholder={'João da Silva; joao@email.com; Mecânico\nMaria Souza; maria@email.com; Vendedor'}
+                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '2px solid #e2e8f0', fontSize: '14px', fontFamily: 'monospace', boxSizing: 'border-box' }} />
+                                    {previa.length > 0 && (
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', margin: '12px 0' }}>
+                                            <thead><tr><th style={th}>Linha</th><th style={th}>Nome</th><th style={th}>E-mail</th><th style={th}>Perfil</th><th style={th}></th></tr></thead>
+                                            <tbody>{previa.map(p => (
+                                                <tr key={p.linha}><td style={td}>{p.linha}</td><td style={td}>{p.nome || '—'}</td><td style={td}>{p.email || '—'}</td><td style={td}>{PERFIS[p.perfil] || '—'}</td>
+                                                    <td style={{ ...td, color: p.problema ? '#c53030' : '#2f855a' }}>{p.problema || 'OK'}</td></tr>
+                                            ))}</tbody>
+                                        </table>
+                                    )}
+                                    <button className="btn btn-primary" disabled={!validas.length || criando} onClick={criarContas} style={{ opacity: !validas.length || criando ? 0.6 : 1 }}>
+                                        {criando ? 'Criando contas…' : `Criar ${validas.length} conta(s)`}
+                                    </button>
+                                </div>
+                            )}
+
+                            {aba === 'acessos' && (
+                                <div>
+                                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '10px' }}>
+                                        <input value={filtro} onChange={e => setFiltro(e.target.value)} placeholder="Filtrar por nome ou e-mail" className="form-input" style={{ maxWidth: '280px' }} />
+                                        <label style={{ fontSize: '14px', display: 'flex', gap: '6px', alignItems: 'center' }}><input type="checkbox" checked={soFalhas} onChange={e => setSoFalhas(e.target.checked)} /> Só falhas</label>
+                                        <button className="btn btn-secondary" onClick={carregarAcessos}>🔄 Atualizar</button>
+                                        <span style={{ fontSize: '13px', color: falhas24 ? '#c05621' : '#718096' }}>{falhas24} falha(s) nas últimas 24 h</span>
+                                    </div>
+                                    {acessos === null ? <p>Carregando…</p> : (
+                                        <div style={{ overflowX: 'auto' }}>
+                                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                                <thead><tr><th style={th}>Quando</th><th style={th}>Quem</th><th style={th}>O quê</th><th style={th}>Aparelho</th></tr></thead>
+                                                <tbody>{acessosFiltrados.map(a => {
+                                                    const r = RESULTADOS_ACESSO[a.resultado] || { rotulo: a.resultado, cor: '#4a5568' };
+                                                    return (
+                                                        <tr key={a.id}>
+                                                            <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtQuando(a.em)}</td>
+                                                            <td style={td}>{nomePorUid[a.uid] || a.nome || <span style={{ color: '#718096' }}>{a.email || '—'}</span>}</td>
+                                                            <td style={td}><span style={{ color: r.cor, fontWeight: 600 }}>{r.rotulo}</span>{a.alvo && <span style={{ color: '#718096' }}> · {a.nome && a.uid ? `${a.nome} ` : ''}{a.alvo}</span>}</td>
+                                                            <td style={td}>{a.dispositivo}</td>
+                                                        </tr>
+                                                    );
+                                                })}</tbody>
+                                            </table>
+                                            <p style={{ color: '#718096', fontSize: '12px', marginTop: '8px' }}>Mostra os 400 registros mais recentes. O registro não pode ser editado nem apagado por ninguém pelo sistema.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
             );
         }
 
-        function RaizComSenha() {
-            const [liberado, setLiberado] = React.useState(
-                () => localStorage.getItem(CHAVE_ACESSO) === getSenhaInfo().chaveDia
+        // Decide o que mostrar: login, troca de senha obrigatória ou o sistema.
+        function RaizComLogin() {
+            const [estado, setEstado] = useState({ fase: 'carregando' });
+            const [aviso, setAviso] = useState('');
+
+            useEffect(() => {
+                let pararPerfil = null;
+                const pararAuth = auth.onAuthStateChanged(async (user) => {
+                    if (pararPerfil) { pararPerfil(); pararPerfil = null; }
+                    if (!user) { setEstado({ fase: 'login' }); return; }
+                    const desde = parseInt(localStorage.getItem(CHAVE_SESSAO) || '0', 10);
+                    if (!desde) { await auth.signOut(); return; } // sessão que não começou pela tela de login
+                    if (Date.now() - desde > SESSAO_HORAS * 3600e3) {
+                        setAviso(`Sua sessão terminou (vale ${SESSAO_HORAS} horas). Entre de novo.`);
+                        await sairDaConta('sessao_expirada');
+                        return;
+                    }
+                    pararPerfil = db.collection('usuarios').doc(user.uid).onSnapshot(async (snap) => {
+                        const p = snap.exists ? snap.data() : null;
+                        if (!p || p.ativo !== true) {
+                            setAviso(p ? 'Seu acesso está desativado. Fale com a direção.' : 'Este login ainda não tem perfil no sistema. Fale com a direção.');
+                            await sairDaConta(p ? 'desativado' : 'sem_perfil');
+                            return;
+                        }
+                        setEstado({ fase: p.trocarSenha ? 'trocarSenha' : 'app', usuario: { ...p, uid: user.uid, email: user.email } });
+                    }, (err) => {
+                        console.error('Perfil não carregado:', err);
+                        setEstado({ fase: 'erro' });
+                    });
+                });
+                // Sessão de um turno: confere a cada minuto.
+                const iv = setInterval(() => {
+                    const desde = parseInt(localStorage.getItem(CHAVE_SESSAO) || '0', 10);
+                    if (auth.currentUser && desde && Date.now() - desde > SESSAO_HORAS * 3600e3) {
+                        setAviso(`Sua sessão terminou (vale ${SESSAO_HORAS} horas). Entre de novo.`);
+                        sairDaConta('sessao_expirada');
+                    }
+                }, 60000);
+                return () => { pararAuth(); if (pararPerfil) pararPerfil(); clearInterval(iv); };
+            }, []);
+
+            if (estado.fase === 'carregando') return <CentroLogin><div style={{ ...estiloCaixaLogin, textAlign: 'center', color: '#4a5568' }}>Carregando…</div></CentroLogin>;
+            if (estado.fase === 'login') return <TelaLogin key={aviso} aviso={aviso} />;
+            if (estado.fase === 'erro') return (
+                <CentroLogin><div style={{ ...estiloCaixaLogin, textAlign: 'center' }}>
+                    <p style={{ color: '#c53030', marginBottom: '14px' }}>Não foi possível carregar o seu perfil. Verifique a conexão.</p>
+                    <button style={estiloBotaoLogin} onClick={() => location.reload()}>Recarregar</button>
+                    <div style={{ marginTop: '10px' }}><button style={estiloLink} onClick={() => sairDaConta()}>Sair</button></div>
+                </div></CentroLogin>
             );
-            if (!liberado) return <PortaoDeSenha onLiberado={() => setLiberado(true)} />;
-            return <App />;
+            if (estado.fase === 'trocarSenha') return <TrocarSenhaObrigatoria usuario={estado.usuario} />;
+            return <App key={estado.usuario.uid} usuario={estado.usuario} onSair={() => sairDaConta()} />;
         }
 
         // Renderizar aplicação (com proteção contra falha de montagem)
         try {
             ReactDOM.render(
-                <ErrorBoundary><RaizComSenha /></ErrorBoundary>,
+                <ErrorBoundary><RaizComLogin /></ErrorBoundary>,
                 document.getElementById('root')
             );
             if (window.__appWatchdog) clearTimeout(window.__appWatchdog);
