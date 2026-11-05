@@ -9,7 +9,7 @@ import { Alerta, Badge, Btn, Card, Empty, Field, Placa, useAcao, useDB } from '.
 import { CarroDeLojaBadge, ChecklistBadge } from './common';
 import { AjudaBotao } from './Ajuda';
 import { FotoPainelKm } from './KmPainel';
-import { PausarBotao, RetomarBotao } from './Pausa';
+import { PausarBotao, RetomarBotao, DevolverBotao } from './Pausa';
 
 interface LinhaProx extends ProximaInput { chave: string; incluir: boolean; editavel: boolean; motivo: string }
 type Oferta = { resultado: 'aceito' | 'recusado'; marca?: string; quantidade?: string; codigo?: string; valor?: string };
@@ -115,7 +115,7 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
       <a className="back" href={`#/os/${os.id}`}>‹ OS #{os.numero}</a>
       <div className="page-head">
         <div><h1>Execução e finalização</h1><div className="row" style={{ marginTop: 6 }}><Placa placa={v.placa} /><b>{v.marca} {v.modelo}</b>{os.carroDeLoja ? <CarroDeLojaBadge os={os} /> : <ChecklistBadge c={c} />}</div></div>
-        <div className="row"><AjudaBotao u={u} os={os} /><PausarBotao u={u} os={os} /></div>
+        <div className="row"><AjudaBotao u={u} os={os} /><PausarBotao u={u} os={os} /><DevolverBotao u={u} os={os} /></div>
       </div>
 
       {c && !os.carroDeLoja && c.status !== 'concluido' && c.status !== 'excecao_autorizada' && (

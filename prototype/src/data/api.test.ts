@@ -6,7 +6,7 @@ import { sugestoesOcultar } from '../domain/checklist';
 import {
   abrirOS, acaoOcorrencia, adicionarEvidencia, adicionarFotoRetorno, auditarChecklist, buscarVeiculosEClientes, concluirChecklist, corrigirPlaca, ErroValidacao,
   filaRodizio, finalizarOS, finalizarRetorno, garantirChecklist, gerarLink, iniciarOS, obterRelatorioPublico, ocultarItemPara, pausarOS, previsaoFila, projetarRelatorio, proximoDaFila,
-  recomendacoesAbertas, definirPedidoOlist, registrarItemChecklist, retomarOS, revogarLink, salvarRetorno, setStatusRodizio, valoresOS,
+  recomendacoesAbertas, definirPedidoOlist, devolverOS, registrarItemChecklist, retomarOS, revogarLink, salvarRetorno, setStatusRodizio, valoresOS,
 } from './api';
 import { indicadoresMecanico } from './metricas';
 import { gerarSeed } from './seed';
@@ -401,6 +401,23 @@ describe('carro de loja e liderança que atende', () => {
     const depois = indicadoresMecanico(getDB(), livre);
     expect(depois.carros).toBe(antes.carros + 1);
     expect(depois.baseChecklist).toBe(antes.baseChecklist);
+  });
+
+  it('mecânico que assumiu a OS errada devolve para a fila e assume a certa', async () => {
+    const errada = await novaOS();
+    const certa = await novaOS();
+    const livre = filaRodizio(getDB()).find(f => !f.ocupado && f.status === 'disponivel')!.mecanico.id;
+    const ck = await iniciarOS(U(livre), errada.id, livre, 'teste');
+    await registrarItemChecklist(U(livre), ck, 'palhetas', 'ok', {});
+    await expect(devolverOS(U(livre), errada.id, '')).rejects.toThrow(/por que/);
+    await expect(devolverOS(U('u_ven'), errada.id, 'x')).rejects.toBeInstanceOf(ErroPermissao);
+    await devolverOS(U(livre), errada.id, 'Assumi a OS errada');
+    const e = getDB().os.find(o => o.id === errada.id)!;
+    expect([e.status, e.mecanicoId, e.iniciadaEm, e.checklistId]).toEqual(['aguardando', undefined, undefined, undefined]);
+    expect(getDB().checklists.some(c => c.id === ck)).toBe(true); // fica no histórico
+    await iniciarOS(U(livre), certa.id, livre, 'teste');
+    expect(getDB().os.find(o => o.id === certa.id)!.mecanicoId).toBe(livre);
+    expect(getDB().eventos.some(ev => ev.tipo === 'os.devolvida' && ev.entidadeId === errada.id)).toBe(true);
   });
 
   it('item do checklist de serviço que o cliente já contratou na OS não vira recomendação', async () => {

@@ -11,7 +11,7 @@ import { CarroDeLojaBadge, ChecklistBadge, EstadoBadge, STATUS_OS } from './comm
 import { AuditoriaSheet } from './Lideranca';
 import { rotaTrabalho } from './Operacao';
 import { AjudaBotao } from './Ajuda';
-import { PausarBotao, RetomarBotao } from './Pausa';
+import { PausarBotao, RetomarBotao, DevolverBotao } from './Pausa';
 import { FotoImg } from '../ui/FotoImg';
 
 type Aba = 'resumo' | 'checklist' | 'fotos' | 'relatorio' | 'historico';
@@ -55,7 +55,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
             const ckOk = c?.status === 'concluido' || c?.status === 'excecao_autorizada';
             return <Btn onClick={() => ir(rotaTrabalho(os, ckOk))}>{os.retornoDeOsId ? 'Atendimento do retorno' : ckOk || os.carroDeLoja ? 'Executar e finalizar' : 'Abrir checklist'}</Btn>;
           })()}
-          <RetomarBotao u={u} os={os} /><AjudaBotao u={u} os={os} /><PausarBotao u={u} os={os} />
+          <RetomarBotao u={u} os={os} /><AjudaBotao u={u} os={os} /><PausarBotao u={u} os={os} /><DevolverBotao u={u} os={os} />
           {pode(u, 'checklist.auditar') && c && (c.status === 'concluido' || c.status === 'excecao_autorizada') && os.mecanicoId !== u.id && <Btn variante="sec" onClick={() => setAuditar(true)}>Auditar checklist</Btn>}
           {pode(u, 'excecao.declarar') && !os.naoOferecer && os.status !== 'concluido' && cli?.tipo === 'frota' && <Btn variante="sec" onClick={() => setNaoOf(true)}>Marcar “não oferecer”</Btn>}
           {pode(u, 'os.cancelar') && (os.status === 'aguardando' || os.status === 'andamento' || os.status === 'pausada') && <Btn variante="danger" onClick={() => setCancelar('cancelar')}>Cancelar OS</Btn>}

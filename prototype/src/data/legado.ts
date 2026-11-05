@@ -300,6 +300,7 @@ export function legadoDeOS(os: OrdemServico, v: Veiculo | undefined, c: Cliente 
   if (os.carroDeLoja) { d.carroDeLoja = true; d.kmPorMes = 0; }
   else if (v?.kmPorMes) d.kmPorMes = v.kmPorMes;
   if (os.iniciadaEm) d.inicio = brDeISO(os.iniciadaEm);
+  else if (os.status === 'aguardando') d.inicio = ''; // devolvida para a fila: some o início no sistema atual
   if (os.concluidaEm && (os.status === 'concluido' || os.status === 'encerrada')) d.fim = brDeISO(os.concluidaEm);
 
   const balcao = os.servicos.filter(s => s.origem === 'balcao');

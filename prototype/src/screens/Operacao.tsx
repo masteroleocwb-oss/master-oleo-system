@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ir } from '../app/nav';
 import { filaRodizio, garantirChecklist, iniciarOS, mecanicoDoRetorno, previsaoFila, proximoDaFila, retomarOS, setStatusRodizio } from '../data/api';
-import { PausarSheet } from './Pausa';
+import { PausarSheet, DevolverBotao } from './Pausa';
 import { painelHoje } from '../data/metricas';
 import { MOTIVO_PAUSA } from '../domain/catalogo';
 import { progresso } from '../domain/checklist';
@@ -109,6 +109,7 @@ export function Operacao({ u }: { u: Usuario }) {
                       }}>{pr?.verificados ? 'Continuar checklist (opcional)' : 'Fazer checklist (opcional)'}</Btn>
                     )}
                     <Btn block variante="sec" onClick={() => setPausar(minha)}>Pausar OS (ex.: aguardando peça)</Btn>
+                    <DevolverBotao u={u} os={minha} bloco />
                   </div>
                 );
               })() : (

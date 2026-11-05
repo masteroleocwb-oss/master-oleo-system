@@ -11,7 +11,7 @@ import { Alerta, Badge, Btn, Empty, Field, Placa, Progress, SaveIndicator, Segme
 import { PhotoCapture } from '../ui/PhotoCapture';
 import { CarroDeLojaBadge, EstadoBadge } from './common';
 import { AjudaBotao } from './Ajuda';
-import { PausarBotao, RetomarBotao } from './Pausa';
+import { PausarBotao, RetomarBotao, DevolverBotao } from './Pausa';
 import { FotoImg } from '../ui/FotoImg';
 
 type Modo = 'lista' | 'compacto';
@@ -76,7 +76,7 @@ export function Checklist({ u, osId, foco }: { u: Usuario; osId: string; foco: s
         </div>
         <div className="row">
           <Segmented rotulo="Modo de visualização" valor={modo} onChange={setModo} opcoes={[{ v: 'lista', r: 'Lista' }, { v: 'compacto', r: 'Compacto' }]} />
-          <AjudaBotao u={u} os={os} /><PausarBotao u={u} os={os} />
+          <AjudaBotao u={u} os={os} /><PausarBotao u={u} os={os} /><DevolverBotao u={u} os={os} />
         </div>
       </div>
       {os.status === 'pausada' && <div className="stack" style={{ marginBottom: 10 }}><Alerta tipo="warn">OS pausada. Retome para continuar o checklist.</Alerta><RetomarBotao u={u} os={os} bloco /></div>}

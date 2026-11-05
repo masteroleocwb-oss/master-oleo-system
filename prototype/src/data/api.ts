@@ -396,6 +396,29 @@ export async function pausarOS(u: Usuario, osId: string, motivo: Pausa['motivo']
   });
 }
 
+/**
+ * Devolve a OS para a fila (ex.: o mecânico assumiu o carro errado). Volta a "aguardando", sem mecânico,
+ * no mesmo lugar da fila (ordem de chegada). O checklist começado fica no histórico, desligado da OS;
+ * quem pegar a OS começa um checklist novo.
+ */
+export async function devolverOS(u: Usuario, osId: string, motivo: string) {
+  if (!motivo.trim()) throw new ErroValidacao('Diga por que a OS volta para a fila.');
+  return transacao(d => {
+    const os = osPorId(d, osId);
+    if (!(os.mecanicoId === u.id && pode(u, 'os.executar')) && !pode(u, 'rodizio.gerenciar')) throw new ErroPermissao('os.executar', 'Só o mecânico da OS ou a liderança devolve a OS para a fila.');
+    if (os.status !== 'andamento' && os.status !== 'pausada') throw new ErroValidacao('Só OS em andamento ou pausada volta para a fila.');
+    const quem = primeiroNome(d.usuarios.find(x => x.id === os.mecanicoId)?.nome);
+    const agora = agoraISO();
+    fecharAjudasDaOS(os, agora, u.id);
+    // Recomendações ainda não tratadas saem junto com o checklist desligado.
+    d.oportunidades = d.oportunidades.filter(o => !(o.osId === os.id && o.situacao === 'nova'));
+    const antes = { mecanicoId: os.mecanicoId, iniciadaEm: os.iniciadaEm, checklistId: os.checklistId, status: os.status };
+    os.status = 'aguardando';
+    os.mecanicoId = undefined; os.iniciadaEm = undefined; os.checklistId = undefined; os.foraDaOrdem = undefined; os.pausas = undefined;
+    evento(d, u.id, 'os.devolvida', 'os', os.id, `OS #${os.numero} voltou para a fila (estava com ${quem || '—'})`, { antes, motivo: motivo.trim() });
+  });
+}
+
 /** Retoma a OS pausada. O mecânico precisa estar sem outra OS em andamento. */
 export async function retomarOS(u: Usuario, osId: string) {
   return transacao(d => {

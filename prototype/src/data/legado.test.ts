@@ -58,6 +58,13 @@ describe('ponte com o sistema atual', () => {
     expect(sem.cambioAutomaticoTemFiltro).toBe(false);
   });
 
+  it('OS devolvida para a fila volta sem lubrificador e sem início no sistema atual', () => {
+    const nomes = new MapaNomes(usuarios);
+    const os = osDeLegado('doc7', { ...legado, status: 'andamento', inicio: '05/11/2026, 09:00:00' }, nomes);
+    const d = legadoDeOS({ ...os, status: 'aguardando', mecanicoId: undefined, iniciadaEm: undefined }, undefined, undefined, nomes);
+    expect([d.status, d.lubrificador, d.inicio]).toEqual(['aguardando', '', '']);
+  });
+
   it('câmbio automático: total de litros e litros dentro do câmbio (cárter) vão e voltam', () => {
     const nomes = new MapaNomes(usuarios);
     const os = osDeLegado('doc6', { ...legado, cambioAutomatico: true, cambioAutomaticoQuantidade: '9', cambioAutomaticoFluidoCarter: '4.5' }, nomes);
