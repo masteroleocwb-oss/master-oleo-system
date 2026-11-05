@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { ajudandoEm, chamarAjuda, encerrarAjuda } from '../data/api';
+import { ajudandoEm, chamarAjuda, encerrarAjuda, statusNoRodizio } from '../data/api';
 import { atendeOS, pode } from '../domain/permissions';
 import type { OrdemServico, Usuario } from '../domain/types';
-import { fmtHora, hojeKey, primeiroNome } from '../domain/util';
+import { fmtHora, primeiroNome } from '../domain/util';
 import { Alerta, Badge, Btn, Sheet, useAcao, useDB } from '../ui/components';
 
 /**
@@ -39,12 +39,11 @@ export function AjudaBotao({ u, os }: { u: Usuario; os: OrdemServico }) {
 function ChamarAjudaSheet({ u, os, onClose }: { u: Usuario; os: OrdemServico; onClose: () => void }) {
   const db = useDB();
   const acao = useAcao();
-  const st = (id: string) => (db.rodizio.dia === hojeKey() ? db.rodizio.status[id] : undefined) || 'disponivel';
   const mecs = db.usuarios.filter(x => atendeOS(x) && x.ativo && x.id !== os.mecanicoId)
     .map(m => {
       const propria = db.os.find(o => o.status === 'andamento' && o.mecanicoId === m.id);
       const ajuda = ajudandoEm(db, m.id);
-      const s = st(m.id);
+      const s = statusNoRodizio(db, m);
       const situacao = propria ? `Com a OS #${propria.numero}` : s === 'almoco' ? 'No almoço' : s === 'ausente' ? 'Ausente' : ajuda ? (ajuda.id === os.id ? 'Já está ajudando aqui' : `Ajudando na OS #${ajuda.numero}`) : 'Livre';
       return { m, situacao, pode: !propria && s === 'disponivel' && ajuda?.id !== os.id };
     })

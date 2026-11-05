@@ -73,9 +73,12 @@ export const ROLE_LABEL: Record<Role, string> = {
   direcao: 'Direção / ADM',
 };
 
-/** Quem atende carros: mecânico, ou liderança marcada para atender também (ex.: chefe de oficina). */
+/** Perfis que podem ser marcados para atender carros também (ex.: chefe de oficina, direção). */
+export const podeAtenderCarros = (r: Role) => r === 'lider' || r === 'direcao';
+
+/** Quem atende carros: mecânico, ou liderança/direção marcada para atender também. */
 export const atendeOS = (u: Pick<Usuario, 'role' | 'atendeComoMecanico'> | null | undefined) =>
-  !!u && (u.role === 'mecanico' || (u.role === 'lider' && !!u.atendeComoMecanico));
+  !!u && (u.role === 'mecanico' || (podeAtenderCarros(u.role) && !!u.atendeComoMecanico));
 
 export const pode = (u: Usuario | null | undefined, c: Capacidade) =>
   !!u && u.ativo && (MATRIZ[u.role].includes(c) || (atendeOS(u) && MATRIZ.mecanico.includes(c)));

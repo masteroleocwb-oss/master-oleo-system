@@ -72,7 +72,7 @@ export const navPorPerfil = (role: Role): ItemNav[] => {
     case 'vendedor': return [op, nova, opps, veic];
     case 'comercial': return [opps, op, veic];
     case 'lider': return [op, lid, perf, metas, opps, veic, nova];
-    case 'direcao': return [lid, op, metas, opps, veic, adm];
+    case 'direcao': return [lid, op, perf, metas, opps, veic, adm];
   }
 };
 

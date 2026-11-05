@@ -119,12 +119,12 @@ export function Operacao({ u }: { u: Usuario }) {
                   {meuStatus && (
                     <div className="row">
                       {meuStatus.status === 'ausente'
-                        ? <Btn variante="sec" carregando={acao.ocupado} onClick={() => acao.executar(() => setStatusRodizio(u, u.id, 'disponivel'), 'Você voltou para a fila do rodízio.')}>Voltar a atender</Btn>
+                        ? <Btn variante="sec" carregando={acao.ocupado} onClick={() => acao.executar(() => setStatusRodizio(u, u.id, 'disponivel'), 'Você voltou para a fila do rodízio.')}>{soMec ? 'Voltei' : 'Estou atendendo (entrar na fila)'}</Btn>
                         : meuStatus.status === 'almoco'
                         ? <Btn variante="sec" carregando={acao.ocupado} onClick={() => acao.executar(() => setStatusRodizio(u, u.id, 'disponivel'), 'Você voltou do almoço. Sua posição na fila foi mantida.')}>Voltei do almoço</Btn>
                         : <Btn variante="sec" carregando={acao.ocupado} onClick={() => acao.executar(() => setStatusRodizio(u, u.id, 'almoco'), 'Almoço registrado. Você sai da fila sem perder a posição.')}>Sair para almoço</Btn>}
                       {!soMec && meuStatus.status === 'disponivel' && (
-                        <Btn variante="sec" carregando={acao.ocupado} onClick={() => acao.executar(() => setStatusRodizio(u, u.id, 'ausente'), 'Você saiu da fila do rodízio. Toque em "Voltar a atender" quando for pegar carro.')}>Não estou atendendo</Btn>
+                        <Btn variante="sec" carregando={acao.ocupado} onClick={() => acao.executar(() => setStatusRodizio(u, u.id, 'ausente'), 'Você saiu da fila do rodízio. Toque em "Estou atendendo" quando for pegar carro.')}>Não estou atendendo</Btn>
                       )}
                     </div>
                   )}

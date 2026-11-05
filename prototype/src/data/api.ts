@@ -4,7 +4,7 @@
 import { SERVICOS, MOTIVO_PAUSA, servicoAplicavel } from '../domain/catalogo';
 import { fotosAtivasDoItem, novoChecklist, pendenciasParaConcluir, registrarItem, validarItem, type DadosItem, type Pendencia } from '../domain/checklist';
 import { aprovarVersao, descartarRascunho, proporVersao, transicaoOcorrencia, type AcaoOcorrencia } from '../domain/gestao';
-import { atendeOS, exigir, ErroPermissao, pode } from '../domain/permissions';
+import { atendeOS, exigir, ErroPermissao, pode, podeAtenderCarros } from '../domain/permissions';
 import type {
   AtendimentoRetorno, Cambio, Checklist, Cliente, DB, EstadoItem, EstadoRecomendado, Evento, ItemInspecaoDef, ManutencaoPrevista, Meta, Ocorrencia, OrdemServico, OrigemIntervalo,
   Pausa, Role, ServicoKey, ServicoOS, SituacaoOportunidade, Usuario, Veiculo,
@@ -204,9 +204,15 @@ export async function abrirOS(u: Usuario, i: NovaOSInput) {
  * empate: menos carros no último dia com movimento; depois, ordem alfabética.
  * Almoço e ausência tiram da fila sem mudar a posição; o motivo fica registrado.
  */
+/**
+ * Situação de hoje no rodízio. Mecânico começa o dia disponível; liderança/direção que atende começa
+ * fora da fila ("não estou atendendo") e entra quando for pegar carro.
+ */
+export const statusNoRodizio = (d: Pick<DB, 'rodizio'>, u: Pick<Usuario, 'id' | 'role'>): 'disponivel' | 'almoco' | 'ausente' =>
+  (d.rodizio.dia === hojeKey() ? d.rodizio.status[u.id] : undefined) || (u.role === 'mecanico' ? 'disponivel' : 'ausente');
+
 export const filaRodizio = (d: DB) => {
   const hoje = hojeKey();
-  const status = d.rodizio.dia === hoje ? d.rodizio.status : {};
   const diaDa = (o: OrdemServico) => diaKey(o.concluidaEm || o.abertaEm);
   const conta = (o: OrdemServico) => o.status === 'andamento' || o.status === 'concluido' || o.status === 'pausada';
   const diaOntem = [...new Set(d.os.map(diaDa))].filter(x => x < hoje).sort().at(-1);
@@ -220,7 +226,7 @@ export const filaRodizio = (d: DB) => {
       const ocupado = minhas.some(o => o.status === 'andamento' && diaKey(o.iniciadaEm || o.abertaEm) === hoje);
       const carrosOntem = diaOntem ? minhas.filter(o => diaDa(o) === diaOntem && conta(o)).length : 0;
       const pausadas = minhas.filter(o => o.status === 'pausada').length;
-      return { mecanico: m, status: status[m.id] || 'disponivel', ultima, carrosHoje: doDia.filter(conta).length, carrosOntem, ocupado, pausadas };
+      return { mecanico: m, status: statusNoRodizio(d, m), ultima, carrosHoje: doDia.filter(conta).length, carrosOntem, ocupado, pausadas };
     })
     .sort((a, b) => (a.ultima || '').localeCompare(b.ultima || '') || a.carrosOntem - b.carrosOntem || a.mecanico.nome.localeCompare(b.mecanico.nome));
 };
@@ -266,7 +272,7 @@ export async function iniciarOS(u: Usuario, osId: string, mecanicoId: string, mo
       throw new ErroValidacao(`${primeiroNome(mec.nome)} já tem uma OS em andamento.`);
     }
     const doRetorno = mecanicoDoRetorno(d, os);
-    if ((u.role === 'mecanico' || mecanicoId === u.id) && d.rodizio.dia === hojeKey() && (d.rodizio.status[mecanicoId] || 'disponivel') !== 'disponivel') {
+    if ((u.role === 'mecanico' || mecanicoId === u.id) && statusNoRodizio(d, mec) !== 'disponivel') {
       throw new ErroValidacao('Marque que voltou (almoço/ausência) antes de assumir uma OS.');
     }
     if (doRetorno && doRetorno !== mecanicoId && u.role === 'mecanico') throw new ErroValidacao('Retorno vai para o mecânico que fez o serviço original. Se ele não puder, a liderança designa outro.');
@@ -345,7 +351,7 @@ export async function chamarAjuda(u: Usuario, osId: string, ajudanteId: string) 
     if (os.assistencias?.some(a => a.mecanicoId === aj.id && !a.fim)) throw new ErroValidacao(`${primeiroNome(aj.nome)} já está ajudando nesta OS.`);
     const propria = d.os.find(o => o.status === 'andamento' && o.mecanicoId === aj.id);
     if (propria) throw new ErroValidacao(`${primeiroNome(aj.nome)} está com a OS #${propria.numero} em andamento.`);
-    const st = d.rodizio.dia === hojeKey() ? d.rodizio.status[aj.id] || 'disponivel' : 'disponivel';
+    const st = statusNoRodizio(d, aj);
     if (st !== 'disponivel') throw new ErroValidacao(`${primeiroNome(aj.nome)} está marcado como ${st === 'almoco' ? 'almoço' : 'ausente'} no rodízio.`);
     const agora = agoraISO();
     fecharAjudasDe(d, aj.id, agora, u.id);
@@ -405,7 +411,8 @@ export async function setStatusRodizio(u: Usuario, mecanicoId: string, status: '
   return transacao(d => {
     const hoje = hojeKey();
     if (d.rodizio.dia !== hoje) d.rodizio = { dia: hoje, status: {} };
-    const antes = d.rodizio.status[mecanicoId] || 'disponivel';
+    const quem = d.usuarios.find(x => x.id === mecanicoId);
+    const antes = quem ? statusNoRodizio(d, quem) : d.rodizio.status[mecanicoId] || 'disponivel';
     d.rodizio.status[mecanicoId] = status;
     // Mudar status nunca altera a posição na fila (regra anti-burla do sistema atual).
     evento(d, u.id, 'rodizio.status', 'usuario', mecanicoId, `Rodízio: ${antes} → ${status}`, { antes, depois: status });
@@ -1142,7 +1149,7 @@ export async function salvarUsuario(u: Usuario, x: { id?: string; nome: string; 
   if (x.id === u.id && !x.ativo) throw new ErroValidacao('Você não pode desativar o próprio acesso.');
   // Só os campos de cadastro: login e senha mudam por definirAcesso, e o hash nunca vai para o histórico.
   const campos = { nome: x.nome.trim(), role: x.role, ativo: x.ativo, nivel: x.nivel || undefined, ...(x.nomeLegado !== undefined ? { nomeLegado: x.nomeLegado.trim() || undefined } : {}),
-    ...(x.atendeComoMecanico !== undefined ? { atendeComoMecanico: (x.role === 'lider' && x.atendeComoMecanico) || undefined } : {}) };
+    ...(x.atendeComoMecanico !== undefined ? { atendeComoMecanico: (podeAtenderCarros(x.role) && x.atendeComoMecanico) || undefined } : {}) };
   const semSegredo = ({ senha: _s, ...resto }: Usuario) => resto;
   return transacao(d => {
     if (x.id) {

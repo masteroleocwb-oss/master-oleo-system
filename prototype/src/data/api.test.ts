@@ -407,8 +407,9 @@ describe('carro de loja e liderança que atende', () => {
     const seed = gerarSeed();
     seed.usuarios.find(x => x.id === 'u_lid')!.atendeComoMecanico = true;
     _definirDB(seed);
-    expect(filaRodizio(getDB()).some(f => f.mecanico.id === 'u_lid')).toBe(true);
-    await setStatusRodizio(U('u_lid'), 'u_lid', 'ausente');
+    // Começa o dia fora da fila; entra quando toca em "Estou atendendo".
+    expect(filaRodizio(getDB()).find(f => f.mecanico.id === 'u_lid')?.status).toBe('ausente');
+    expect(proximoDaFila(getDB())?.id).not.toBe('u_lid');
     const os = await novaOS();
     await expect(iniciarOS(U('u_lid'), os.id, 'u_lid', 'teste')).rejects.toThrow(/Marque que voltou/);
     await setStatusRodizio(U('u_lid'), 'u_lid', 'disponivel');

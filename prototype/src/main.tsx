@@ -6,6 +6,7 @@ import './ui/styles.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
+import { AvisoVersao } from './app/versao';
 import { MODO_REAL } from './data/modo';
 import { iniciar } from './data/nuvem';
 import { ToastProvider } from './ui/components';
@@ -16,6 +17,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ToastProvider>
       <App />
+      {MODO_REAL && <AvisoVersao />}
     </ToastProvider>
   </StrictMode>,
 );

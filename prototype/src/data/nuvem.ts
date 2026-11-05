@@ -13,6 +13,7 @@ import {
   persistentLocalCache, persistentSingleTabManager, query, runTransaction, serverTimestamp, setDoc, where, type DocumentData, type Firestore, type Unsubscribe,
 } from 'firebase/firestore';
 import { CATALOGO_INICIAL, REGRAS_INICIAIS } from '../domain/catalogo';
+import { podeAtenderCarros } from '../domain/permissions';
 import type { DB, RegistroAcesso, ResultadoAcesso, Role, Usuario } from '../domain/types';
 import { ErroSalvamento as ErroNuvem } from './erros';
 import { camposAlterados, derivarCadastros, legadoDeOS, MapaNomes, osDeLegado, PADRAO_CRIACAO, type DocLegado } from './legado';
@@ -671,7 +672,7 @@ async function gravar(antes: DB, depois: DB) {
       }
 
       for (const u of mudUsuarios) {
-        const dados = { nome: u.nome, perfil: u.role, ativo: u.ativo, nivel: u.nivel ?? null, nomeLegado: u.nomeLegado ?? null, atendeComoMecanico: u.role === 'lider' && !!u.atendeComoMecanico, atualizadoEm: serverTimestamp(), atualizadoPor: uid };
+        const dados = { nome: u.nome, perfil: u.role, ativo: u.ativo, nivel: u.nivel ?? null, nomeLegado: u.nomeLegado ?? null, atendeComoMecanico: podeAtenderCarros(u.role) && !!u.atendeComoMecanico, atualizadoEm: serverTimestamp(), atualizadoPor: uid };
         tx.update(doc(fs, 'usuarios', u.id), dados);
         escritasLocais.push(() => raw.usuarios.set(u.id, { ...raw.usuarios.get(u.id), ...dados, atualizadoEm: new Date().toISOString() }));
       }

@@ -6,7 +6,7 @@ import { MODO_REAL } from '../data/modo';
 import { buscarVeiculosEClientes, estadoLink, nomeDe, ocultarItemPara, revogarLink, salvarItemCatalogo, salvarRegraIntervalo, salvarUsuario, voltarAMostrarItem } from '../data/api';
 import { sugestoesOcultar } from '../domain/checklist';
 import { ESTADOS, ESTADOS_ORDEM, GRUPOS, ORIGEM_LABEL, SERVICO_KEYS, SERVICOS } from '../domain/catalogo';
-import { ROLE_LABEL } from '../domain/permissions';
+import { ROLE_LABEL, podeAtenderCarros } from '../domain/permissions';
 import type { EstadoItem, ItemInspecaoDef, RegraIntervalo, ResultadoAcesso, Role, ServicoKey, Usuario } from '../domain/types';
 import { agora, agoraISO, fmtData, fmtDataHora, primeiroNome } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Empty, Field, Placa, Sheet, Tabs, useAcao, useDB } from '../ui/components';
@@ -452,13 +452,22 @@ function UsuariosReal({ u }: { u: Usuario }) {
       )}
       <div className="tbl-wrap" style={{ marginTop: 12 }}>
         <table className="tbl" data-tabela-usuarios>
-          <thead><tr><th>Nome</th><th>Perfil</th><th>E-mail</th><th>Nome no sistema atual</th><th>Situação</th><th /></tr></thead>
+          <thead><tr><th>Nome</th><th>Perfil</th><th>E-mail</th><th>Nome no sistema atual</th><th>Atende carros</th><th>Situação</th><th /></tr></thead>
           <tbody>{reais.map(x => (
             <tr key={x.id} data-usuario={x.id}>
               <td><b>{x.nome}</b>{x.nivel && <div className="tiny muted">{x.nivel}</div>}</td>
-              <td>{ROLE_LABEL[x.role]}{x.role === 'lider' && x.atendeComoMecanico && <div className="tiny muted">Atende carros também</div>}</td>
+              <td>{ROLE_LABEL[x.role]}</td>
               <td className="small">{x.email || '—'}</td>
               <td className="small">{x.role === 'vendedor' || x.role === 'mecanico' || x.atendeComoMecanico || x.nomeLegado ? (x.nomeLegado || <span className="muted">{nomeLegadoDe(x)} (automático)</span>) : '—'}</td>
+              <td data-atende-carros={x.id}>
+                {x.role === 'mecanico' ? <span className="small muted">Sim (mecânico)</span>
+                  : podeAtenderCarros(x.role) ? (
+                    <Btn tamanho="sm" variante={x.atendeComoMecanico ? undefined : 'sec'} carregando={acao.ocupado}
+                      onClick={() => acao.executar(() => salvarUsuario(u, { ...x, atendeComoMecanico: !x.atendeComoMecanico }), x.atendeComoMecanico ? `${x.nome} não atende mais carros.` : `${x.nome} agora atende carros: começa o dia fora da fila e entra tocando em "Estou atendendo" na Operação.`)}>
+                      {x.atendeComoMecanico ? 'Sim · desligar' : 'Não · ligar'}
+                    </Btn>)
+                  : <span className="small muted">—</span>}
+              </td>
               <td>{!x.ativo ? <Badge tom="muted">Desativado</Badge> : x.trocarSenha ? <Badge tom="atencao">Aguardando 1º acesso</Badge> : <Badge tom="ok">Ativo</Badge>}</td>
               <td className="row">
                 <Btn tamanho="sm" variante="ghost" onClick={() => setEd({ id: x.id, nome: x.nome, role: x.role, ativo: x.ativo, nivel: x.nivel, nomeLegado: x.nomeLegado || '', atendeComoMecanico: !!x.atendeComoMecanico })}>Editar</Btn>
@@ -479,10 +488,10 @@ function UsuariosReal({ u }: { u: Usuario }) {
             <input id="us-legado" className="input" list="nomes-atuais" value={ed.nomeLegado} maxLength={40} onChange={e => setEd({ ...ed, nomeLegado: e.target.value })} />
             <datalist id="nomes-atuais">{nomesAtuais.map(n => <option key={n} value={n} />)}</datalist>
           </Field>
-          {ed.role === 'lider' && (
+          {podeAtenderCarros(ed.role) && (
             <label className="row nowrap" style={{ gap: 8, margin: '4px 0 10px' }}>
               <input type="checkbox" checked={ed.atendeComoMecanico} onChange={e => setEd({ ...ed, atendeComoMecanico: e.target.checked })} data-atende />
-              <span><b>Atende carros também</b> <span className="small muted">— entra no rodízio, assume e executa OS como mecânico. Quando não estiver atendendo, ele mesmo toca em “Não estou atendendo” na Operação.</span></span>
+              <span><b>Atende carros também</b> <span className="small muted">— entra no rodízio, assume e executa OS como mecânico. Começa o dia fora da fila; na Operação, toca em “Estou atendendo” para entrar e em “Não estou atendendo” para sair.</span></span>
             </label>
           )}
           {acao.erro && <Alerta tipo="crit">{acao.erro}</Alerta>}
