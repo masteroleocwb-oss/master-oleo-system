@@ -12,6 +12,7 @@ import type { Ocorrencia, Usuario } from '../domain/types';
 import { addDias, agoraISO, fmtBRL, fmtData, fmtDataHora, fmtMes, fmtMin, fmtPct, hojeKey, mesKey, primeiroNome } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Empty, Field, Kpi, Placa, Segmented, Sheet, Tabs, useAcao, useDB, type Tom } from '../ui/components';
 import { EstadoBadge } from './common';
+import { FotoImg } from '../ui/FotoImg';
 
 type Aba = 'visao' | 'mecanicos' | 'assistencia' | 'auditoria' | 'excecoes' | 'ocorrencias' | 'retornos' | 'planos' | 'gestao';
 
@@ -271,7 +272,7 @@ export function AuditoriaSheet({ u, checklistId, onClose }: { u: Usuario; checkl
             <div key={d.id} className="li" style={{ flexWrap: 'wrap' }}>
               {resultado !== 'aprovado' && <input type="checkbox" aria-label={`Marcar ${d.nome} como inconsistente`} checked={d.id in marcados} onChange={e => { const m = { ...marcados }; if (e.target.checked) m[d.id] = ''; else delete m[d.id]; setMarcados(m); }} style={{ width: 22, height: 22 }} />}
               <div className="grow"><div className="ttl">{d.nome}</div><div className="meta">{[it.recomendacao, it.justificativa, it.observacao, d.fotoObrigatoriaEm.includes(it.estado) && !fotosAtivasDoItem(it, db.evidencias) ? 'SEM FOTO OBRIGATÓRIA' : null].filter(Boolean).join(' · ')}</div></div>
-              {fotos.slice(0, 2).map(f => <img key={f.id} src={f.url} alt="" style={{ width: 56, height: 42, objectFit: 'cover', borderRadius: 6 }} />)}
+              {fotos.slice(0, 2).map(f => <FotoImg key={f.id} url={f.url} alt="" style={{ width: 56, height: 42, objectFit: 'cover', borderRadius: 6 }} />)}
               <EstadoBadge estado={it.estado} />
               {d.id in marcados && <input className="input" style={{ flexBasis: '100%' }} aria-label={`O que está inconsistente em ${d.nome}`} placeholder="O que está inconsistente?" value={marcados[d.id]} onChange={e => setMarcados({ ...marcados, [d.id]: e.target.value })} />}
             </div>

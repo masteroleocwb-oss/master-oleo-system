@@ -5,6 +5,7 @@ import { pode } from '../domain/permissions';
 import type { Oportunidade, SituacaoOportunidade, Usuario } from '../domain/types';
 import { diaKey, fmtBRL, fmtDataHora, hojeKey, primeiroNome } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Empty, Field, Placa, Segmented, Sheet, useAcao, useDB, type Tom } from '../ui/components';
+import { FotoImg } from '../ui/FotoImg';
 
 const SIT: Record<SituacaoOportunidade, { r: string; tom: Tom }> = {
   nova: { r: 'Nova', tom: 'info' }, apresentada: { r: 'Apresentada', tom: 'atencao' }, aceita: { r: 'Aceita', tom: 'ok' },
@@ -65,7 +66,7 @@ function OportunidadeSheet({ u, op, onClose }: { u: Usuario; op: Oportunidade; o
   };
   return (
     <Sheet titulo={op.recomendacao} sub={`OS #${os.numero} · ${SIT[op.situacao].r}`} onClose={onClose}>
-      {fotos.length > 0 && <div className="fotos" style={{ marginBottom: 12 }}>{fotos.map(f => <div key={f.id} className="foto"><img src={f.url} alt={f.legenda || ''} /><div className="cap">{f.legenda}</div></div>)}</div>}
+      {fotos.length > 0 && <div className="fotos" style={{ marginBottom: 12 }}>{fotos.map(f => <div key={f.id} className="foto"><FotoImg url={f.url} alt={f.legenda || ''} /><div className="cap">{f.legenda}</div></div>)}</div>}
       {op.servicoKey && <p className="small">Serviço relacionado: <b>{SERVICOS[op.servicoKey].nome}</b></p>}
       {os.status === 'concluido' && op.situacao !== 'aceita' && <div style={{ margin: '8px 0' }}><Alerta tipo="info">A OS já foi concluída. Se o cliente aceitar agora, abra uma nova OS para o serviço.</Alerta></div>}
       {op.situacao === 'nao_oferecer' && <Alerta tipo="info">Frota com instrução de não oferecer. Registro mantido para o histórico do veículo.</Alerta>}

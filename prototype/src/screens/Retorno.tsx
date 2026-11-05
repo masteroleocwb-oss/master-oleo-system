@@ -7,7 +7,8 @@ import { Alerta, Btn, Card, Empty, Field, Placa, SaveIndicator, Segmented, useAc
 import { PhotoCapture } from '../ui/PhotoCapture';
 import { nomeServicos } from './common';
 import { FotoPainelKm } from './KmPainel';
-import { PausarBotao } from './Pausa';
+import { PausarBotao, RetomarBotao } from './Pausa';
+import { FotoImg } from '../ui/FotoImg';
 
 type Campos = Omit<AtendimentoRetorno, 'problemaRelatado'>;
 
@@ -36,7 +37,7 @@ export function Retorno({ u, osId }: { u: Usuario; osId: string }) {
 
   if (!os || !os.retorno) return <div className="card"><Empty titulo="OS de retorno não encontrada." /></div>;
   if (os.mecanicoId !== u.id) return <div className="card"><Empty titulo="Só o mecânico desta OS registra o atendimento do retorno." /></div>;
-  if (os.status !== 'andamento') return <div className="card"><Empty titulo={os.status === 'pausada' ? 'OS pausada. Retome na Operação para continuar.' : 'Esta OS não está em andamento.'}><a href={`#/os/${os.id}`}>Ver OS</a></Empty></div>;
+  if (os.status !== 'andamento') return <div className="card"><Empty titulo={os.status === 'pausada' ? 'OS pausada. Retome para continuar.' : 'Esta OS não está em andamento.'}><div className="stack"><RetomarBotao u={u} os={os} /><a href={`#/os/${os.id}`}>Ver OS</a></div></Empty></div>;
 
   const v = db.veiculos.find(x => x.id === os.veiculoId)!;
   const orig = db.os.find(o => o.id === os.retornoDeOsId);
@@ -60,7 +61,7 @@ export function Retorno({ u, osId }: { u: Usuario; osId: string }) {
       <div className="gallery">
         {fotos.filter(f => f.etapa === etapa).map(f => (
           <figure key={f.id}>
-            <img src={f.url} alt={f.legenda || `Foto ${etapa}`} />
+            <FotoImg url={f.url} alt={f.legenda || `Foto ${etapa}`} />
             <figcaption>{f.legenda}<br /><Btn tamanho="sm" variante="ghost" onClick={() => fotoAcao.executar(() => removerEvidencia(u, f.id, 'Substituída no atendimento do retorno'), 'Foto removida (fica no histórico).')}>Remover</Btn></figcaption>
           </figure>
         ))}

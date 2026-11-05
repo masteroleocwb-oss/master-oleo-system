@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { ir } from '../app/nav';
-import { pausarOS } from '../data/api';
+import { pausarOS, retomarOS } from '../data/api';
 import { MOTIVO_PAUSA } from '../domain/catalogo';
 import { pode } from '../domain/permissions';
 import type { OrdemServico, Pausa, Usuario } from '../domain/types';
-import { Alerta, Btn, Field, Sheet, useAcao } from '../ui/components';
+import { Alerta, Btn, Field, Sheet, useAcao, useDB } from '../ui/components';
 
 /** Botão "Pausar OS" para o executor (ou liderança) em OS em andamento. */
 export function PausarBotao({ u, os }: { u: Usuario; os: OrdemServico }) {
@@ -13,6 +13,20 @@ export function PausarBotao({ u, os }: { u: Usuario; os: OrdemServico }) {
   return <>
     <Btn variante="sec" tamanho="sm" onClick={() => setAberto(true)}>Pausar OS</Btn>
     {aberto && <PausarSheet u={u} os={os} onClose={() => setAberto(false)} />}
+  </>;
+}
+
+/** Botão "Retomar OS" na própria OS pausada (mecânico da OS ou liderança). */
+export function RetomarBotao({ u, os, bloco }: { u: Usuario; os: OrdemServico; bloco?: boolean }) {
+  const db = useDB();
+  const acao = useAcao();
+  if (os.status !== 'pausada' || !((os.mecanicoId === u.id && pode(u, 'os.executar')) || pode(u, 'rodizio.gerenciar'))) return null;
+  // Um carro por vez: com outra OS em andamento, mostra qual e leva até ela.
+  const outra = db.os.find(o => o.status === 'andamento' && o.mecanicoId === os.mecanicoId);
+  if (outra) return <Alerta tipo="info">Para retomar esta OS, pause ou finalize antes a <a href={`#/os/${outra.id}`}>OS #{outra.numero}</a>, que está em andamento.</Alerta>;
+  return <>
+    <Btn block={bloco} carregando={acao.ocupado} onClick={() => acao.executar(() => retomarOS(u, os.id), `OS #${os.numero} retomada.`)}>Retomar OS</Btn>
+    {acao.erro && <Alerta tipo="crit">{acao.erro}</Alerta>}
   </>;
 }
 

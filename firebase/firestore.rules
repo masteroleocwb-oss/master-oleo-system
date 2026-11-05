@@ -58,6 +58,8 @@ service cloud.firestore {
     // Dados da operação: quem tem perfil ativo lê e grava; nada se apaga (só recomendações ainda não tratadas).
     match /checklists/{id} { allow read, create, update: if ativo(); }
     match /evidencias/{id} { allow read, create, update: if ativo(); }
+    // Fotos (comprimidas no aparelho): uma por documento; ninguém altera nem apaga.
+    match /fotos/{id} { allow read, create: if ativo(); }
     match /oportunidades/{id} { allow read, create, update, delete: if ativo(); }
     match /manutencoes/{id} { allow read, create, update: if ativo(); }
     match /compartilhamentos/{id} { allow read, create, update: if ativo(); }

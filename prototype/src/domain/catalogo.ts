@@ -10,7 +10,7 @@ export const SERVICOS: Record<ServicoKey, { nome: string; campos: ('marca' | 'qu
   arCondicionado: { nome: 'Filtro de cabine (ar-condicionado)', campos: ['codigo'] },
   filtroCombustivel: { nome: 'Filtro de combustível', campos: ['codigo'] },
   cambioManual: { nome: 'Troca de óleo do câmbio manual', campos: ['marca', 'quantidade'] },
-  cambioAutomatico: { nome: 'Troca de fluido do câmbio automático', campos: ['marca', 'quantidade'] },
+  cambioAutomatico: { nome: 'Troca de fluido do câmbio automático', campos: ['marca', 'quantidade', 'codigo'] },
   difDianteiro: { nome: 'Óleo do diferencial dianteiro', campos: ['marca', 'quantidade'] },
   difTraseiro: { nome: 'Óleo do diferencial traseiro', campos: ['marca', 'quantidade'] },
   caixaTransferencia: { nome: 'Óleo da caixa de transferência', campos: ['marca', 'quantidade'] },

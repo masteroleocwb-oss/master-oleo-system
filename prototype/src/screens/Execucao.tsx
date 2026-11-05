@@ -9,7 +9,7 @@ import { Alerta, Badge, Btn, Card, Empty, Field, Placa, useAcao, useDB } from '.
 import { ChecklistBadge } from './common';
 import { AjudaBotao } from './Ajuda';
 import { FotoPainelKm } from './KmPainel';
-import { PausarBotao } from './Pausa';
+import { PausarBotao, RetomarBotao } from './Pausa';
 
 interface LinhaProx extends ProximaInput { chave: string; incluir: boolean; editavel: boolean; motivo: string }
 
@@ -65,7 +65,7 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
   if (!os || !v) return <div className="card"><Empty titulo="OS não encontrada." /></div>;
   if (os.mecanicoId !== u.id) return <div className="card"><Empty titulo="Só o mecânico desta OS registra a execução." /></div>;
   if (os.retornoDeOsId) return <div className="card"><Empty titulo="OS de retorno: o registro é feito no atendimento do retorno."><a href={`#/os/${os.id}/retorno`}>Abrir atendimento do retorno</a></Empty></div>;
-  if (os.status !== 'andamento') return <div className="card"><Empty titulo={os.status === 'pausada' ? 'OS pausada. Retome na Operação para continuar.' : 'Esta OS não está em andamento.'}><a href={`#/os/${os.id}`}>Ver OS</a></Empty></div>;
+  if (os.status !== 'andamento') return <div className="card"><Empty titulo={os.status === 'pausada' ? 'OS pausada. Retome para continuar.' : 'Esta OS não está em andamento.'}><div className="stack"><RetomarBotao u={u} os={os} /><a href={`#/os/${os.id}`}>Ver OS</a></div></Empty></div>;
 
   const regraOleo = db.regrasIntervalo.find(r => r.ativo && r.servicoKey === 'oleoMotor' && r.validada && r.opcoesKm?.length);
   const oleoExecutado = os.servicos.some((s, i) => s.key === 'oleoMotor' && exec[`${s.key}:${i}`]?.executado);
@@ -112,7 +112,7 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
                 <input type="checkbox" checked={!!exec[k]?.executado} onChange={e => setExec({ ...exec, [k]: { ...exec[k], executado: e.target.checked } })} />
                 <span>
                   <b>{SERVICOS[s.key].nome}</b> {s.origem === 'checklist' && <Badge tom="info">Do checklist</Badge>}{s.origem === 'adicional' && <Badge tom="info">Adicional</Badge>}
-                  <span className="small muted" style={{ display: 'block' }}>{[s.marca, s.codigo, s.valor ? fmtBRL(s.valor) : null].filter(Boolean).join(' · ')}</span>
+                  <span className="small muted" style={{ display: 'block' }}>{[s.marca, s.codigo && (s.key === 'cambioAutomatico' ? `Filtro ${s.codigo}` : s.codigo), s.valor ? fmtBRL(s.valor) : null].filter(Boolean).join(' · ')}</span>
                 </span>
               </label>
               {SERVICOS[s.key].campos.includes('quantidade') && (

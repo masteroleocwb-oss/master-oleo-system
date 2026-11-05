@@ -64,12 +64,13 @@ const nova = async () => {
   await p.setViewport({ width: 1280, height: 900 });
   p.on('request', r => { const u = new URL(r.url()); if (/googleapis\.com|firebaseio|firebasestorage\.app|firebaseapp\.com/.test(u.hostname)) reais.push(u.href); });
   p.on('pageerror', e => errosJs.push(e.message));
+  if (process.env.DEPURAR) p.on('console', m => console.log('   [console]', m.type(), m.text().slice(0, 300)));
   p.on('dialog', d => d.accept());
   return p;
 };
 const esperar = ms => new Promise(r => setTimeout(r, ms));
 const txt = p => p.evaluate(() => document.body.innerText);
-const ate = async (p, t, ms = 20000) => { try { await p.waitForFunction(x => document.body.innerText.includes(x), { timeout: ms }, t); } catch { throw new Error(`Não apareceu: "${t}"\n--- tela ---\n${(await txt(p)).slice(0, 900)}`); } };
+const ate = async (p, t, ms = 20000) => { try { await p.waitForFunction(x => document.body.innerText.includes(x), { timeout: ms }, t); } catch { await p.screenshot({ path: join(OUT, 'falha.png') }).catch(() => {}); throw new Error(`Não apareceu: "${t}"\n--- tela ---\n${(await txt(p)).slice(0, 900)}`); } };
 const preencher = async (p, sel, v) => { await p.waitForSelector(sel, { visible: true }); await p.evaluate((s, v) => { const e = document.querySelector(s); const pr = e.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : e.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(pr, 'value').set.call(e, v); e.dispatchEvent(new Event(e.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true })); }, sel, v); };
 const clicar = (p, rot, escopo = 'body') => p.evaluate((r, es) => { const e = [...document.querySelector(es).querySelectorAll('button')].find(x => x.textContent.trim().startsWith(r) && !x.disabled); if (!e) throw new Error('Botão não encontrado: ' + r); e.scrollIntoView({ block: 'center' }); e.click(); }, rot, escopo);
 const tocar = async (p, sel) => { await p.waitForSelector(sel, { visible: true }); await p.$eval(sel, e => { e.scrollIntoView({ block: 'center' }); e.click(); }); await esperar(80); };
@@ -134,11 +135,33 @@ try {
   const aj = comAjuda.plataforma?.assistencias?.[0];
   ok(aj && !aj.fim && comAjuda.lubrificador === 'Caio', 'Ajuda registrada na OS (sem mudar o mecânico do sistema atual)');
   const ids = await mec.$$eval('[data-item]', es => es.map(e => e.getAttribute('data-item')));
+  // Foto real (arquivo da câmera): comprime no aparelho, salva rápido e fica ligada ao item.
+  {
+    const id = ids[0];
+    if (!(await mec.$(`[data-item="${id}"] .ck-body:not([hidden])`))) await tocar(mec, `[data-item="${id}"] .ck-head`);
+    await tocar(mec, `[data-item="${id}"] .foto-add`);
+    const arq = await mec.waitForSelector('.sheet input[type=file]');
+    await arq.uploadFile(join(OUT, '01-nova-os.png'));
+    await ate(mec, 'Usar esta foto');
+    const t0 = Date.now();
+    await clicar(mec, 'Usar esta foto', '.sheet-foot');
+    if (process.env.DEPURAR) { await esperar(4000); console.log('   [sheet]', JSON.stringify(await mec.evaluate(() => (document.querySelector('.sheet')?.innerText || 'sem sheet') + ' | toasts: ' + [...document.querySelectorAll('[class*=toast]')].map(t => t.innerText).join(' / ')))); }
+    await ate(mec, 'Foto salva no item');
+    const ev = (await listar('evidencias')).find(e => e.itemDefId === id);
+    const fotoDoc = ev && ev.url.startsWith('foto:') ? await lerDoc(`fotos/${ev.url.slice(5)}`) : null;
+    ok(!!fotoDoc && fotoDoc.data.startsWith('data:image/jpeg') && fotoDoc.data.length <= 300000, `Foto salva na base, comprimida (${Math.round((fotoDoc?.data.length || 0) / 1024)} KB, ${Date.now() - t0} ms)`);
+    await mec.waitForSelector(`[data-item="${id}"] img`, { timeout: 15000 });
+    ok(true, 'Foto aparece no item do checklist');
+  }
   for (const id of ids) {
     if (!(await mec.$(`[data-item="${id}"] .ck-body:not([hidden])`))) await tocar(mec, `[data-item="${id}"] .ck-head`);
-    await tocar(mec, `[data-item="${id}"] [data-estado="ok"]`);
-    await mec.waitForFunction(i => !document.querySelector(`[data-item="${i}"] .ck-head`).textContent.includes('A verificar'), { timeout: 15000 }, id);
+    await tocar(mec, `[data-item="${id}"] [data-estado="ok"]`); // sem esperar salvar: toques rápidos, como na bancada
   }
+  await mec.waitForFunction(() => ![...document.querySelectorAll('[data-item] .ck-head')].some(h => h.textContent.includes('A verificar')), { timeout: 30000 });
+  const tc0 = await txt(mec);
+  ok(!tc0.includes('Outra pessoa alterou') && !tc0.includes('Falha ao salvar'), 'Itens marcados em sequência rápida salvam sem conflito');
+  const ckSalvo = (await listar('checklists')).find(c => Object.values(c.itens || {}).length && ids.every(i => c.itens[i]?.estado === 'ok'));
+  ok(!!ckSalvo, 'Todos os itens gravados na base');
   await clicar(mec, 'Concluir checklist');
   await mec.waitForSelector('#km', { timeout: 20000 });
   await preencher(mec, '#km', '81000');
@@ -189,6 +212,8 @@ try {
   await ate(cliente, 'ABC-1234');
   const tc = await txt(cliente);
   ok(!tc.includes('99999-1111') && !tc.includes('300') , 'Cliente vê o relatório sem telefone nem valores');
+  const relDoc = (await lerDoc(`relatorios/${sh.token}`)).relatorio;
+  ok(relDoc.fotos?.length > 0 && relDoc.fotos.every(f => f.url.startsWith('data:image/jpeg')), 'Fotos vão dentro do relatório do cliente (abre sem login)');
   await foto(cliente, '06-relatorio-cliente');
   await cliente.goto(NOVO + '#/r/7006'); await ate(cliente, 'Este link não está disponível');
   ok(true, 'Número da OS na URL não abre nada');

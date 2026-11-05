@@ -9,10 +9,9 @@ import {
   signInWithEmailAndPassword, signOut, updatePassword, type Auth, type User,
 } from 'firebase/auth';
 import {
-  addDoc, collection, connectFirestoreEmulator, deleteField, doc, FieldPath, getDocs, getDocsFromCache, initializeFirestore, limit, onSnapshot, orderBy,
-  persistentLocalCache, persistentMultipleTabManager, query, runTransaction, serverTimestamp, where, type DocumentData, type Firestore, type Unsubscribe,
+  addDoc, collection, connectFirestoreEmulator, deleteField, disableNetwork, doc, enableNetwork, FieldPath, getDoc, getDocs, getDocsFromCache, initializeFirestore, limit, onSnapshot, orderBy,
+  persistentLocalCache, persistentSingleTabManager, query, runTransaction, serverTimestamp, setDoc, where, type DocumentData, type Firestore, type Unsubscribe,
 } from 'firebase/firestore';
-import { connectStorageEmulator, getDownloadURL, getStorage, ref as refStorage, uploadString, type FirebaseStorage } from 'firebase/storage';
 import { CATALOGO_INICIAL, REGRAS_INICIAIS } from '../domain/catalogo';
 import type { DB, RegistroAcesso, ResultadoAcesso, Role, Usuario } from '../domain/types';
 import { ErroSalvamento as ErroNuvem } from './erros';
@@ -32,7 +31,7 @@ const CONFIG = {
 const emNavegador = typeof window !== 'undefined';
 export const USAR_EMULADOR = emNavegador && ['localhost', '127.0.0.1'].includes(location.hostname) && new URLSearchParams(location.search).has('emulador');
 
-let app: FirebaseApp, auth: Auth, fs: Firestore, st: FirebaseStorage;
+let app: FirebaseApp, auth: Auth, fs: Firestore;
 let iniciado = false;
 export function iniciar() {
   if (iniciado) return;
@@ -41,13 +40,24 @@ export function iniciar() {
   auth = getAuth(app);
   fs = initializeFirestore(app, {
     ignoreUndefinedProperties: true,
-    ...(USAR_EMULADOR ? {} : { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }),
+    // Cache no aparelho só na primeira aba; outras abas usam memória e têm conexão própria. (Com várias
+    // abas dividindo uma conexão, o Android congela a aba de fundo que a segura e a aba em uso para de
+    // receber as OS novas.)
+    ...(USAR_EMULADOR ? {} : { localCache: persistentLocalCache({ tabManager: persistentSingleTabManager(undefined) }) }),
   });
-  st = getStorage(app);
+  // Celular voltou depois de um tempo em segundo plano (tela apagada, outro app): reabre a conexão
+  // para não ficar mostrando dados parados.
+  if (emNavegador) {
+    let saiuEm = 0;
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') { saiuEm = Date.now(); return; }
+      if (saiuEm && Date.now() - saiuEm > 20000) void disableNetwork(fs).then(() => enableNetwork(fs)).catch(() => undefined);
+      saiuEm = 0;
+    });
+  }
   if (USAR_EMULADOR) {
     connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
     connectFirestoreEmulator(fs, '127.0.0.1', 8080);
-    connectStorageEmulator(st, '127.0.0.1', 9199);
   }
   onAuthStateChanged(auth, u => { void aoMudarLogin(u); });
 }
@@ -122,12 +132,32 @@ function agendar() {
   });
 }
 
+// Cada mudança remonta a base: só as OS que mudaram são convertidas de novo (o resto vem pronto),
+// e os cadastros só são refeitos quando alguma OS muda. Mantém o celular leve a cada toque.
+const memo = {
+  usuariosSrc: [] as unknown[], reais: [] as Usuario[], nomes: null as MapaNomes | null,
+  os: new WeakMap<object, ReturnType<typeof osDeLegado>>(),
+  ordersSrc: [] as unknown[], cadastros: null as ReturnType<typeof derivarCadastros> | null,
+};
+const mesmos = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 function montarDB(): DB {
-  const reais = [...raw.usuarios].map(([id, u]) => usuarioDeDoc(id, u));
-  const nomes = new MapaNomes(reais);
+  const usuariosSrc = [...raw.usuarios.values()];
+  if (!memo.nomes || !mesmos(usuariosSrc, memo.usuariosSrc)) {
+    memo.usuariosSrc = usuariosSrc;
+    memo.reais = [...raw.usuarios].map(([id, u]) => usuarioDeDoc(id, u));
+    memo.nomes = new MapaNomes(memo.reais);
+    memo.os = new WeakMap();
+  }
+  const reais = memo.reais, nomes = memo.nomes;
   const orders = [...raw.orders];
-  const os = orders.map(([id, o]) => osDeLegado(id, o, nomes));
-  const { veiculos, clientes } = derivarCadastros(orders);
+  const os = orders.map(([id, o]) => {
+    let x = memo.os.get(o);
+    if (!x) { x = osDeLegado(id, o, nomes); memo.os.set(o, x); }
+    return x;
+  });
+  const ordersSrc = orders.map(([, o]) => o);
+  if (!memo.cadastros || !mesmos(ordersSrc, memo.ordersSrc)) { memo.cadastros = derivarCadastros(orders); memo.ordersSrc = ordersSrc; }
+  const { veiculos, clientes } = memo.cadastros;
   const rod = (raw.global.rodizio || {}) as { dia?: string; status?: Record<string, string> };
   const status: DB['rodizio']['status'] = {};
   for (const [nome, s] of Object.entries(rod.status || {})) {
@@ -167,6 +197,7 @@ async function aoMudarLogin(u: User | null) {
   CHAVES.forEach(c => raw.col[c].clear());
   Object.assign(carregou, { orders: false, usuarios: false, global: false });
   pediuAntigas = false; placasBuscadas.clear(); eventosRodizio = false;
+  memo.nomes = null; memo.cadastros = null;
   uidAtual = u?.uid ?? null;
   if (!u) { estado = 'desconectado'; db = dbVazio(); notificar(); return; }
   // Sessão aberta fora da tela de login (ou vencida): sai.
@@ -179,9 +210,16 @@ async function aoMudarLogin(u: User | null) {
     erroCarga = code === 'permission-denied' ? 'Seu login não tem permissão para ver os dados. Fale com a direção.' : 'Não foi possível carregar os dados. Verifique a conexão.';
     estado = 'erro'; notificar();
   };
-  // OS dos últimos 90 dias ao vivo (mesma janela do sistema atual). O histórico antigo vem depois,
-  // conforme o perfil (ver carregarAntigas), para não ler a coleção inteira a cada login.
-  const desdeISO = new Date(Date.now() - JANELA_DIAS * 864e5).toISOString();
+  // OS ao vivo: 90 dias (mesma janela do sistema atual); mecânico só do mês anterior para cá (operação
+  // e "Meu mês"), o que deixa o celular bem mais leve. O histórico antigo vem depois, conforme o perfil
+  // (ver carregarAntigas): o mecânico recebe só o das placas que estão na oficina.
+  let perfil: unknown;
+  try { perfil = (await getDoc(doc(fs, 'usuarios', u.uid))).data()?.perfil; } catch { /* segue com a janela padrão */ }
+  if (uidAtual !== u.uid) return;
+  const hoje = new Date();
+  const desdeISO = perfil === 'mecanico'
+    ? new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - 1, 1, 3)).toISOString()
+    : new Date(Date.now() - JANELA_DIAS * 864e5).toISOString();
   assinaturas.push(onSnapshot(query(collection(fs, 'orders'), where('dataHora', '>=', desdeISO)), s => {
     s.docChanges().forEach(ch => { if (ch.type === 'removed') raw.orders.delete(ch.doc.id); else raw.orders.set(ch.doc.id, ch.doc.data()); });
     if (!carregou.orders) { carregou.orders = true; carregarAntigas(u.uid); }
@@ -371,6 +409,33 @@ export async function trocarSenha(atual: string, nova: string) {
 const estavel = (x: unknown): string => JSON.stringify(x, (_k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v));
 const limpo = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
+// Mescla por campo: a ação só confere e grava o que ela mudou. Num mapa (ex.: os itens do checklist) o
+// nível conferido é cada entrada, então dois itens marcados em seguida não conflitam entre si.
+type Caminho = [string] | [string, string];
+type Obj = Record<string, unknown>;
+const ehObj = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v);
+function caminhosAlterados(a: Obj, b: Obj): Caminho[] {
+  const r: Caminho[] = [];
+  for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    const x = a[k], y = b[k];
+    if (estavel(x ?? null) === estavel(y ?? null)) continue;
+    if (ehObj(x) && ehObj(y)) {
+      for (const s of new Set([...Object.keys(x), ...Object.keys(y)])) if (estavel(x[s] ?? null) !== estavel(y[s] ?? null)) r.push([k, s]);
+    } else r.push([k]);
+  }
+  return r;
+}
+const lerCaminho = (o: Obj | undefined, c: Caminho): unknown => {
+  const v = o?.[c[0]];
+  return c.length === 1 ? v : ehObj(v) ? v[c[1]] : undefined;
+};
+function gravarCaminho(o: Obj, c: Caminho, v: unknown) {
+  if (c.length === 1) { if (v === undefined) delete o[c[0]]; else o[c[0]] = v; return; }
+  if (!ehObj(o[c[0]])) o[c[0]] = {};
+  const m = o[c[0]] as Obj;
+  if (v === undefined) delete m[c[1]]; else m[c[1]] = v;
+}
+
 /** Campos de cadastro: só são gravados quando a OS nasce (não reescrevem o histórico). */
 const CAMPOS_CADASTRO = new Set(['cliente', 'tel', 'placa', 'marca', 'modelo', 'motor', 'ano', 'cambio', 'combustivel', 'comoConheceu', 'comoConheceuDetalhe', 'cidade', 'bairro', 'kmPorMes']);
 
@@ -383,28 +448,84 @@ const CONFLITO = 'Outra pessoa alterou estes dados agora há pouco. A tela já f
 /** Aplica uma ação: monta o rascunho, grava o que mudou numa transação e devolve o resultado. */
 export async function transacao<T>(mutar: (rascunho: DB) => T): Promise<T> {
   if (estado !== 'pronto') throw new ErroNuvem('Ainda carregando os dados. Aguarde um instante.');
-  const antes = db;
-  const depois = structuredClone(db);
-  const r = mutar(depois);
-  await gravar(antes, depois);
-  return r;
+  // Uma ação por vez neste aparelho: a seguinte já parte do resultado da anterior (toques rápidos
+  // no checklist não brigam entre si). Conflito com outro aparelho: tenta de novo uma vez, com a tela atualizada.
+  const vez = fila.then(async () => {
+    for (let tentativa = 0; ; tentativa++) {
+      const antes = db;
+      const depois = structuredClone(db);
+      const r = mutar(depois);
+      try { await gravar(antes, depois); return r; }
+      catch (e) {
+        if (tentativa > 0 || !(e instanceof ErroNuvem) || e.message !== CONFLITO) throw e;
+        await new Promise(ok => setTimeout(ok, 700));
+      }
+    }
+  });
+  fila = vez.catch(() => undefined);
+  return vez;
 }
+let fila: Promise<unknown> = Promise.resolve();
 
-async function enviarFotos(antes: DB, depois: DB) {
+// Fotos: ficam no Firestore (coleção `fotos`, uma por documento, já comprimidas no aparelho) e a
+// evidência guarda só a referência "foto:<id>". A foto é lida quando aparece na tela, então as listas
+// continuam leves. (O Firebase Storage não está ativo neste projeto.)
+const PREFIXO_FOTO = 'foto:';
+const PRAZO_FOTO_MS = 25000;
+const fotosCache = new Map<string, string>();
+
+const comPrazo = <T,>(p: Promise<T>, ms: number) =>
+  Promise.race([p, new Promise<never>((_, falha) => setTimeout(() => falha(new Error('prazo')), ms))]);
+
+async function enviarFotos(_antes: DB, depois: DB) {
   for (const ev of depois.evidencias) {
-    if (!ev.url.startsWith('data:') || antes.evidencias.some(x => x.id === ev.id && x.url === ev.url && !x.url.startsWith('data:'))) continue;
-    const r = refStorage(st, `plataforma/evidencias/${ev.osId}/${ev.id}.jpg`);
-    await uploadString(r, ev.url, 'data_url');
-    ev.url = await getDownloadURL(r);
+    if (!ev.url.startsWith('data:')) continue;
+    await comPrazo(setDoc(doc(fs, 'fotos', ev.id), { data: ev.url, osId: ev.osId, em: ev.em, por: auth.currentUser?.uid ?? null }), PRAZO_FOTO_MS);
+    fotosCache.set(ev.id, ev.url);
+    ev.url = PREFIXO_FOTO + ev.id;
     ev.demo = false;
   }
+}
+
+/** Endereço exibível da foto: as guardadas no Firestore vêm do cache ou são lidas na hora. */
+export async function lerFoto(url: string): Promise<string> {
+  if (!url.startsWith(PREFIXO_FOTO)) return url;
+  const id = url.slice(PREFIXO_FOTO.length);
+  const c = fotosCache.get(id);
+  if (c) return c;
+  const data = (await getDoc(doc(fs, 'fotos', id))).data()?.data;
+  if (typeof data !== 'string') throw new Error('Foto não encontrada.');
+  fotosCache.set(id, data);
+  return data;
+}
+
+/** O relatório do cliente é lido sem login: leva as fotos dentro dele (até ~800 KB, o resto fica de fora). */
+async function embutirFotos(rel: unknown) {
+  const r = rel as { fotos?: { url: string }[]; retorno?: { antes: { url: string }[]; depois: { url: string }[] } } | null;
+  if (!r) return rel;
+  let total = 0;
+  const trocar = async <F extends { url: string }>(lista: F[] = []) => {
+    const out: F[] = [];
+    for (const f of lista) {
+      try {
+        const data = await lerFoto(f.url);
+        if (total + data.length > 800_000) continue;
+        total += data.length;
+        out.push({ ...f, url: data });
+      } catch { /* foto indisponível: segue sem ela */ }
+    }
+    return out;
+  };
+  if (r.retorno) { r.retorno.antes = await trocar(r.retorno.antes); r.retorno.depois = await trocar(r.retorno.depois); }
+  if (r.fotos) r.fotos = await trocar(r.fotos);
+  return r;
 }
 
 async function gravar(antes: DB, depois: DB) {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new ErroNuvem('Sua sessão terminou. Entre de novo.');
   try { await enviarFotos(antes, depois); }
-  catch { throw new ErroNuvem('Não foi possível enviar a foto. Verifique a conexão e tente de novo.'); }
+  catch (e) { console.warn('Falha ao enviar foto', String((e as Error)?.message || e), (e as { code?: string })?.code); throw new ErroNuvem('A foto não foi enviada (internet lenta ou sem sinal). Toque de novo em "Usar esta foto".'); }
 
   const nomesA = new MapaNomes(antes.usuarios);
   const nomesD = new MapaNomes(depois.usuarios);
@@ -476,14 +597,28 @@ async function gravar(antes: DB, depois: DB) {
         const s = docsOS[i];
         if (!s.exists()) throw new ErroNuvem('Esta OS não existe mais.');
         const noServidor = legadoDeOS(osDeLegado(m.id, s.data(), nomesA), undefined, undefined, nomesA);
-        if (m.campos.some(k => estavel(noServidor[k]) !== estavel(m.antes[k]))) throw new ErroNuvem(CONFLITO);
+        if (m.campos.some(k => estavel(noServidor[k]) !== estavel(m.antes[k]) && estavel(noServidor[k]) !== estavel(m.depois[k]))) throw new ErroNuvem(CONFLITO);
       });
-      muds.forEach((m, i) => {
+      const gravarCol: unknown[] = muds.map((m, i) => {
         const s = docsCol[i];
-        if (!s) return;
-        const atual = s.exists() ? s.data() : undefined;
-        const esperado = m.antes === undefined ? undefined : limpo(m.antes);
-        if (estavel(atual ?? null) !== estavel(esperado ?? null)) throw new ErroNuvem(CONFLITO);
+        if (!s) return m.depois === undefined ? undefined : limpo(m.depois);
+        const atual = s.exists() ? (s.data() as Obj) : undefined;
+        // Documento novo ou apagado: confere o documento inteiro.
+        if (m.antes === undefined || m.depois === undefined || !atual) {
+          const esperado = m.antes === undefined ? undefined : limpo(m.antes);
+          if (estavel(atual ?? null) !== estavel(esperado ?? null)) throw new ErroNuvem(CONFLITO);
+          return m.depois === undefined ? undefined : limpo(m.depois);
+        }
+        // Alteração: só os campos que esta ação mudou. Se no servidor já está igual ao que queremos, tudo bem.
+        const a = limpo(m.antes) as Obj, d = limpo(m.depois) as Obj;
+        const cams = caminhosAlterados(a, d);
+        for (const c of cams) {
+          const sv = estavel(lerCaminho(atual, c) ?? null);
+          if (sv !== estavel(lerCaminho(a, c) ?? null) && sv !== estavel(lerCaminho(d, c) ?? null)) throw new ErroNuvem(CONFLITO);
+        }
+        const mesclado = limpo(atual);
+        cams.forEach(c => gravarCaminho(mesclado, c, lerCaminho(d, c)));
+        return mesclado;
       });
 
       // Numeração igual à do sistema atual: maior entre o contador e a maior OS existente, + 1.
@@ -517,16 +652,17 @@ async function gravar(antes: DB, depois: DB) {
         escritasLocais.push(() => raw.orders.set(m.id, base));
       });
 
-      for (const m of muds) {
+      muds.forEach((m, i) => {
         const r = doc(fs, COLECOES[m.chave], m.id);
-        if (m.depois === undefined) { tx.delete(r); escritasLocais.push(() => raw.col[m.chave].delete(m.id)); }
-        else { const x = limpo(m.depois); tx.set(r, x); escritasLocais.push(() => raw.col[m.chave].set(m.id, x)); }
-      }
+        const x = gravarCol[i];
+        if (x === undefined) { tx.delete(r); escritasLocais.push(() => raw.col[m.chave].delete(m.id)); }
+        else { tx.set(r, x as Obj); escritasLocais.push(() => raw.col[m.chave].set(m.id, x)); }
+      });
 
       // Link do cliente: o relatório público é uma cópia restrita, lida pelo token (sem login).
       for (const m of muds.filter(x => x.chave === 'compartilhamentos' && x.depois)) {
         const sh = m.depois as DB['compartilhamentos'][number];
-        const rel = projetar && !sh.revogadoEm ? projetar(depois, sh.osId) : null;
+        const rel = projetar && !sh.revogadoEm ? await embutirFotos(projetar(depois, sh.osId)) : null;
         tx.set(doc(fs, 'relatorios', sh.token), limpo({ osId: sh.osId, expiraEm: sh.expiraEm ?? null, revogadoEm: sh.revogadoEm ?? null, relatorio: rel }));
       }
 

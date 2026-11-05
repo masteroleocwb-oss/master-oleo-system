@@ -11,7 +11,8 @@ import { ChecklistBadge, EstadoBadge, STATUS_OS } from './common';
 import { AuditoriaSheet } from './Lideranca';
 import { rotaTrabalho } from './Operacao';
 import { AjudaBotao } from './Ajuda';
-import { PausarBotao } from './Pausa';
+import { PausarBotao, RetomarBotao } from './Pausa';
+import { FotoImg } from '../ui/FotoImg';
 
 type Aba = 'resumo' | 'checklist' | 'fotos' | 'relatorio' | 'historico';
 
@@ -54,7 +55,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
             const ckOk = c?.status === 'concluido' || c?.status === 'excecao_autorizada';
             return <Btn onClick={() => ir(rotaTrabalho(os, ckOk))}>{os.retornoDeOsId ? 'Atendimento do retorno' : ckOk ? 'Executar e finalizar' : 'Abrir checklist'}</Btn>;
           })()}
-          <AjudaBotao u={u} os={os} /><PausarBotao u={u} os={os} />
+          <RetomarBotao u={u} os={os} /><AjudaBotao u={u} os={os} /><PausarBotao u={u} os={os} />
           {pode(u, 'checklist.auditar') && c && (c.status === 'concluido' || c.status === 'excecao_autorizada') && os.mecanicoId !== u.id && <Btn variante="sec" onClick={() => setAuditar(true)}>Auditar checklist</Btn>}
           {pode(u, 'excecao.declarar') && !os.naoOferecer && os.status !== 'concluido' && cli?.tipo === 'frota' && <Btn variante="sec" onClick={() => setNaoOf(true)}>Marcar “não oferecer”</Btn>}
           {pode(u, 'os.cancelar') && (os.status === 'aguardando' || os.status === 'andamento' || os.status === 'pausada') && <Btn variante="danger" onClick={() => setCancelar('cancelar')}>Cancelar OS</Btn>}
@@ -169,7 +170,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
           <div className="gallery">
             {fotos.map(f => (
               <figure key={f.id} style={f.removida ? { opacity: .45 } : undefined}>
-                <img src={f.url} alt={f.legenda || 'Foto do item'} />
+                <FotoImg url={f.url} alt={f.legenda || 'Foto do item'} />
                 <figcaption><b>{f.itemDefId === 'retorno' ? `Retorno — ${f.etapa === 'antes' ? 'problema' : 'solução'}` : f.itemDefId === 'km_painel' ? 'Painel — correção de KM' : c?.defs.find(d => d.id === f.itemDefId)?.nome}</b><br />{f.legenda}{f.removida ? ` · Removida: ${f.removida.motivo}` : ''}<br /><span className="muted">{primeiroNome(nomeDe(db, f.capturadaPor))} · {fmtDataHora(f.em)}{f.demo ? ' · demonstrativa' : ''}</span>
                   {!f.removida && <><br />{f.visivelCliente ? <Badge tom="outline">Aparece para o cliente</Badge> : <Badge tom="neutro">Oculta do cliente</Badge>}</>}
                   {!f.removida && pode(u, 'relatorio.revogar') && <div style={{ marginTop: 6 }}><Btn tamanho="sm" variante="sec" carregando={fotoAcao.ocupado} onClick={() => fotoAcao.executar(() => definirVisibilidadeFoto(u, f.id, !f.visivelCliente), f.visivelCliente ? 'Foto oculta do relatório do cliente.' : 'Foto volta a aparecer no relatório.')}>{f.visivelCliente ? 'Ocultar do cliente' : 'Mostrar ao cliente'}</Btn></div>}
@@ -356,7 +357,7 @@ function RetornoResumo({ os }: { os: OrdemServico }) {
   const fotos = db.evidencias.filter(e => e.osId === os.id && e.itemDefId === 'retorno' && !e.removida);
   const Galeria = ({ etapa }: { etapa: 'antes' | 'depois' }) => {
     const fs = fotos.filter(f => f.etapa === etapa);
-    return fs.length ? <div className="gallery">{fs.map(f => <figure key={f.id}><img src={f.url} alt={f.legenda || etapa} /><figcaption>{f.legenda}</figcaption></figure>)}</div> : <p className="small muted">Sem foto.</p>;
+    return fs.length ? <div className="gallery">{fs.map(f => <figure key={f.id}><FotoImg url={f.url} alt={f.legenda || etapa} /><figcaption>{f.legenda}</figcaption></figure>)}</div> : <p className="small muted">Sem foto.</p>;
   };
   return (
     <Card titulo="Atendimento do retorno">

@@ -11,12 +11,19 @@ const comprimir = (arquivo: File) => new Promise<string>((ok, falha) => {
     const img = new Image();
     img.onerror = () => falha(new Error('Arquivo não é uma imagem válida.'));
     img.onload = () => {
-      const max = 960;
-      const k = Math.min(1, max / Math.max(img.width, img.height));
-      const cv = document.createElement('canvas');
-      cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
-      cv.getContext('2d')!.drawImage(img, 0, 0, cv.width, cv.height);
-      ok(cv.toDataURL('image/jpeg', 0.7));
+      // Lado maior até 1024 px e no máximo ~300 KB: envia rápido no 4G e cabe num documento da base.
+      let max = 1024;
+      for (;;) {
+        const k = Math.min(1, max / Math.max(img.width, img.height));
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+        cv.getContext('2d')!.drawImage(img, 0, 0, cv.width, cv.height);
+        for (const q of [0.7, 0.55, 0.4]) {
+          const url = cv.toDataURL('image/jpeg', q);
+          if (url.length <= 300_000 || (q === 0.4 && max <= 480)) { ok(url); return; }
+        }
+        max = Math.round(max * 0.75);
+      }
     };
     img.src = String(leitor.result);
   };

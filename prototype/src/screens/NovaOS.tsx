@@ -303,9 +303,9 @@ export function NovaOS({ u }: { u: Usuario }) {
         {(Object.keys(f.servicos) as ServicoKey[]).filter(k => SERVICOS[k].campos.length && servicoAplicavel(k, cambioAtual)).map(k => (
           <div key={k} style={{ marginBottom: 10 }}>
             <div className="small strong" style={{ marginBottom: 4 }}>{SERVICOS[k].nome}</div>
-            <div className="row nowrap">
+            <div className={SERVICOS[k].campos.length > 2 ? 'row' : 'row nowrap'}>
               {SERVICOS[k].campos.map(c => (
-                <input key={c} aria-label={`${SERVICOS[k].nome}: ${c}`} className="input" placeholder={{ marca: 'Marca/produto', quantidade: 'Litros', codigo: 'Código' }[c]}
+                <input key={c} aria-label={`${SERVICOS[k].nome}: ${c}`} className="input" placeholder={k === 'cambioAutomatico' && c === 'codigo' ? 'Código do filtro (se tiver)' : { marca: 'Marca/produto', quantidade: 'Litros', codigo: 'Código' }[c]}
                   value={f.servicos[k]?.[c] || ''} onChange={e => set({ servicos: { ...f.servicos, [k]: { ...f.servicos[k], [c]: e.target.value } } })} />
               ))}
             </div>

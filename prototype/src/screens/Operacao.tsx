@@ -124,7 +124,7 @@ export function Operacao({ u }: { u: Usuario }) {
                       <span className="small">OS #{os.numero} · {MOTIVO_PAUSA[os.pausas!.at(-1)!.motivo]}</span>
                       <Btn tamanho="sm" variante="sec" carregando={acao.ocupado} disabled={!!minha}
                         onClick={async () => { if (await acao.executar(() => retomarOS(u, os.id), `OS #${os.numero} retomada.`)) ir(`/os/${os.id}`); }}>
-                        {minha ? 'Finalize a atual para retomar' : 'Retomar'}
+                        {minha ? `Pause ou finalize a #${minha.numero} antes` : 'Retomar'}
                       </Btn>
                     </div>
                   ))}

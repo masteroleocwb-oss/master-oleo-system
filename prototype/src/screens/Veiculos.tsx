@@ -8,6 +8,7 @@ import type { Usuario } from '../domain/types';
 import { agoraISO, fmtData, fmtDataHora, fmtKm, primeiroNome } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Empty, Field, Placa, Sheet, useAcao, useDB, type Tom } from '../ui/components';
 import { ChecklistBadge, nomeServicos, STATUS_OS } from './common';
+import { FotoImg } from '../ui/FotoImg';
 
 const TOM_MANUT: Record<StatusManutencao, Tom> = { vencida: 'critico', proxima: 'atencao', futura: 'info', concluida: 'ok', acompanhar: 'muted' };
 
@@ -115,7 +116,7 @@ export function Veiculo({ u, veiculoId }: { u: Usuario; veiculoId: string }) {
               <div className="gallery">
                 {fotos.slice(0, 12).map(f => {
                   const os = db.os.find(o => o.id === f.osId);
-                  return <figure key={f.id}><img src={f.url} alt={f.legenda || 'Foto'} /><figcaption>{f.legenda}<br /><span className="muted">{fmtData(f.em)} · OS #{os?.numero}</span></figcaption></figure>;
+                  return <figure key={f.id}><FotoImg url={f.url} alt={f.legenda || 'Foto'} /><figcaption>{f.legenda}<br /><span className="muted">{fmtData(f.em)} · OS #{os?.numero}</span></figcaption></figure>;
                 })}
               </div>
             </Card>

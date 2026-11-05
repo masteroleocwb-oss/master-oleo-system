@@ -18,7 +18,8 @@ export const CAMPOS_LEGADO: Record<ServicoKey, { marca?: string; quantidade?: st
   arCondicionado: { codigo: 'arCondicionadoCodigo' },
   filtroCombustivel: { codigo: 'filtroCombustivelCodigo' },
   cambioManual: { marca: 'cambioManualMarca', quantidade: 'cambioManualQuantidade' },
-  cambioAutomatico: { marca: 'cambioAutomaticoMarca', quantidade: 'cambioAutomaticoQuantidade', extras: { cambioAutomaticoTemFiltro: false, cambioAutomaticoFiltroCodigo: '', cambioAutomaticoFluidoCarter: '' } },
+  // Câmbio automático: o código é o do filtro do câmbio (opcional; nem todo câmbio tem filtro).
+  cambioAutomatico: { marca: 'cambioAutomaticoMarca', quantidade: 'cambioAutomaticoQuantidade', codigo: 'cambioAutomaticoFiltroCodigo', extras: { cambioAutomaticoTemFiltro: false, cambioAutomaticoFluidoCarter: '' } },
   difDianteiro: { marca: 'difDianteiroMarca', quantidade: 'difDianteiroQuantidade' },
   difTraseiro: { marca: 'difTraseiroMarca', quantidade: 'difTraseiroQuantidade' },
   caixaTransferencia: { marca: 'caixaTransferenciaMarca', quantidade: 'caixaTransferenciaQuantidade' },
@@ -306,6 +307,9 @@ export function legadoDeOS(os: OrdemServico, v: Veiculo | undefined, c: Cliente 
     if (c2.quantidade) d[c2.quantidade] = s?.quantidade || '';
     if (c2.codigo) d[c2.codigo] = s?.codigo || '';
   }
+  // No sistema atual o código do filtro do câmbio só aparece com "Tem filtro? Sim".
+  const cambioAuto = balcao.find(x => x.key === 'cambioAutomatico');
+  if (cambioAuto) d.cambioAutomaticoTemFiltro = !!cambioAuto.codigo;
 
   const extras = os.servicos.filter(s => s.origem !== 'balcao');
   const execucao: Plataforma['execucao'] = {};

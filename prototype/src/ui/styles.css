@@ -320,6 +320,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .foto.removida img { opacity: .35; }
 .foto .rm { position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,.6); color: #fff; border: 0; border-radius: 50%; width: 26px; height: 26px; cursor: pointer; font-size: 14px; }
 .foto-add { width: 96px; height: 72px; border: 2px dashed var(--line-strong); border-radius: var(--r-sm); display: flex; align-items: center; justify-content: center; flex-direction: column; color: var(--text-3); font-size: 12px; font-weight: 700; cursor: pointer; background: var(--surface); }
+.foto-carregando { display: flex; align-items: center; justify-content: center; width: 100%; aspect-ratio: 4/3; border-radius: var(--r-sm); background: var(--line); color: var(--muted, #667); font-size: 12px; }
 .preview-img { width: 100%; max-height: 300px; object-fit: contain; border-radius: var(--r); background: #111; display: block; }
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
 .gallery figure { margin: 0; }

@@ -38,6 +38,17 @@ describe('ponte com o sistema atual', () => {
     expect(os.naoFazerTesteCambio).toBe(false);
   });
 
+  it('filtro do câmbio automático (opcional) vai e volta no campo do sistema atual', () => {
+    const nomes = new MapaNomes(usuarios);
+    const com = osDeLegado('doc5', { ...legado, cambioAutomatico: true, cambioAutomaticoMarca: 'ATF', cambioAutomaticoTemFiltro: true, cambioAutomaticoFiltroCodigo: 'CAF5678' }, nomes);
+    expect(com.servicos.find(s => s.key === 'cambioAutomatico')?.codigo).toBe('CAF5678');
+    const d = legadoDeOS(com, undefined, undefined, nomes);
+    expect(d.cambioAutomaticoFiltroCodigo).toBe('CAF5678');
+    expect(d.cambioAutomaticoTemFiltro).toBe(true);
+    const sem = legadoDeOS({ ...com, servicos: com.servicos.map(s => s.key === 'cambioAutomatico' ? { ...s, codigo: undefined } : s) }, undefined, undefined, nomes);
+    expect(sem.cambioAutomaticoTemFiltro).toBe(false);
+  });
+
   it('"não fazer teste" só vale quando a OS tem o serviço (fluido de freio / câmbio)', () => {
     const nomes = new MapaNomes(usuarios);
     // Campo ausente no sistema atual = marcado, mas lá o aviso só aparece com o serviço.

@@ -11,7 +11,8 @@ import { Alerta, Badge, Btn, Empty, Field, Placa, Progress, SaveIndicator, Segme
 import { PhotoCapture } from '../ui/PhotoCapture';
 import { EstadoBadge } from './common';
 import { AjudaBotao } from './Ajuda';
-import { PausarBotao } from './Pausa';
+import { PausarBotao, RetomarBotao } from './Pausa';
+import { FotoImg } from '../ui/FotoImg';
 
 type Modo = 'lista' | 'compacto';
 
@@ -76,7 +77,7 @@ export function Checklist({ u, osId, foco }: { u: Usuario; osId: string; foco: s
           <AjudaBotao u={u} os={os} /><PausarBotao u={u} os={os} />
         </div>
       </div>
-      {os.status === 'pausada' && <div style={{ marginBottom: 10 }}><Alerta tipo="warn">OS pausada. Retome na Operação para continuar o checklist.</Alerta></div>}
+      {os.status === 'pausada' && <div className="stack" style={{ marginBottom: 10 }}><Alerta tipo="warn">OS pausada. Retome para continuar o checklist.</Alerta><RetomarBotao u={u} os={os} bloco /></div>}
 
       {semTeste(os).length > 0 && (
         <div style={{ marginBottom: 10 }}><Alerta tipo="crit" icone="!"><b>{semTeste(os).join(' e ').toUpperCase()}: NÃO FAZER TESTE — SÓ EXECUTAR.</b> Registre o aspecto visual, sem teste.</Alerta></div>
@@ -242,7 +243,7 @@ function ItemEditor({ db, c, def, u, editavel, emCorrecao, onSalvo }: { db: DB; 
   const precisaTexto = estado === 'nao_aplicavel' || estado === 'pendente_avaliacao' || estado === 'atencao' || estado === 'prioritario';
   const mudou = estado !== it.estado || (dados.observacao || '') !== (it.observacao || '') || (dados.justificativa || '') !== (it.justificativa || '') || (dados.recomendacao || '') !== (it.recomendacao || '');
 
-  const salvar = async (e = estado, d = dados) => {
+  const salvar = async (e = estado, d = dados, jaAvancou = false) => {
     const errs = validarItem(def, e, d, ativas);
     setErros(errs);
     if (errs.length) { setSave('pendente'); return; }
@@ -250,14 +251,16 @@ function ItemEditor({ db, c, def, u, editavel, emCorrecao, onSalvo }: { db: DB; 
     const r = await acao.executar(() => registrarItemChecklist(u, c.id, def.id, e, d).then(() => true));
     if (!montado.current) return;
     setSave(r ? 'salvo' : 'falha');
-    if (r) onSalvo();
+    if (r && !jaAvancou) onSalvo();
   };
 
   const escolher = (e: EstadoItem) => {
     setEstado(e); setErros([]);
     // Menos toques: OK sem foto exigida salva na hora.
     const simples = e === 'ok' && !def.fotoObrigatoriaEm.includes('ok');
-    if (simples && editavel) void salvar(e, { observacao: dados.observacao });
+    // Já vai para o próximo item na hora do toque; o salvamento segue por trás (a tela não "volta"
+    // quando um salvamento anterior termina). Se falhar, o item continua "A verificar" e aparece o aviso.
+    if (simples && editavel) { void salvar(e, { observacao: dados.observacao }, true); onSalvo(); }
     else setSave('pendente');
   };
 
@@ -295,7 +298,7 @@ function ItemEditor({ db, c, def, u, editavel, emCorrecao, onSalvo }: { db: DB; 
         <div className="fotos">
           {evs.map(e => (
             <div key={e.id} className={`foto ${e.removida ? 'removida' : ''}`}>
-              <img src={e.url} alt={e.legenda || `Foto de ${def.nome}`} />
+              <FotoImg url={e.url} alt={e.legenda || `Foto de ${def.nome}`} />
               {!e.removida && editavel && <button className="rm" aria-label="Remover foto" onClick={() => fotoAcao.executar(() => removerEvidencia(u, e.id, 'Substituída pelo mecânico'), 'Foto removida (fica no histórico).')}>×</button>}
               <div className="cap">{e.removida ? 'Removida' : e.legenda || (e.demo ? 'Demonstrativa' : '')}</div>
             </div>
