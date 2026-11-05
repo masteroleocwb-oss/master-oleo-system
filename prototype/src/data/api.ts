@@ -1260,6 +1260,7 @@ definirProjetor((d, osId) => { const os = d.os.find(o => o.id === osId); return 
 export async function obterRelatorioPublicoReal(token: string): Promise<ResultadoPublico> {
   const { lerRelatorio } = await import('./nuvem');
   const r = await lerRelatorio(token);
+  if (r === 'vencido') return { estado: 'expirado' };
   if (!r || !r.relatorio) return { estado: r?.revogadoEm ? 'revogado' : 'indisponivel' };
   const est = estadoLink({ revogadoEm: r.revogadoEm || undefined, expiraEm: r.expiraEm || undefined });
   if (est === 'expirado') return { estado: 'expirado', placa: (r.relatorio as RelatorioPublico).veiculo?.placa };

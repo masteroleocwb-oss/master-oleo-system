@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { registrarSaida } from '../data/acesso';
 import { MODO_REAL } from '../data/modo';
+import { enderecoDoCliente } from '../domain/contato';
 import * as nuvem from '../data/nuvem';
 import { painelHoje } from '../data/metricas';
 import { atendeOS, pode, ROLE_LABEL, type Capacidade } from '../domain/permissions';
@@ -49,6 +50,15 @@ export function App() {
     const t = setInterval(ver, 60_000);
     return () => clearInterval(t);
   }, []);
+
+  // Endereço dos clientes: só relatório, nunca a tela de login do sistema.
+  if (MODO_REAL && enderecoDoCliente() && partes[0] !== 'r') {
+    return <div className="login-wrap"><div className="login-hero"><img src={LOGO} alt="Master Óleo" />
+      <h1>Relatórios dos clientes</h1>
+      <p className="small muted">Abra o link que a Master Óleo enviou para você.</p>
+      <p><a className="btn" href="https://masteroleo.com.br">Ir para o site da Master Óleo</a></p>
+    </div></div>;
+  }
 
   // Relatório do cliente: público, sem login, sem navegação interna.
   if (partes[0] === 'r') {

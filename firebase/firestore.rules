@@ -13,11 +13,25 @@ service cloud.firestore {
         && meuPerfil().ativo == true;
     }
     function direcao() { return ativo() && meuPerfil().perfil == 'direcao'; }
+    function gestor() { return ativo() && meuPerfil().perfil in ['direcao', 'lider']; }
+    function soMudou(campos) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(campos); }
     function perfilValido(d) { return d.perfil in ['direcao', 'lider', 'vendedor', 'mecanico'] && d.ativo is bool; }
 
     // Dados da oficina: só quem tem perfil ativo.
-    match /orders/{id} { allow read, write: if ativo(); }
-    match /config/{id} { allow read, write: if ativo(); }
+    // Apagar OS: a liderança e a direção; os demais só cancelam OS que ainda está aguardando (✕ do card da fila).
+    match /orders/{id} {
+      allow read, create, update: if ativo();
+      allow delete: if gestor() || (ativo() && resource.data.status == 'aguardando');
+    }
+    // Configuração: contador da OS e relógio são de todos; no documento global, comissão, fator de ajuste e
+    // metas de upsell são só da direção — os demais só mexem no rodízio.
+    match /config/{id} {
+      allow read: if ativo();
+      allow create, update: if (id in ['contadores', 'relogio'] && ativo())
+        || (id == 'global' && (direcao() || (ativo() && soMudou(['rodizio', 'rodizioAtualizadoEm']))))
+        || (!(id in ['contadores', 'relogio', 'global']) && direcao());
+      allow delete: if false;
+    }
 
     // Perfis: cada um lê o próprio; a direção lê e altera todos (menos o próprio perfil/ativo).
     match /usuarios/{uid} {
@@ -60,14 +74,28 @@ service cloud.firestore {
     match /evidencias/{id} { allow read, create, update: if ativo(); }
     // Fotos (comprimidas no aparelho): uma por documento; ninguém altera nem apaga.
     match /fotos/{id} { allow read, create: if ativo(); }
-    match /oportunidades/{id} { allow read, create, update, delete: if ativo(); }
+    match /oportunidades/{id} {
+      allow read, create, update: if ativo();
+      allow delete: if ativo() && resource.data.situacao == 'nova';
+    }
     match /manutencoes/{id} { allow read, create, update: if ativo(); }
     match /compartilhamentos/{id} { allow read, create, update: if ativo(); }
-    match /auditorias/{id} { allow read, create, update: if ativo(); }
-    match /diasExcecao/{id} { allow read, create, update: if ativo(); }
-    match /planosAcao/{id} { allow read, create, update: if ativo(); }
-    match /ocorrencias/{id} { allow read, create, update: if ativo(); }
-    match /metas/{id} { allow read, create, update: if ativo(); }
+    // Gestão: só a liderança e a direção registram. O mecânico só marca a correção como enviada
+    // e só contesta a ocorrência que é sobre ele.
+    match /auditorias/{id} {
+      allow read: if ativo();
+      allow create: if gestor();
+      allow update: if gestor() || (ativo() && soMudou(['resolvidaEm']));
+    }
+    match /ocorrencias/{id} {
+      allow read: if ativo();
+      allow create: if gestor();
+      allow update: if gestor() || (ativo() && resource.data.profissionalId == request.auth.uid
+        && soMudou(['status', 'historico', 'manifestacao']) && request.resource.data.status == 'contestada');
+    }
+    match /diasExcecao/{id} { allow read: if ativo(); allow create, update: if gestor(); }
+    match /planosAcao/{id} { allow read: if ativo(); allow create, update: if gestor(); }
+    match /metas/{id} { allow read: if ativo(); allow create, update: if gestor(); }
     match /fechamentos/{id} { allow read: if ativo(); allow create: if direcao(); }
     // Configuração do checklist, intervalos e políticas: todos leem, só a direção altera.
     match /catalogo/{id} { allow read: if ativo(); allow create, update: if direcao(); }
@@ -78,9 +106,11 @@ service cloud.firestore {
       allow read: if ativo();
       allow create: if ativo() && request.resource.data.por == request.auth.uid;
     }
-    // Relatório do cliente: lido só pelo token exato do link (sem login, sem listar).
+    // Relatório do cliente: lido só pelo token exato do link (sem login, sem listar) e só enquanto vale.
+    // Link vencido não abre nem pela API (a página mostra "Seu link expirou"); o revogado já não tem conteúdo.
     match /relatorios/{token} {
-      allow get: if true;
+      allow get: if resource == null || resource.data.get('relatorio', null) == null
+        || resource.data.get('expiraTs', null) == null || resource.data.expiraTs > request.time;
       allow create, update: if ativo();
     }
 

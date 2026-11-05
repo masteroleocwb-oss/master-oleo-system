@@ -1,12 +1,20 @@
 rules_version = '2';
 // Master Óleo — fotos: só quem tem perfil ativo envia ou lê pelo sistema.
 // (Os links de foto já salvos nas OS continuam abrindo normalmente.)
+// Só entram imagens de até 25 MB, cada arquivo uma vez: ninguém substitui nem apaga foto já enviada.
 service firebase.storage {
   match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read, write: if request.auth != null
+    function ativo() {
+      return request.auth != null
         && firestore.exists(/databases/(default)/documents/usuarios/$(request.auth.uid))
         && firestore.get(/databases/(default)/documents/usuarios/$(request.auth.uid)).data.ativo == true;
+    }
+    match /{allPaths=**} {
+      allow read: if ativo();
+      allow create: if resource == null && ativo()
+        && request.resource.size < 25 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*') || request.resource.contentType == 'application/octet-stream');
+      allow update, delete: if false;
     }
   }
 }

@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { MODO_REAL } from '../data/modo';
+import { urlRelatorio } from '../domain/contato';
 import { ir, useRota } from '../app/nav';
 import { cancelarOS, decidirExcecao, DIAS_LINK_AUTOMATICO, encerrarOSEsquecida, definirPedidoOlist, definirVisibilidadeFoto, estadoLink, gerarLink, marcarNaoOferecer, nomeDe, projetarRelatorio, registrarCompartilhamento, revogarLink, valoresOS } from '../data/api';
 import { ESTADOS, GRUPOS, MOTIVO_PAUSA, SERVICOS, semTeste, TIPOS_CAMBIO_AUTO } from '../domain/catalogo';
@@ -267,7 +269,7 @@ function RelatorioInterno({ u, os }: { u: Usuario; os: OrdemServico }) {
   const ativo = links.find(s => estadoLink(s) === 'ativo');
   const rel = os.status === 'concluido' ? projetarRelatorio(db, os) : null;
   const estado = os.status !== 'concluido' ? 'Em preparação' : rel?.atualizadoEm ? 'Atualizado após a conclusão' : ativo ? 'Compartilhado' : 'Pronto para enviar';
-  const url = (t: string) => `${location.origin}${location.pathname}#/r/${t}`;
+  const url = (t: string) => urlRelatorio(t, MODO_REAL);
   const cli = db.clientes.find(c => c.id === os.clienteId);
 
   const copiar = async (t: string, id: string) => {

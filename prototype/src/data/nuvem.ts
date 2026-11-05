@@ -9,8 +9,8 @@ import {
   signInWithEmailAndPassword, signOut, updatePassword, type Auth, type User,
 } from 'firebase/auth';
 import {
-  addDoc, collection, connectFirestoreEmulator, deleteField, disableNetwork, doc, enableNetwork, FieldPath, getDoc, getDocs, getDocsFromCache, initializeFirestore, limit, onSnapshot, orderBy,
-  persistentLocalCache, persistentSingleTabManager, query, runTransaction, serverTimestamp, setDoc, where, type DocumentData, type Firestore, type Unsubscribe,
+  addDoc, clearIndexedDbPersistence, collection, connectFirestoreEmulator, deleteField, disableNetwork, doc, enableNetwork, FieldPath, getDoc, getDocs, getDocsFromCache, initializeFirestore, limit, onSnapshot, orderBy,
+  persistentLocalCache, persistentSingleTabManager, query, runTransaction, serverTimestamp, setDoc, terminate, Timestamp, where, type DocumentData, type Firestore, type Unsubscribe,
 } from 'firebase/firestore';
 import { CATALOGO_INICIAL, REGRAS_INICIAIS } from '../domain/catalogo';
 import { podeAtenderCarros } from '../domain/permissions';
@@ -385,6 +385,10 @@ export async function sair(resultado = 'saiu') {
   if (auth.currentUser) await registrarAcesso(resultado);
   localStorage.removeItem(CHAVE_SESSAO);
   await signOut(auth);
+  // Aparelho compartilhado: apaga a cópia das OS guardada no aparelho e recomeça limpo na tela de login.
+  try { await terminate(fs); await clearIndexedDbPersistence(fs); } catch { /* segue: a cópia é sobrescrita no próximo login */ }
+  location.replace(`${location.pathname}#/login`);
+  location.reload();
 }
 
 export const sessaoVencida = () => {
@@ -673,7 +677,9 @@ async function gravar(antes: DB, depois: DB) {
       for (const m of muds.filter(x => x.chave === 'compartilhamentos' && x.depois)) {
         const sh = m.depois as DB['compartilhamentos'][number];
         const rel = projetar && !sh.revogadoEm ? await embutirFotos(projetar(depois, sh.osId)) : null;
-        tx.set(doc(fs, 'relatorios', sh.token), limpo({ osId: sh.osId, expiraEm: sh.expiraEm ?? null, revogadoEm: sh.revogadoEm ?? null, relatorio: rel }));
+        tx.set(doc(fs, 'relatorios', sh.token), { ...limpo({ osId: sh.osId, expiraEm: sh.expiraEm ?? null, revogadoEm: sh.revogadoEm ?? null, relatorio: rel }) as Obj,
+          // As regras do banco usam esta data para não abrir link vencido.
+          expiraTs: sh.expiraEm ? Timestamp.fromDate(new Date(sh.expiraEm)) : null });
       }
 
       for (const u of mudUsuarios) {
@@ -714,12 +720,15 @@ async function gravar(antes: DB, depois: DB) {
 
 // ───────────────────────── Relatório público ─────────────────────────
 
-export async function lerRelatorio(token: string): Promise<{ osId: string; expiraEm: string | null; revogadoEm: string | null; relatorio: unknown } | null> {
+export async function lerRelatorio(token: string): Promise<{ osId: string; expiraEm: string | null; revogadoEm: string | null; relatorio: unknown } | 'vencido' | null> {
   iniciar();
   if (!/^[\w-]{16,64}$/.test(token)) return null;
   const { getDoc } = await import('firebase/firestore');
   try {
     const s = await getDoc(doc(fs, 'relatorios', token));
     return s.exists() ? (s.data() as never) : null;
-  } catch { return null; }
+  } catch (e) {
+    // O banco recusa link vencido.
+    return (e as { code?: string })?.code === 'permission-denied' ? 'vencido' : null;
+  }
 }
