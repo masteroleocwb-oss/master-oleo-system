@@ -74,6 +74,9 @@ export function NovaOS({ u }: { u: Usuario }) {
   const retorno = !!f.retorno && !!veiculo;
   const kmMesTexto = f.kmMes ?? (veiculo?.kmPorMes ? String(veiculo.kmPorMes) : '');
   const kmPorMes = Number(kmMesTexto.replace(/\D/g, '')) || undefined;
+  // "Não fazer teste" só existe junto com o serviço de fluido de freio / câmbio (como no sistema atual).
+  const temFreio = 'fluidoFreio' in f.servicos;
+  const temCambio = (['cambioManual', 'cambioAutomatico'] as ServicoKey[]).some(k => k in f.servicos && servicoAplicavel(k, cambioAtual));
 
   const entrada: NovaOSInput = {
     veiculoId: f.veiculoId,
@@ -88,8 +91,8 @@ export function NovaOS({ u }: { u: Usuario }) {
     servicos: Object.entries(f.servicos).filter(([key]) => servicoAplicavel(key as ServicoKey, cambioAtual))
       .map(([key, d]) => ({ key: key as ServicoKey, ...d, origem: 'balcao', executado: false }) as ServicoOS),
     valorInicial: retorno ? 0 : Number(String(f.valor).replace(/\./g, '').replace(',', '.')) || 0,
-    naoFazerTesteFreio: f.naoTesteFreio || undefined,
-    naoFazerTesteCambio: f.naoTesteCambio || undefined,
+    naoFazerTesteFreio: (f.naoTesteFreio && temFreio) || undefined,
+    naoFazerTesteCambio: (f.naoTesteCambio && temCambio) || undefined,
   };
   const erros = [
     ...validarNovaOS(entrada, cliente),
@@ -308,9 +311,9 @@ export function NovaOS({ u }: { u: Usuario }) {
             </div>
           </div>
         ))}
-        <div className="divider" />
-        <label className="check"><input type="checkbox" checked={f.naoTesteFreio} onChange={e => set({ naoTesteFreio: e.target.checked })} /><span><b>Freio: NÃO FAZER TESTE — SÓ EXECUTAR</b><br /><span className="small muted">Aparece em destaque para o mecânico.</span></span></label>
-        <label className="check"><input type="checkbox" checked={f.naoTesteCambio} onChange={e => set({ naoTesteCambio: e.target.checked })} /><span><b>Câmbio: NÃO FAZER TESTE — SÓ EXECUTAR</b></span></label>
+        {(temFreio || temCambio) && <div className="divider" />}
+        {temFreio && <label className="check"><input type="checkbox" checked={f.naoTesteFreio} onChange={e => set({ naoTesteFreio: e.target.checked })} /><span><b>Fluido de freio: NÃO FAZER TESTE — SÓ EXECUTAR</b><br /><span className="small muted">Aparece em destaque para o mecânico.</span></span></label>}
+        {temCambio && <label className="check"><input type="checkbox" checked={f.naoTesteCambio} onChange={e => set({ naoTesteCambio: e.target.checked })} /><span><b>Câmbio: NÃO FAZER TESTE — SÓ EXECUTAR</b><br /><span className="small muted">Aparece em destaque para o mecânico.</span></span></label>}
       </Card>
 
       </>}

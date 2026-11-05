@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ir } from '../app/nav';
 import { adicionarEvidencia, concluirChecklist, enviarCorrecao, recomendacoesAbertas, registrarItemChecklist, removerEvidencia, solicitarExcecao } from '../data/api';
-import { ESTADOS, ESTADOS_ORDEM, GRUPOS } from '../domain/catalogo';
+import { ESTADOS, ESTADOS_ORDEM, GRUPOS, semTeste } from '../domain/catalogo';
 import { fotosAtivasDoItem, pendenciasParaConcluir, progresso, validarItem, type DadosItem } from '../domain/checklist';
 import type { Checklist as TChecklist, DB, EstadoItem, ItemInspecaoDef, Usuario } from '../domain/types';
 import { fmtData, fmtDataHora, fmtKm, primeiroNome } from '../domain/util';
@@ -67,8 +67,8 @@ export function Checklist({ u, osId, foco }: { u: Usuario; osId: string; foco: s
       </div>
       {os.status === 'pausada' && <div style={{ marginBottom: 10 }}><Alerta tipo="warn">OS pausada. Retome na Operação para continuar o checklist.</Alerta></div>}
 
-      {(os.naoFazerTesteFreio || os.naoFazerTesteCambio) && (
-        <div style={{ marginBottom: 10 }}><Alerta tipo="crit" icone="!"><b>{[os.naoFazerTesteFreio && 'FREIO', os.naoFazerTesteCambio && 'CÂMBIO'].filter(Boolean).join(' E ')}: NÃO FAZER TESTE — SÓ EXECUTAR.</b> Registre o aspecto visual, sem teste.</Alerta></div>
+      {semTeste(os).length > 0 && (
+        <div style={{ marginBottom: 10 }}><Alerta tipo="crit" icone="!"><b>{semTeste(os).join(' e ').toUpperCase()}: NÃO FAZER TESTE — SÓ EXECUTAR.</b> Registre o aspecto visual, sem teste.</Alerta></div>
       )}
       {os.retornoDeOsId && <div style={{ marginBottom: 10 }}><Alerta tipo="warn">Retorno de serviço. {os.obsInterna}</Alerta></div>}
       {os.naoOferecer && <div style={{ marginBottom: 10 }}><Alerta tipo="info">Frota com instrução de <b>não oferecer</b> serviços (alinhado com {os.naoOferecer.alinhadoCom}). Faça o checklist normalmente: as recomendações ficam registradas, sem oferta.</Alerta></div>}

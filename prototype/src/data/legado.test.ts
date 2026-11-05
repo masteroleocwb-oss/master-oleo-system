@@ -38,6 +38,17 @@ describe('ponte com o sistema atual', () => {
     expect(os.naoFazerTesteCambio).toBe(false);
   });
 
+  it('"não fazer teste" só vale quando a OS tem o serviço (fluido de freio / câmbio)', () => {
+    const nomes = new MapaNomes(usuarios);
+    // Campo ausente no sistema atual = marcado, mas lá o aviso só aparece com o serviço.
+    const sem = osDeLegado('doc3', { ...legado, execFreioSemQuestionar: undefined, execCambioSemQuestionar: undefined }, nomes);
+    expect(sem.naoFazerTesteFreio).toBe(false);
+    expect(sem.naoFazerTesteCambio).toBe(false);
+    const com = osDeLegado('doc4', { ...legado, fluidoFreio: true, cambioAutomatico: true, execFreioSemQuestionar: undefined, execCambioSemQuestionar: undefined }, nomes);
+    expect(com.naoFazerTesteFreio).toBe(true);
+    expect(com.naoFazerTesteCambio).toBe(true);
+  });
+
   it('nome do sistema atual sem conta vira pessoa inativa (não entra no rodízio)', () => {
     const nomes = new MapaNomes(usuarios);
     const os = osDeLegado('doc2', { ...legado, lubrificador: 'Joilson da Silva' }, nomes);

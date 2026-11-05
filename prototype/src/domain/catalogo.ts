@@ -1,6 +1,6 @@
 // Catálogos: os 16 serviços do sistema atual (chaves preservadas) e o catálogo
 // inicial de itens de inspeção (Playbook — checklist fase 1 + itens pedidos pela direção).
-import type { EstadoItem, EstadoRecomendado, ItemInspecaoDef, RegraIntervalo, ServicoKey, SituacaoOportunidade } from './types';
+import type { EstadoItem, EstadoRecomendado, ItemInspecaoDef, OrdemServico, RegraIntervalo, ServicoKey, SituacaoOportunidade } from './types';
 
 export const SERVICOS: Record<ServicoKey, { nome: string; campos: ('marca' | 'quantidade' | 'codigo')[] }> = {
   oleoMotor: { nome: 'Óleo de motor', campos: ['marca', 'quantidade'] },
@@ -136,6 +136,15 @@ export const COMO_CONHECEU = ['Indicação de amigo ou parente', 'Google', 'Inst
 export const CIDADES_SUGERIDAS = ['Curitiba', 'São José dos Pinhais', 'Pinhais', 'Colombo', 'Araucária', 'Campo Largo', 'Fazenda Rio Grande', 'Almirante Tamandaré', 'Piraquara', 'Campina Grande do Sul', 'Quatro Barras'];
 
 /** Serviços que fazem sentido para o câmbio do veículo (manual não vê fluido de automático e vice-versa). */
+/** "NÃO FAZER TESTE — SÓ EXECUTAR" só vale quando a OS tem o serviço (fluido de freio / câmbio), como no sistema atual. */
+export function semTeste(os: Pick<OrdemServico, 'servicos' | 'naoFazerTesteFreio' | 'naoFazerTesteCambio'>): ('Freio' | 'Câmbio')[] {
+  const tem = (...ks: ServicoKey[]) => os.servicos.some(s => ks.includes(s.key));
+  const r: ('Freio' | 'Câmbio')[] = [];
+  if (os.naoFazerTesteFreio && tem('fluidoFreio')) r.push('Freio');
+  if (os.naoFazerTesteCambio && tem('cambioManual', 'cambioAutomatico')) r.push('Câmbio');
+  return r;
+}
+
 export const servicoAplicavel = (k: ServicoKey, cambio?: 'manual' | 'automatico') =>
   !cambio || !((k === 'cambioManual' && cambio === 'automatico') || ((k === 'cambioAutomatico' || k === 'flush') && cambio === 'manual'));
 

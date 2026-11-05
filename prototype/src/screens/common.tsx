@@ -1,4 +1,4 @@
-import { ESTADOS, MOTIVO_PAUSA, SERVICOS } from '../domain/catalogo';
+import { ESTADOS, MOTIVO_PAUSA, SERVICOS, semTeste } from '../domain/catalogo';
 import { progresso, STATUS_CHECKLIST_LABEL } from '../domain/checklist';
 import type { Checklist, DB, EstadoItem, OrdemServico, StatusOS } from '../domain/types';
 import { diffMin, fmtHora, fmtMin, agoraISO, primeiroNome } from '../domain/util';
@@ -64,7 +64,7 @@ export function OSCard({ db, os, mostrarMecanico = true, previsto, euId }: {
       <div className="row" style={{ marginTop: 8 }}>
         {os.retornoDeOsId && <Badge tom="critico" icone="↺">Retorno</Badge>}
         {os.naoOferecer && <Badge tom="muted">Frota · não oferecer</Badge>}
-        {(os.naoFazerTesteFreio || os.naoFazerTesteCambio) && <Badge tom="atencao">Não fazer teste{os.naoFazerTesteFreio && os.naoFazerTesteCambio ? '' : os.naoFazerTesteFreio ? ' (freio)' : ' (câmbio)'}</Badge>}
+        {semTeste(os).length > 0 && <Badge tom="atencao">Não fazer teste{semTeste(os).length > 1 ? '' : ` (${semTeste(os)[0].toLowerCase()})`}</Badge>}
         {os.status !== 'aguardando' && !os.retornoDeOsId && <ChecklistBadge c={c} />}
         {mostrarMecanico && mec && os.status === 'concluido' && <span className="small muted">{primeiroNome(mec.nome)}</span>}
         {espera != null && <span className="small muted">Aberta às {fmtHora(os.abertaEm)} · espera {fmtMin(espera)}</span>}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ir, useRota } from '../app/nav';
 import { cancelarOS, decidirExcecao, encerrarOSEsquecida, definirPedidoOlist, definirVisibilidadeFoto, estadoLink, gerarLink, marcarNaoOferecer, nomeDe, projetarRelatorio, registrarCompartilhamento, revogarLink, valoresOS } from '../data/api';
-import { ESTADOS, GRUPOS, MOTIVO_PAUSA, SERVICOS } from '../domain/catalogo';
+import { ESTADOS, GRUPOS, MOTIVO_PAUSA, SERVICOS, semTeste } from '../domain/catalogo';
 import { fotosAtivasDoItem, progresso } from '../domain/checklist';
 import { pode } from '../domain/permissions';
 import type { Compartilhamento, OrdemServico, Usuario } from '../domain/types';
@@ -120,7 +120,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
                 <dt className="muted">KM</dt><dd style={{ margin: 0 }}>{fmtKm(os.km)}</dd>
                 <dt className="muted">Checklist</dt><dd style={{ margin: 0 }}><ChecklistBadge c={c} />{pr && ` ${pr.verificados}/${pr.total}`}</dd>
               </dl>
-              {(os.naoFazerTesteFreio || os.naoFazerTesteCambio) && <div style={{ marginTop: 10 }}><Alerta tipo="crit">{[os.naoFazerTesteFreio && 'Freio', os.naoFazerTesteCambio && 'Câmbio'].filter(Boolean).join(' e ')}: NÃO FAZER TESTE — SÓ EXECUTAR</Alerta></div>}
+              {semTeste(os).length > 0 && <div style={{ marginTop: 10 }}><Alerta tipo="crit">{semTeste(os).join(' e ')}: NÃO FAZER TESTE — SÓ EXECUTAR</Alerta></div>}
               {os.naoOferecer && <div style={{ marginTop: 10 }}><Alerta tipo="info">Não oferecer serviços (frota). Alinhado com {os.naoOferecer.alinhadoCom}; marcado por {nomeDe(db, os.naoOferecer.marcadoPor)}.</Alerta></div>}
               {os.foraDaOrdem && <div style={{ marginTop: 10 }}><Alerta tipo="info">Assumida fora da ordem prevista{os.foraDaOrdem.previsto ? ` (previsto: ${nomeDe(db, os.foraDaOrdem.previsto)})` : ''}. Motivo: {os.foraDaOrdem.motivo}</Alerta></div>}
               {(os.pausas || []).length > 0 && (

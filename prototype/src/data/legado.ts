@@ -233,8 +233,8 @@ export function osDeLegado(id: string, o: DocLegado, nomes: MapaNomes): OrdemSer
     servicos,
     valorInicial: valor(o.valorInicial),
     criadaPor: p.criadaPor || 'sistema',
-    naoFazerTesteFreio: o.execFreioSemQuestionar !== false,
-    naoFazerTesteCambio: o.execCambioSemQuestionar !== false,
+    naoFazerTesteFreio: !!o.fluidoFreio && o.execFreioSemQuestionar !== false,
+    naoFazerTesteCambio: !!(o.cambioManual || o.cambioAutomatico) && o.execCambioSemQuestionar !== false,
   };
   const opc: Partial<OrdemServico> = {
     pedidoOlist: txt(o.pedidoOlist) || undefined,
