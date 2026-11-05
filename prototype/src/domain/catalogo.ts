@@ -58,7 +58,7 @@ export const CATALOGO_INICIAL: ItemInspecaoDef[] = [
 
   item({ id: 'fluido_cambio', grupo: 'Câmbio', nome: 'Fluido do câmbio (nível e aspecto)', tipo: 'visual', fonte: 'playbook_fase1', servicoRelacionado: 'cambioAutomatico', regraIntervaloId: 'r_cambio_auto',
     aplicavelA: { cambio: 'automatico' }, instrucao: 'Confira nível e cor do fluido conforme o procedimento do modelo.', fotoObrigatoriaEm: ['atencao', 'prioritario'] }),
-  item({ id: 'oleo_cambio_manual', grupo: 'Câmbio', nome: 'Óleo do câmbio manual', tipo: 'visual', fonte: 'playbook_fase1', servicoRelacionado: 'cambioManual',
+  item({ id: 'oleo_cambio_manual', grupo: 'Câmbio', nome: 'Óleo do câmbio manual', tipo: 'visual', fonte: 'playbook_fase1', servicoRelacionado: 'cambioManual', regraIntervaloId: 'r_cambio_manual',
     aplicavelA: { cambio: 'manual' }, instrucao: 'Verifique vazamentos e, se acessível, o nível pelo bujão.', fotoObrigatoriaEm: ['prioritario'] }),
   item({ id: 'trocador_calor', grupo: 'Câmbio', nome: 'Trocador de calor do câmbio', tipo: 'visual', fonte: 'pedido_direcao',
     aplicavelA: { cambio: 'automatico' }, instrucao: 'Quando o câmbio tiver trocador: verifique vazamento e mistura óleo/água no trocador e nas mangueiras.', fotoObrigatoriaEm: ['atencao', 'prioritario'] }),
@@ -91,6 +91,8 @@ export const REGRAS_INICIAIS: RegraIntervalo[] = [
     fonte: 'Regra interna FICTÍCIA de demonstração', ativo: true },
   { id: 'r_cambio_auto', nome: 'Fluido do câmbio automático', servicoKey: 'cambioAutomatico', origem: 'nao_confirmada', validada: false,
     fonte: 'Sem intervalo validado — varia por modelo; exige consulta ao manual do veículo', ativo: true, aplicavelA: { cambio: 'automatico' } },
+  { id: 'r_cambio_manual', nome: 'Óleo do câmbio manual', servicoKey: 'cambioManual', origem: 'nao_confirmada', validada: false,
+    fonte: 'Sem intervalo validado', ativo: true, aplicavelA: { cambio: 'manual' } },
 ];
 
 export const ORIGEM_LABEL: Record<RegraIntervalo['origem'], { rotulo: string; cliente: string }> = {

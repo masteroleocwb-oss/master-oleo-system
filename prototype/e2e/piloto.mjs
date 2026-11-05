@@ -220,6 +220,7 @@ try {
   await gravarDoc(`relatorios/${sh.token}`, { ...relAtual, expiraEm: new Date(Date.now() - 864e5).toISOString() });
   await cliente.goto('about:blank'); await cliente.goto(NOVO + `#/r/${sh.token}`); await ate(cliente, 'Seu link expirou');
   ok((await txt(cliente)).includes('troca de óleo está pendente') && !(await txt(cliente)).includes('Itens inspecionados'), 'Link vencido chama para a troca e não mostra o relatório');
+  ok(await cliente.evaluate(() => [...document.querySelectorAll('a')].some(x => x.href.startsWith('https://wa.me/5541999706481?text='))), 'Botão do WhatsApp da Master Óleo com a mensagem pronta');
   ok(true, 'Número da OS na URL não abre nada');
 
   console.log('7. Segurança');
