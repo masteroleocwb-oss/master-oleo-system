@@ -653,6 +653,22 @@ export async function cancelarOS(u: Usuario, osId: string, motivo: string) {
   });
 }
 
+/** OS esquecida aberta (dia anterior): sai das filas e dos totais sem contar como serviço, igual às encerradas em massa. */
+export async function encerrarOSEsquecida(u: Usuario, osId: string, motivo: string) {
+  exigir(u, 'os.cancelar');
+  if (!motivo.trim()) throw new ErroValidacao('Informe o motivo.');
+  return transacao(d => {
+    const os = osPorId(d, osId);
+    if (os.status !== 'aguardando' && os.status !== 'andamento' && os.status !== 'pausada') throw new ErroValidacao('Só OS aberta pode ser encerrada.');
+    if (diaKey(os.abertaEm) === hojeKey()) throw new ErroValidacao('OS aberta hoje: conclua ou cancele.');
+    const antes = os.status;
+    os.status = 'encerrada';
+    os.concluidaEm = os.abertaEm;
+    os.canceladaMotivo = motivo.trim();
+    evento(d, u.id, 'os.encerrada', 'os', os.id, `OS #${os.numero} encerrada sem execução: ${motivo.trim()}`, { antes, depois: 'encerrada', motivo });
+  });
+}
+
 export const valoresOS = (os: OrdemServico) => {
   // Upsell = o que foi vendido além do balcão: recomendações do checklist e adicionais da bancada.
   const upsell = os.servicos.filter(s => s.origem !== 'balcao' && s.executado).reduce((a, s) => a + (s.valor || 0), 0);

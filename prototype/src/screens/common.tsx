@@ -41,14 +41,14 @@ export function OSCard({ db, os, mostrarMecanico = true, previsto, euId }: {
   const pausa = os.status === 'pausada' ? os.pausas?.at(-1) : undefined;
   const prevMec = previsto?.mecanicoId ? db.usuarios.find(x => x.id === previsto.mecanicoId) : undefined;
   return (
-    <a className={`os-card ${os.retornoDeOsId ? 'retorno' : ''} ${previsto && previsto.mecanicoId && previsto.mecanicoId === euId ? 'minha-vez' : ''}`} href={`#/os/${os.id}`} data-os={os.numero}>
+    <a className={`os-card st-${os.status} ${os.retornoDeOsId ? 'retorno' : ''} ${previsto && previsto.mecanicoId && previsto.mecanicoId === euId ? 'minha-vez' : ''}`} href={`#/os/${os.id}`} data-os={os.numero}>
       <div className="row between nowrap">
         <div className="row">
           {previsto && <span className="fila-pos" title="Posição na fila">{previsto.posicao}º</span>}
           <Placa placa={v.placa} />
           <span className="strong">{v.marca} {v.modelo}</span>
         </div>
-        <span className="small muted mono">#{os.numero}</span>
+        <span className="row nowrap" style={{ gap: 6 }}><span className={`st-pill st-${os.status}`}>{STATUS_OS[os.status].r}</span><span className="small muted mono">#{os.numero}</span></span>
       </div>
       {mostrarMecanico && mec && (os.status === 'andamento' || os.status === 'pausada') && (
         <div className="com-mecanico">Com: <b>{mec.nome}</b></div>

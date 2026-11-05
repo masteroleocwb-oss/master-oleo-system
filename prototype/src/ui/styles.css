@@ -374,6 +374,19 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .os-card.minha-vez { border: 2px solid var(--blue); }
 .os-card.minha-vez .com-mecanico.previsto { background: var(--blue); color: #fff; }
 .os-card.pausada { opacity: .92; }
+/* Situação da OS: cor na lateral, fundo leve e etiqueta (a cor nunca é a única pista). */
+.os-card.st-aguardando { border-left: 5px solid #d48806; background: #fffbf2; }
+.os-card.st-andamento { border-left: 5px solid var(--info); background: #f6f9fe; }
+.os-card.st-pausada { border-left: 5px solid var(--muted); background: var(--surface-2); }
+.os-card.st-concluido { border-left: 5px solid var(--ok); background: #f5fbf7; }
+.os-card.st-cancelada, .os-card.st-encerrada { border-left: 5px solid var(--line-strong); background: var(--muted-50); opacity: .85; }
+.os-card.retorno { border-left-color: var(--red); }
+.st-pill { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.st-pill.st-aguardando { background: var(--warn-50); color: var(--warn); }
+.st-pill.st-andamento { background: var(--info-50); color: var(--info); }
+.st-pill.st-pausada { background: var(--muted-50); color: var(--muted); }
+.st-pill.st-concluido { background: var(--ok-50); color: var(--ok); }
+.st-pill.st-cancelada, .st-pill.st-encerrada { background: var(--muted-50); color: var(--muted); }
 .ba-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 640px) { .ba-grid { grid-template-columns: 1fr; } }
 .chip { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; color: var(--text-2); cursor: pointer; min-height: 36px; text-align: left; }

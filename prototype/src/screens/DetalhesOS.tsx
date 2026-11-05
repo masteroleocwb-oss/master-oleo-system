@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { ir, useRota } from '../app/nav';
-import { cancelarOS, decidirExcecao, definirPedidoOlist, definirVisibilidadeFoto, estadoLink, gerarLink, marcarNaoOferecer, nomeDe, projetarRelatorio, registrarCompartilhamento, revogarLink, valoresOS } from '../data/api';
+import { cancelarOS, decidirExcecao, encerrarOSEsquecida, definirPedidoOlist, definirVisibilidadeFoto, estadoLink, gerarLink, marcarNaoOferecer, nomeDe, projetarRelatorio, registrarCompartilhamento, revogarLink, valoresOS } from '../data/api';
 import { ESTADOS, GRUPOS, MOTIVO_PAUSA, SERVICOS } from '../domain/catalogo';
 import { fotosAtivasDoItem, progresso } from '../domain/checklist';
 import { pode } from '../domain/permissions';
 import type { Compartilhamento, OrdemServico, Usuario } from '../domain/types';
-import { fmtBRL, fmtData, fmtDataHora, fmtKm, fmtMin, diffMin, primeiroNome } from '../domain/util';
+import { fmtBRL, fmtData, fmtDataHora, fmtKm, fmtMin, diffMin, diaKey, hojeKey, primeiroNome } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Empty, Field, Placa, Sheet, Tabs, useAcao, useDB, useToast } from '../ui/components';
 import { ChecklistBadge, EstadoBadge, STATUS_OS } from './common';
 import { AuditoriaSheet } from './Lideranca';
@@ -19,7 +19,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
   const { query } = useRota();
   const os = db.os.find(o => o.id === osId);
   const [aba, setAba] = useState<Aba>('resumo');
-  const [cancelar, setCancelar] = useState(false);
+  const [cancelar, setCancelar] = useState<false | 'cancelar' | 'encerrar'>(false);
   const [naoOf, setNaoOf] = useState(false);
   const [auditar, setAuditar] = useState(false);
   const fotoAcao = useAcao();
@@ -56,12 +56,14 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
           <PausarBotao u={u} os={os} />
           {pode(u, 'checklist.auditar') && c && (c.status === 'concluido' || c.status === 'excecao_autorizada') && os.mecanicoId !== u.id && <Btn variante="sec" onClick={() => setAuditar(true)}>Auditar checklist</Btn>}
           {pode(u, 'excecao.declarar') && !os.naoOferecer && os.status !== 'concluido' && cli?.tipo === 'frota' && <Btn variante="sec" onClick={() => setNaoOf(true)}>Marcar “não oferecer”</Btn>}
-          {pode(u, 'os.cancelar') && (os.status === 'aguardando' || os.status === 'andamento' || os.status === 'pausada') && <Btn variante="danger" onClick={() => setCancelar(true)}>Cancelar OS</Btn>}
+          {pode(u, 'os.cancelar') && (os.status === 'aguardando' || os.status === 'andamento' || os.status === 'pausada') && <Btn variante="danger" onClick={() => setCancelar('cancelar')}>Cancelar OS</Btn>}
+          {pode(u, 'os.cancelar') && (os.status === 'aguardando' || os.status === 'andamento' || os.status === 'pausada') && diaKey(os.abertaEm) !== hojeKey() && <Btn variante="sec" onClick={() => setCancelar('encerrar')}>Encerrar OS esquecida</Btn>}
         </div>
       </div>
 
       {c?.solicitacaoExcecao?.status === 'pendente' && pode(u, 'checklist.autorizar_excecao') && <ExcecaoDecisao u={u} checklistId={c.id} motivo={c.solicitacaoExcecao.motivo} quem={nomeDe(db, c.solicitacaoExcecao.solicitadoPor)} pendentes={pr!.pendentes} />}
       {os.status === 'cancelada' && <div style={{ marginBottom: 12 }}><Alerta tipo="warn">OS cancelada: {os.canceladaMotivo}. Ela continua no histórico.</Alerta></div>}
+      {os.status === 'encerrada' && os.canceladaMotivo && <div style={{ marginBottom: 12 }}><Alerta tipo="info">OS encerrada sem execução: {os.canceladaMotivo}. Não conta em faturamento nem comissão.</Alerta></div>}
 
       <Tabs valor={aba} onChange={setAba} abas={[
         { v: 'resumo', r: 'Resumo' }, { v: 'checklist', r: 'Checklist' }, { v: 'fotos', r: `Fotos (${fotos.filter(f => !f.removida).length})` },
@@ -196,7 +198,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
         </Card>
       )}
 
-      {cancelar && <CancelarSheet u={u} os={os} onClose={() => setCancelar(false)} />}
+      {cancelar && <CancelarSheet u={u} os={os} modo={cancelar} onClose={() => setCancelar(false)} />}
       {naoOf && <NaoOferecerSheet u={u} os={os} onClose={() => setNaoOf(false)} />}
       {auditar && c && <AuditoriaSheet u={u} checklistId={c.id} onClose={() => setAuditar(false)} />}
     </div>
@@ -220,12 +222,19 @@ function ExcecaoDecisao({ u, checklistId, motivo, quem, pendentes }: { u: Usuari
   );
 }
 
-function CancelarSheet({ u, os, onClose }: { u: Usuario; os: OrdemServico; onClose: () => void }) {
-  const [motivo, setMotivo] = useState('');
+function CancelarSheet({ u, os, modo, onClose }: { u: Usuario; os: OrdemServico; modo: 'cancelar' | 'encerrar'; onClose: () => void }) {
+  const enc = modo === 'encerrar';
+  const [motivo, setMotivo] = useState(enc ? 'Esquecida aberta no sistema' : '');
   const acao = useAcao();
+  const confirmar = async () => {
+    const r = await acao.executar(() => enc ? encerrarOSEsquecida(u, os.id, motivo) : cancelarOS(u, os.id, motivo), enc ? `OS #${os.numero} encerrada.` : 'OS cancelada.');
+    if (r !== undefined) onClose();
+  };
   return (
-    <Sheet titulo={`Cancelar OS #${os.numero}`} sub="A OS não é apagada: fica no histórico como cancelada, com o motivo." onClose={onClose}
-      rodape={<><Btn variante="sec" onClick={onClose}>Voltar</Btn><Btn variante="danger" carregando={acao.ocupado} onClick={async () => { if ((await acao.executar(() => cancelarOS(u, os.id, motivo), 'OS cancelada.')) !== undefined) onClose(); }}>Confirmar cancelamento</Btn></>}>
+    <Sheet titulo={enc ? `Encerrar OS #${os.numero}` : `Cancelar OS #${os.numero}`}
+      sub={enc ? 'Para OS que ficou aberta por esquecimento: sai das filas e não conta em faturamento nem comissão. Fica no histórico como encerrada.' : 'A OS não é apagada: fica no histórico como cancelada, com o motivo.'}
+      onClose={onClose}
+      rodape={<><Btn variante="sec" onClick={onClose}>Voltar</Btn><Btn variante="danger" carregando={acao.ocupado} onClick={confirmar}>{enc ? 'Confirmar encerramento' : 'Confirmar cancelamento'}</Btn></>}>
       <Field rotulo="Motivo" obrigatorio htmlFor="motivo-canc" erro={acao.erro}><textarea id="motivo-canc" className="input" value={motivo} onChange={e => setMotivo(e.target.value)} /></Field>
     </Sheet>
   );
