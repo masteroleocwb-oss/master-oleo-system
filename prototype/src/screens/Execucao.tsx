@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ir } from '../app/nav';
-import { finalizarOS, pendenciasFinalizacao, type AdicionalInput, type FinalizarInput, type ProximaInput } from '../data/api';
+import { finalizarOS, kmAnteriorMaior, pendenciasFinalizacao, type AdicionalInput, type FinalizarInput, type FotoKm, type ProximaInput } from '../data/api';
 import { ADICIONAIS, ESTADOS, ORIGEM_LABEL, RECOMENDACAO, RESPOSTA_CLIENTE, SERVICO_KEYS, SERVICOS, servicoAplicavel } from '../domain/catalogo';
 import { sugerirProxima, textoPrevisto } from '../domain/manutencao';
 import type { ServicoKey, Usuario } from '../domain/types';
@@ -8,6 +8,7 @@ import { addMeses, agoraISO, fmtBRL, fmtData, fmtKm } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Empty, Field, Placa, useAcao, useDB } from '../ui/components';
 import { ChecklistBadge } from './common';
 import { AjudaBotao } from './Ajuda';
+import { FotoPainelKm } from './KmPainel';
 import { PausarBotao } from './Pausa';
 
 interface LinhaProx extends ProximaInput { chave: string; incluir: boolean; editavel: boolean; motivo: string }
@@ -17,6 +18,7 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
   const os = db.os.find(o => o.id === osId);
   const acao = useAcao();
   const [km, setKm] = useState('');
+  const [fotoKm, setFotoKm] = useState<FotoKm>();
   const [exec, setExec] = useState<Record<string, { executado: boolean; qtd?: string }>>(() =>
     Object.fromEntries((os?.servicos || []).map((s, i) => [`${s.key}:${i}`, { executado: true, qtd: s.quantidade }])));
   const [obsInterna, setObsInterna] = useState(os?.obsInterna || '');
@@ -71,8 +73,10 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
   const adicionaisLista = ADICIONAIS.filter(a => servicoAplicavel(a.key, v.cambio) && !naOS.has(a.key));
   const outrosPossiveis = SERVICO_KEYS.filter(k => servicoAplicavel(k, v.cambio) && !naOS.has(k) && !adicionaisLista.some(a => a.key === k));
   const aceitos = (Object.entries(ofertas) as [ServicoKey, NonNullable<(typeof ofertas)[ServicoKey]>][]).filter(([, o]) => o.resultado === 'aceito');
+  const kmAnterior = kmAnteriorMaior(db, os, kmNum);
   const entrada: FinalizarInput = {
     km: kmNum,
+    fotoKm: kmAnterior != null ? fotoKm : undefined,
     servicos: os.servicos.map((s, i) => ({ key: s.key, executado: !!exec[`${s.key}:${i}`]?.executado, quantidadeExecutada: exec[`${s.key}:${i}`]?.qtd, intervaloKm: s.key === 'oleoMotor' ? intervaloOleo : undefined })),
     adicionais: aceitos.map(([key, o]): AdicionalInput => ({ key, marca: o.marca, quantidade: o.quantidade, valor: Number(String(o.valor || '').replace(/\./g, '').replace(',', '.')) || undefined })),
     recusados: (Object.entries(ofertas) as [ServicoKey, { resultado: string }][]).filter(([, o]) => o.resultado === 'recusado').map(([k]) => k),
@@ -176,6 +180,7 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
           erro={tentou && pend.find(p => p.toLowerCase().includes('km') || p.toLowerCase().includes('quilometragem')) || null}>
           <input id="km" className="input" inputMode="numeric" value={km} onChange={e => setKm(e.target.value.replace(/\D/g, '').slice(0, 7))} placeholder="Ex.: 53450" style={{ maxWidth: 220 }} />
         </Field>
+        {kmAnterior != null && <FotoPainelKm kmAnterior={kmAnterior} em={v.kmAtualEm} foto={fotoKm} onFoto={setFotoKm} />}
       </Card>
 
       <Card titulo="Próximas manutenções">

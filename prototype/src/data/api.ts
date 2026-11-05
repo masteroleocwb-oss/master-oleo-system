@@ -293,6 +293,26 @@ export async function iniciarOS(u: Usuario, osId: string, mecanicoId: string, mo
   });
 }
 
+/**
+ * OS iniciada pelo sistema atual chega aqui em andamento, mas sem checklist: cria na hora em que o
+ * mecânico vai fazer (ou a liderança abre). Retorno não tem checklist.
+ */
+export async function garantirChecklist(u: Usuario, osId: string) {
+  return transacao(d => {
+    const os = osPorId(d, osId);
+    if (os.retornoDeOsId) throw new ErroValidacao('OS de retorno não tem checklist: use o atendimento do retorno.');
+    const atual = os.checklistId && d.checklists.find(c => c.id === os.checklistId);
+    if (atual) return atual.id;
+    if (os.mecanicoId !== u.id && !pode(u, 'rodizio.gerenciar')) throw new ErroPermissao('os.executar', 'Só o mecânico desta OS (ou a liderança) abre o checklist.');
+    if (os.status !== 'andamento') throw new ErroValidacao(os.status === 'pausada' ? 'OS pausada. Retome a OS para continuar.' : 'A OS não está em andamento.');
+    const c = novoChecklist(novoId('ck'), os, veicPorId(d, os.veiculoId), d.catalogo);
+    d.checklists.push(c);
+    os.checklistId = c.id;
+    evento(d, u.id, 'checklist.criado', 'os', os.id, `Checklist criado para a OS #${os.numero} (iniciada no sistema atual)`);
+    return c.id;
+  });
+}
+
 // ───────────────────────── Assistência ─────────────────────────
 
 /** Fim do atendimento (concluída, pausada, cancelada): quem estava ajudando para de contar. */
@@ -540,7 +560,35 @@ export async function adicionarFotoRetorno(u: Usuario, osId: string, etapa: 'ant
   });
 }
 
-export const pendenciasRetorno = (d: DB, os: OrdemServico, km: number | null): string[] => {
+// ───────────────────────── Quilometragem ─────────────────────────
+
+export type FotoKm = { url: string; demo: boolean };
+
+/** KM registrado no carro quando a nova leitura é menor (registro antigo errado, troca de painel...). */
+export const kmAnteriorMaior = (d: DB, os: OrdemServico, km: number | null) => {
+  const v = d.veiculos.find(x => x.id === os.veiculoId);
+  return km != null && km > 0 && v?.kmAtual != null && km < v.kmAtual ? v.kmAtual : null;
+};
+
+const pendenciaKm = (d: DB, os: OrdemServico, km: number | null, fotoKm?: FotoKm): string | null => {
+  if (km == null || !(km > 0)) return 'Confirmar a quilometragem';
+  const ant = kmAnteriorMaior(d, os, km);
+  return ant != null && !fotoKm ? `KM menor que o último registrado (${ant.toLocaleString('pt-BR')}): tire a foto do painel para corrigir` : null;
+};
+
+/** Corrige o KM do carro para baixo: guarda a foto do painel (só interna) e registra quem corrigiu. */
+function registrarCorrecaoKm(d: DB, u: Usuario, os: OrdemServico, km: number, fotoKm?: FotoKm) {
+  const ant = kmAnteriorMaior(d, os, km);
+  if (ant == null || !fotoKm) return;
+  const ev = {
+    id: novoId('ev'), osId: os.id, veiculoId: os.veiculoId, itemDefId: 'km_painel', url: fotoKm.url, demo: fotoKm.demo,
+    legenda: `Painel: ${km.toLocaleString('pt-BR')} km (registro anterior: ${ant.toLocaleString('pt-BR')})`, capturadaPor: u.id, em: agoraISO(), visivelCliente: false,
+  };
+  d.evidencias.push(ev);
+  evento(d, u.id, 'veiculo.km_corrigido', 'os', os.id, `KM corrigido na OS #${os.numero}: ${ant.toLocaleString('pt-BR')} → ${km.toLocaleString('pt-BR')} (com foto do painel)`, { antes: ant, depois: km });
+}
+
+export const pendenciasRetorno = (d: DB, os: OrdemServico, km: number | null, fotoKm?: FotoKm): string[] => {
   const r = os.retorno;
   if (!r) return ['Esta OS não é de retorno'];
   const fotos = d.evidencias.filter(e => e.osId === os.id && e.itemDefId === 'retorno' && !e.removida);
@@ -551,21 +599,21 @@ export const pendenciasRetorno = (d: DB, os: OrdemServico, km: number | null): s
   if (!r.solucao?.trim()) p.push('O que foi feito (solução)');
   if (!fotos.some(f => f.etapa === 'depois') && !r.semFotoDepois?.trim()) p.push('Foto depois da solução, ou o motivo de não ter');
   if (!r.avisoCliente?.trim()) p.push('O que foi avisado ao cliente');
-  const v = d.veiculos.find(x => x.id === os.veiculoId);
-  if (km == null || !(km > 0)) p.push('Confirmar a quilometragem');
-  else if (v?.kmAtual != null && km < v.kmAtual) p.push(`KM menor que o último registrado (${v.kmAtual.toLocaleString('pt-BR')})`);
+  const pk = pendenciaKm(d, os, km, fotoKm);
+  if (pk) p.push(pk);
   return p;
 };
 
-export async function finalizarRetorno(u: Usuario, osId: string, km: number | null) {
+export async function finalizarRetorno(u: Usuario, osId: string, km: number | null, fotoKm?: FotoKm) {
   return transacao(d => {
     const os = osPorId(d, osId);
     exigirExecutor(u, os);
     if (os.status !== 'andamento') throw new ErroValidacao('A OS não está em andamento.');
-    const pend = pendenciasRetorno(d, os, km);
+    const pend = pendenciasRetorno(d, os, km, fotoKm);
     if (pend.length) throw new ErroValidacao('Falta: ' + pend.join(' · '));
     const v = veicPorId(d, os.veiculoId);
     const agora = agoraISO();
+    registrarCorrecaoKm(d, u, os, km!, fotoKm);
     os.km = km!; os.status = 'concluido'; os.concluidaEm = agora;
     fecharAjudasDaOS(os, agora, u.id);
     os.obsCliente = os.retorno!.avisoCliente;
@@ -593,6 +641,8 @@ export interface AdicionalInput { key: ServicoKey; marca?: string; quantidade?: 
 
 export interface FinalizarInput {
   km: number | null;
+  /** Foto do painel, obrigatória quando o KM é menor que o último registrado. */
+  fotoKm?: FotoKm;
   servicos: { key: ServicoKey; executado: boolean; quantidadeExecutada?: string; intervaloKm?: number }[];
   /** Serviços adicionais vendidos na bancada (aceitos pelo cliente). */
   adicionais?: AdicionalInput[];
@@ -609,9 +659,8 @@ export const pendenciasFinalizacao = (d: DB, os: OrdemServico, f: FinalizarInput
   if (!c || (c.status !== 'concluido' && c.status !== 'excecao_autorizada')) {
     p.push(c?.solicitacaoExcecao?.status === 'pendente' ? 'Checklist aguardando autorização de exceção da liderança' : 'Concluir o checklist');
   }
-  if (f.km == null || !(f.km > 0)) p.push('Confirmar a quilometragem');
-  const v = d.veiculos.find(x => x.id === os.veiculoId);
-  if (f.km != null && v?.kmAtual != null && f.km < v.kmAtual) p.push(`KM menor que o último registrado (${v.kmAtual.toLocaleString('pt-BR')})`);
+  const pk = pendenciaKm(d, os, f.km, f.fotoKm);
+  if (pk) p.push(pk);
   if (!f.servicos.some(s => s.executado) && !f.adicionais?.length) p.push('Marcar ao menos um serviço como executado');
   const oleo = f.servicos.find(s => s.key === 'oleoMotor' && s.executado);
   const regraOleo = d.regrasIntervalo.find(r => r.ativo && r.servicoKey === 'oleoMotor' && r.validada && r.opcoesKm?.length);
@@ -644,6 +693,7 @@ export async function finalizarOS(u: Usuario, osId: string, f: FinalizarInput) {
       ...(f.adicionais || []).map(a => ({ key: a.key, resultado: 'aceito' as const, por: u.id, em: agoraISO() })),
       ...(f.recusados || []).map(k => ({ key: k, resultado: 'recusado' as const, por: u.id, em: agoraISO() })),
     ];
+    registrarCorrecaoKm(d, u, os, f.km!, f.fotoKm);
     os.km = f.km!;
     os.obsInterna = f.obsInterna?.trim() || undefined;
     os.obsCliente = f.obsCliente?.trim() || undefined;

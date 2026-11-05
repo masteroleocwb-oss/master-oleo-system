@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ir } from '../app/nav';
-import { filaRodizio, iniciarOS, mecanicoDoRetorno, previsaoFila, proximoDaFila, retomarOS, setStatusRodizio } from '../data/api';
+import { filaRodizio, garantirChecklist, iniciarOS, mecanicoDoRetorno, previsaoFila, proximoDaFila, retomarOS, setStatusRodizio } from '../data/api';
 import { PausarSheet } from './Pausa';
 import { painelHoje } from '../data/metricas';
 import { MOTIVO_PAUSA } from '../domain/catalogo';
@@ -92,7 +92,11 @@ export function Operacao({ u }: { u: Usuario }) {
                     {minha.retorno ? <Alerta tipo="warn"><b>Retorno.</b> Problema relatado: {minha.retorno.problemaRelatado}</Alerta> : <div className="small muted">{nomeServicos(minha)}</div>}
                     {pr && <div className="small"><b>{pr.verificados}</b> de {pr.total} itens verificados</div>}
                     {c?.solicitacaoExcecao?.status === 'pendente' && <Alerta tipo="info">Exceção do checklist aguardando a liderança.</Alerta>}
-                    <Btn block onClick={() => ir(rotaTrabalho(minha, ckOk))}>
+                    <Btn block carregando={acao.ocupado} onClick={async () => {
+                      // OS iniciada no sistema antigo chega sem checklist: cria antes de abrir.
+                      if (!c && !minha.retornoDeOsId && (await acao.executar(() => garantirChecklist(u, minha.id))) === undefined) return;
+                      ir(rotaTrabalho(minha, ckOk));
+                    }}>
                       {minha.retornoDeOsId ? 'Abrir atendimento do retorno' : ckOk ? 'Executar e finalizar' : pr?.verificados ? 'Continuar checklist' : 'Começar checklist'}
                     </Btn>
                     <Btn block variante="sec" onClick={() => setPausar(minha)}>Pausar OS (ex.: aguardando peça)</Btn>

@@ -170,7 +170,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
             {fotos.map(f => (
               <figure key={f.id} style={f.removida ? { opacity: .45 } : undefined}>
                 <img src={f.url} alt={f.legenda || 'Foto do item'} />
-                <figcaption><b>{f.itemDefId === 'retorno' ? `Retorno — ${f.etapa === 'antes' ? 'problema' : 'solução'}` : c?.defs.find(d => d.id === f.itemDefId)?.nome}</b><br />{f.legenda}{f.removida ? ` · Removida: ${f.removida.motivo}` : ''}<br /><span className="muted">{primeiroNome(nomeDe(db, f.capturadaPor))} · {fmtDataHora(f.em)}{f.demo ? ' · demonstrativa' : ''}</span>
+                <figcaption><b>{f.itemDefId === 'retorno' ? `Retorno — ${f.etapa === 'antes' ? 'problema' : 'solução'}` : f.itemDefId === 'km_painel' ? 'Painel — correção de KM' : c?.defs.find(d => d.id === f.itemDefId)?.nome}</b><br />{f.legenda}{f.removida ? ` · Removida: ${f.removida.motivo}` : ''}<br /><span className="muted">{primeiroNome(nomeDe(db, f.capturadaPor))} · {fmtDataHora(f.em)}{f.demo ? ' · demonstrativa' : ''}</span>
                   {!f.removida && <><br />{f.visivelCliente ? <Badge tom="outline">Aparece para o cliente</Badge> : <Badge tom="neutro">Oculta do cliente</Badge>}</>}
                   {!f.removida && pode(u, 'relatorio.revogar') && <div style={{ marginTop: 6 }}><Btn tamanho="sm" variante="sec" carregando={fotoAcao.ocupado} onClick={() => fotoAcao.executar(() => definirVisibilidadeFoto(u, f.id, !f.visivelCliente), f.visivelCliente ? 'Foto oculta do relatório do cliente.' : 'Foto volta a aparecer no relatório.')}>{f.visivelCliente ? 'Ocultar do cliente' : 'Mostrar ao cliente'}</Btn></div>}
                 </figcaption>

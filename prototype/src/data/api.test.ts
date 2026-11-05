@@ -5,7 +5,7 @@ import { fixarAgora, minutosTrabalhados } from '../domain/util';
 import { sugestoesOcultar } from '../domain/checklist';
 import {
   abrirOS, acaoOcorrencia, adicionarEvidencia, adicionarFotoRetorno, auditarChecklist, buscarVeiculosEClientes, concluirChecklist, corrigirPlaca, ErroValidacao,
-  filaRodizio, finalizarOS, finalizarRetorno, gerarLink, iniciarOS, obterRelatorioPublico, ocultarItemPara, pausarOS, previsaoFila, projetarRelatorio, proximoDaFila,
+  filaRodizio, finalizarOS, finalizarRetorno, garantirChecklist, gerarLink, iniciarOS, obterRelatorioPublico, ocultarItemPara, pausarOS, previsaoFila, projetarRelatorio, proximoDaFila,
   recomendacoesAbertas, definirPedidoOlist, registrarItemChecklist, retomarOS, revogarLink, salvarRetorno, setStatusRodizio, valoresOS,
 } from './api';
 import { indicadoresMecanico } from './metricas';
@@ -150,6 +150,33 @@ describe('checklist e finalização', () => {
     const fim = getDB().os.find(o => o.id === os.id)!;
     expect(fim.status).toBe('concluido');
     expect(fim.servicos.find(s => s.key === 'oleoMotor')?.intervaloKm).toBe(7000);
+  });
+
+  it('KM menor que o registrado (registro antigo errado) fecha só com foto do painel, que fica interna', async () => {
+    const os = emAndamento();
+    const c = getDB().checklists.find(x => x.id === os.checklistId)!;
+    for (const d of c.defs) if (c.itens[d.id].estado === 'nao_verificado') await registrarItemChecklist(U('u_m1'), c.id, d.id, 'ok', {});
+    await concluirChecklist(U('u_m1'), c.id);
+    const v = getDB().veiculos.find(x => x.id === os.veiculoId)!;
+    const kmAntigo = v.kmAtual!;
+    const base = { km: kmAntigo - 8000, servicos: os.servicos.map(s => ({ key: s.key, executado: true, intervaloKm: s.key === 'oleoMotor' ? 10000 : undefined })), proximas: [] };
+    await expect(finalizarOS(U('u_m1'), os.id, base)).rejects.toThrow(/foto do painel/);
+    await finalizarOS(U('u_m1'), os.id, { ...base, fotoKm: { url: 'data:image/jpeg;base64,AAAA', demo: false } });
+    expect(getDB().veiculos.find(x => x.id === v.id)!.kmAtual).toBe(kmAntigo - 8000);
+    const foto = getDB().evidencias.find(e => e.osId === os.id && e.itemDefId === 'km_painel')!;
+    expect(foto.visivelCliente).toBe(false);
+    expect(getDB().eventos.some(e => e.tipo === 'veiculo.km_corrigido' && e.antes === kmAntigo)).toBe(true);
+  });
+
+  it('OS iniciada no sistema atual (sem checklist) ganha checklist quando o mecânico abre', async () => {
+    const os = emAndamento();
+    const d = getDB();
+    d.os.find(o => o.id === os.id)!.checklistId = undefined;
+    await expect(garantirChecklist(U('u_m2'), os.id)).rejects.toBeInstanceOf(ErroPermissao);
+    const id = await garantirChecklist(U('u_m1'), os.id);
+    expect(getDB().os.find(o => o.id === os.id)!.checklistId).toBe(id);
+    expect(getDB().checklists.some(c => c.id === id && c.osId === os.id)).toBe(true);
+    expect(await garantirChecklist(U('u_m1'), os.id)).toBe(id); // não duplica
   });
 
   it('adicionais vendidos na bancada viram serviço "adicional", contam no upsell e respeitam o câmbio', async () => {

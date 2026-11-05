@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ir } from '../app/nav';
-import { adicionarEvidencia, concluirChecklist, enviarCorrecao, recomendacoesAbertas, registrarItemChecklist, removerEvidencia, solicitarExcecao } from '../data/api';
+import { adicionarEvidencia, concluirChecklist, garantirChecklist, enviarCorrecao, recomendacoesAbertas, registrarItemChecklist, removerEvidencia, solicitarExcecao } from '../data/api';
 import { ESTADOS, ESTADOS_ORDEM, GRUPOS, semTeste } from '../domain/catalogo';
 import { fotosAtivasDoItem, pendenciasParaConcluir, progresso, validarItem, type DadosItem } from '../domain/checklist';
 import type { Checklist as TChecklist, DB, EstadoItem, ItemInspecaoDef, Usuario } from '../domain/types';
@@ -29,6 +29,17 @@ export function Checklist({ u, osId, foco }: { u: Usuario; osId: string; foco: s
   useEffect(() => { try { localStorage.setItem('mo-proto:modo-ck', modo); } catch { /* ignora */ } }, [modo]);
   useEffect(() => { if (foco) setTimeout(() => document.getElementById(`item-${foco}`)?.scrollIntoView({ block: 'center' }), 50); }, [foco]);
 
+  if (os && !c && !os.retornoDeOsId && os.status === 'andamento') {
+    return (
+      <div className="card">
+        <Empty titulo={`OS #${os.numero} ainda sem checklist`}>
+          <p className="small muted">Esta OS foi iniciada pelo sistema antigo. Toque para abrir o checklist e seguir normalmente.</p>
+          <Btn carregando={acao.ocupado} onClick={() => acao.executar(() => garantirChecklist(u, os.id), 'Checklist aberto.')}>Abrir checklist</Btn>
+          {acao.erro && <div style={{ marginTop: 10 }}><Alerta tipo="crit">{acao.erro}</Alerta></div>}
+        </Empty>
+      </div>
+    );
+  }
   if (!os || !c) return <div className="card"><Empty titulo="Checklist não encontrado." /></div>;
   const v = db.veiculos.find(x => x.id === os.veiculoId)!;
   const souExecutor = os.mecanicoId === u.id;

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { fotoDemo } from '../data/demoFotos';
+import { MODO_REAL } from '../data/modo';
 import { Btn, Field, Sheet } from './components';
 
 /** Reduz a foto antes de guardar (no produto: upload para o Storage com compressão no aparelho). */
@@ -49,8 +50,8 @@ export function PhotoCapture({ itemId, itemNome, onConfirmar, onClose, ocupado }
       {!foto ? (
         <div className="stack">
           <Btn block onClick={() => input.current?.click()}>Abrir câmera</Btn>
-          <Btn block variante="sec" onClick={() => { setFoto({ url: fotoDemo(itemId, `${itemNome} · demonstração`, n), demo: true }); setN(n + 1); }}>Usar foto demonstrativa</Btn>
-          <p className="small muted">No celular, "Abrir câmera" usa a câmera traseira. Fotos enviadas aqui ficam só neste navegador. Para a demonstração, prefira a foto demonstrativa (sem imagem real).</p>
+          {!MODO_REAL && <Btn block variante="sec" onClick={() => { setFoto({ url: fotoDemo(itemId, `${itemNome} · demonstração`, n), demo: true }); setN(n + 1); }}>Usar foto demonstrativa</Btn>}
+          <p className="small muted">{MODO_REAL ? 'No celular, "Abrir câmera" usa a câmera traseira.' : 'No celular, "Abrir câmera" usa a câmera traseira. Fotos enviadas aqui ficam só neste navegador. Para a demonstração, prefira a foto demonstrativa (sem imagem real).'}</p>
           {erro && <p className="small" style={{ color: 'var(--crit)' }}>{erro}</p>}
         </div>
       ) : (

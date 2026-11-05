@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { ir } from '../app/nav';
-import { adicionarFotoRetorno, finalizarRetorno, nomeDe, pendenciasRetorno, removerEvidencia, salvarRetorno } from '../data/api';
+import { adicionarFotoRetorno, finalizarRetorno, kmAnteriorMaior, nomeDe, pendenciasRetorno, removerEvidencia, salvarRetorno, type FotoKm } from '../data/api';
 import type { AtendimentoRetorno, Usuario } from '../domain/types';
 import { fmtData, fmtKm } from '../domain/util';
 import { Alerta, Btn, Card, Empty, Field, Placa, SaveIndicator, Segmented, useAcao, useDB, type SaveState } from '../ui/components';
 import { PhotoCapture } from '../ui/PhotoCapture';
 import { nomeServicos } from './common';
+import { FotoPainelKm } from './KmPainel';
 import { PausarBotao } from './Pausa';
 
 type Campos = Omit<AtendimentoRetorno, 'problemaRelatado'>;
@@ -18,6 +19,7 @@ export function Retorno({ u, osId }: { u: Usuario; osId: string }) {
   const [salvo, setSalvo] = useState<SaveState>('ocioso');
   const [camera, setCamera] = useState<'antes' | 'depois' | null>(null);
   const [km, setKm] = useState('');
+  const [fotoKm, setFotoKm] = useState<FotoKm>();
   const [tentou, setTentou] = useState(false);
   const acao = useAcao();
   const fotoAcao = useAcao();
@@ -40,14 +42,16 @@ export function Retorno({ u, osId }: { u: Usuario; osId: string }) {
   const orig = db.os.find(o => o.id === os.retornoDeOsId);
   const fotos = db.evidencias.filter(e => e.osId === os.id && e.itemDefId === 'retorno' && !e.removida);
   const kmNum = Number(km.replace(/\D/g, '')) || null;
-  const pend = pendenciasRetorno(db, { ...os, retorno: { ...os.retorno, ...campos } }, kmNum);
+  const kmAnterior = kmAnteriorMaior(db, os, kmNum);
+  const fotoKmValida = kmAnterior != null ? fotoKm : undefined;
+  const pend = pendenciasRetorno(db, { ...os, retorno: { ...os.retorno, ...campos } }, kmNum, fotoKmValida);
   const set = (x: Partial<Campos>) => setCampos(c => ({ ...c, ...x }));
 
   const finalizar = async () => {
     setTentou(true);
     if (pend.length) return;
     await salvarRetorno(u, os.id, campos);
-    if (await acao.executar(() => finalizarRetorno(u, os.id, kmNum), `Retorno da OS #${os.numero} concluído.`)) ir(`/os/${os.id}`);
+    if (await acao.executar(() => finalizarRetorno(u, os.id, kmNum, fotoKmValida), `Retorno da OS #${os.numero} concluído.`)) ir(`/os/${os.id}`);
   };
 
   const BlocoFotos = ({ etapa }: { etapa: 'antes' | 'depois' }) => (
@@ -119,6 +123,7 @@ export function Retorno({ u, osId }: { u: Usuario; osId: string }) {
         <Field rotulo="KM no painel" obrigatorio htmlFor="km" dica={`Último registrado: ${fmtKm(v.kmAtual)}`}>
           <input id="km" className="input" inputMode="numeric" value={km} onChange={e => setKm(e.target.value.replace(/\D/g, '').slice(0, 7))} style={{ maxWidth: 220 }} />
         </Field>
+        {kmAnterior != null && <FotoPainelKm kmAnterior={kmAnterior} em={v.kmAtualEm} foto={fotoKm} onFoto={setFotoKm} />}
       </Card>
 
       {tentou && pend.length > 0 && <div style={{ marginTop: 12 }}><Alerta tipo="crit"><b>Antes de finalizar:</b><ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{pend.map(p => <li key={p}>{p}</li>)}</ul></Alerta></div>}
