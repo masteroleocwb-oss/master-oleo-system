@@ -29,6 +29,7 @@ interface Form {
   servicos: Partial<Record<ServicoKey, { marca?: string; quantidade?: string; codigo?: string }>>;
   valor: string;
   naoTesteFreio: boolean; naoTesteCambio: boolean;
+  carroDeLoja?: boolean;
 }
 
 const VAZIO = (vendedorId: string): Form => ({
@@ -84,7 +85,8 @@ export function NovaOS({ u }: { u: Usuario }) {
     novoCliente: f.novo ? { nome: f.clienteNome, telefone: f.clienteTel, ...dadosDigitados } as NovaOSInput['novoCliente'] : undefined,
     completarCliente: veiculo ? { ...(clienteSemTel ? { telefone: f.telExistente } : {}), ...dadosDigitados } : undefined,
     pedidoOlist: f.pedidoOlist,
-    kmPorMes,
+    kmPorMes: f.carroDeLoja ? undefined : kmPorMes,
+    carroDeLoja: f.carroDeLoja || undefined,
     retornoDeOsId: retorno ? f.retornoDeOsId : undefined,
     problemaRelatado: retorno ? f.problema : undefined,
     vendedorId: f.vendedorId,
@@ -140,9 +142,13 @@ export function NovaOS({ u }: { u: Usuario }) {
   );
 
   const campoKmMes = (veiculo || f.novo) && (
-    <Field rotulo="Quantos km o carro roda por mês?" obrigatorio htmlFor="km-mes" dica="Pergunte ao cliente. Ajuda a prever a próxima troca e a chamar o cliente na hora certa."
-      erro={tentou && !(kmPorMes! > 0) ? 'Informe os km por mês' : tentou && kmPorMes! > 20000 ? 'Confira o número' : null}>
-      <input id="km-mes" className="input" inputMode="numeric" value={kmMesTexto} onChange={e => set({ kmMes: e.target.value.replace(/\D/g, '').slice(0, 5) })} placeholder="Ex.: 1500" />
+    <Field rotulo="Quantos km o carro roda por mês?" obrigatorio={!f.carroDeLoja} htmlFor="km-mes" dica="Pergunte ao cliente. Ajuda a prever a próxima troca e a chamar o cliente na hora certa."
+      erro={f.carroDeLoja ? null : tentou && !(kmPorMes! > 0) ? 'Informe os km por mês' : tentou && kmPorMes! > 20000 ? 'Confira o número' : null}>
+      <input id="km-mes" className="input" inputMode="numeric" value={f.carroDeLoja ? '0' : kmMesTexto} disabled={f.carroDeLoja} onChange={e => set({ kmMes: e.target.value.replace(/\D/g, '').slice(0, 5) })} placeholder="Ex.: 1500" />
+      <label className="check" style={{ marginTop: 6 }}>
+        <input type="checkbox" checked={!!f.carroDeLoja} onChange={e => set({ carroDeLoja: e.target.checked })} />
+        <span>Carro de loja <span className="small muted">(revenda, sem uso definido: fica zerado)</span></span>
+      </label>
     </Field>
   );
 

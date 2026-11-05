@@ -70,6 +70,8 @@ export interface NovaOSInput {
   novoVeiculo?: { placa: string; marca: string; modelo: string; ano: number; motor: string; cambio: Cambio; combustivel: Veiculo['combustivel'] };
   /** Quanto o carro roda por mês (obrigatório: ajuda a prever a próxima troca e a recompra). */
   kmPorMes?: number;
+  /** Carro de loja (revenda): não tem uso definido, então o km por mês fica zerado. */
+  carroDeLoja?: boolean;
   clienteId?: string;
   novoCliente?: { nome: string } & CadastroCliente;
   /** Cliente já cadastrado: completa (ou corrige) telefone, como conheceu, cidade e bairro. */
@@ -118,7 +120,8 @@ export const validarNovaOS = (i: NovaOSInput, clienteAtual?: Partial<Cliente>): 
   if (!retorno && !i.pedidoOlist?.trim()) e.push('Informe o número do pedido do Olist.');
   else if (i.pedidoOlist?.trim() && !/^[\w.\-/]{1,30}$/.test(i.pedidoOlist.trim())) e.push('Número do pedido do Olist inválido.');
   if (!i.vendedorId) e.push('Selecione o vendedor.');
-  if (!(i.kmPorMes! > 0)) e.push('Informe quantos km o carro roda por mês.');
+  if (i.carroDeLoja) { /* km por mês fica zerado */ }
+  else if (!(i.kmPorMes! > 0)) e.push('Informe quantos km o carro roda por mês (ou marque "Carro de loja").');
   else if (i.kmPorMes! > 20000) e.push('Km por mês fora do normal: confira o número.');
   if (retorno && !i.problemaRelatado?.trim()) e.push('Descreva o problema que o cliente relatou.');
   if (!retorno && !i.servicos.length) e.push('Selecione pelo menos um serviço.');
@@ -166,7 +169,10 @@ export async function abrirOS(u: Usuario, i: NovaOSInput) {
         evento(d, u.id, 'veiculo.criado', 'veiculo', veiculo.id, `Veículo ${fmtPlaca(placa)} cadastrado`);
       }
     }
-    if (i.kmPorMes && veiculo.kmPorMes !== i.kmPorMes) {
+    if (i.carroDeLoja) {
+      if (veiculo.kmPorMes) evento(d, u.id, 'veiculo.km_mes', 'veiculo', veiculo.id, 'Carro de loja: km por mês zerado', { antes: veiculo.kmPorMes, depois: 0 });
+      veiculo.kmPorMes = undefined;
+    } else if (i.kmPorMes && veiculo.kmPorMes !== i.kmPorMes) {
       evento(d, u.id, 'veiculo.km_mes', 'veiculo', veiculo.id, `Roda ${i.kmPorMes.toLocaleString('pt-BR')} km por mês`, { antes: veiculo.kmPorMes, depois: i.kmPorMes });
       veiculo.kmPorMes = i.kmPorMes;
     }
@@ -181,7 +187,7 @@ export async function abrirOS(u: Usuario, i: NovaOSInput) {
     const os: OrdemServico = {
       id: novoId('os'), numero, status: 'aguardando', veiculoId: veiculo.id, clienteId: veiculo.clienteId, vendedorId: i.vendedorId, pedidoOlist: preenchido(i.pedidoOlist),
       abertaEm: i.abertaEm || agoraISO(), servicos: i.servicos.map(s => ({ ...s, origem: 'balcao', executado: false })), valorInicial: i.valorInicial,
-      naoFazerTesteFreio: i.naoFazerTesteFreio, naoFazerTesteCambio: i.naoFazerTesteCambio, criadaPor: u.id,
+      naoFazerTesteFreio: i.naoFazerTesteFreio, naoFazerTesteCambio: i.naoFazerTesteCambio, carroDeLoja: i.carroDeLoja || undefined, criadaPor: u.id,
       ...(origem ? { retornoDeOsId: origem.id, retorno: { problemaRelatado: i.problemaRelatado!.trim() } } : {}),
     };
     d.os.push(os);

@@ -239,6 +239,7 @@ export function osDeLegado(id: string, o: DocLegado, nomes: MapaNomes): OrdemSer
   };
   const opc: Partial<OrdemServico> = {
     pedidoOlist: txt(o.pedidoOlist) || undefined,
+    carroDeLoja: o.carroDeLoja === true || undefined,
     mecanicoId,
     iniciadaEm: exato(p.iniciadaEm, o.inicio),
     concluidaEm,
@@ -294,7 +295,8 @@ export function legadoDeOS(os: OrdemServico, v: Veiculo | undefined, c: Cliente 
   if (c?.comoConheceuDetalhe) d.comoConheceuDetalhe = c.comoConheceuDetalhe;
   if (c?.cidade) d.cidade = c.cidade;
   if (c?.bairro) d.bairro = c.bairro;
-  if (v?.kmPorMes) d.kmPorMes = v.kmPorMes;
+  if (os.carroDeLoja) { d.carroDeLoja = true; d.kmPorMes = 0; }
+  else if (v?.kmPorMes) d.kmPorMes = v.kmPorMes;
   if (os.iniciadaEm) d.inicio = brDeISO(os.iniciadaEm);
   if (os.concluidaEm && (os.status === 'concluido' || os.status === 'encerrada')) d.fim = brDeISO(os.concluidaEm);
 

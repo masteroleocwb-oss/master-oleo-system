@@ -140,6 +140,8 @@ export interface OrdemServico {
   numero: number;
   /** Número do pedido do cliente no Olist (ERP), informado pelo vendedor. */
   pedidoOlist?: string;
+  /** Carro de loja (revenda): km por mês zerado. */
+  carroDeLoja?: boolean;
   status: StatusOS;
   veiculoId: string;
   clienteId: string;

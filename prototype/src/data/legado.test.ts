@@ -38,6 +38,15 @@ describe('ponte com o sistema atual', () => {
     expect(os.naoFazerTesteCambio).toBe(false);
   });
 
+  it('carro de loja grava km por mês 0 e a marcação no formato do sistema atual', () => {
+    const nomes = new MapaNomes(usuarios);
+    const os = osDeLegado('doc6', { ...legado, carroDeLoja: true, kmPorMes: 0 }, nomes);
+    expect(os.carroDeLoja).toBe(true);
+    const d = legadoDeOS(os, undefined, undefined, nomes);
+    expect(d.kmPorMes).toBe(0);
+    expect(d.carroDeLoja).toBe(true);
+  });
+
   it('filtro do câmbio automático (opcional) vai e volta no campo do sistema atual', () => {
     const nomes = new MapaNomes(usuarios);
     const com = osDeLegado('doc5', { ...legado, cambioAutomatico: true, cambioAutomaticoMarca: 'ATF', cambioAutomaticoTemFiltro: true, cambioAutomaticoFiltroCodigo: 'CAF5678' }, nomes);

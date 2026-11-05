@@ -437,7 +437,7 @@ function gravarCaminho(o: Obj, c: Caminho, v: unknown) {
 }
 
 /** Campos de cadastro: só são gravados quando a OS nasce (não reescrevem o histórico). */
-const CAMPOS_CADASTRO = new Set(['cliente', 'tel', 'placa', 'marca', 'modelo', 'motor', 'ano', 'cambio', 'combustivel', 'comoConheceu', 'comoConheceuDetalhe', 'cidade', 'bairro', 'kmPorMes']);
+const CAMPOS_CADASTRO = new Set(['cliente', 'tel', 'placa', 'marca', 'modelo', 'motor', 'ano', 'cambio', 'combustivel', 'comoConheceu', 'comoConheceuDetalhe', 'cidade', 'bairro', 'kmPorMes', 'carroDeLoja']);
 
 /** Projeção do relatório público (vem de api.ts, registrada lá para não criar dependência circular). */
 let projetar: ((d: DB, osId: string) => unknown) | null = null;

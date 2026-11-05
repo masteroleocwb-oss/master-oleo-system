@@ -378,6 +378,13 @@ describe('km rodados por mês', () => {
     expect(d.slice(0, 7)).toBe('2026-05');
     expect(dataPrevistaPor('2026-01-01T12:00:00.000Z', 6, 10000, 500)!.slice(0, 7)).toBe('2026-07');
   });
+
+  it('carro de loja abre sem km por mês: fica zerado e a próxima troca vai pela data', async () => {
+    const sem = { veiculoId: 'v5', vendedorId: 'u_ven', servicos: [{ key: 'oleoMotor' as const, origem: 'balcao' as const, executado: false }], valorInicial: 300, pedidoOlist: '100301' };
+    const os = await abrirOS(U('u_ven'), { ...sem, carroDeLoja: true });
+    expect(getDB().os.find(o => o.id === os.id)?.carroDeLoja).toBe(true);
+    expect(getDB().veiculos.find(v => v.id === 'v5')?.kmPorMes).toBeUndefined();
+  });
 });
 
 describe('cadastro do cliente e pedido do Olist na abertura', () => {
