@@ -275,6 +275,7 @@ export async function iniciarOS(u: Usuario, osId: string, mecanicoId: string, mo
     os.status = 'andamento';
     os.mecanicoId = mecanicoId;
     os.iniciadaEm = agoraISO();
+    fecharAjudasDe(d, mecanicoId, os.iniciadaEm, u.id);
     if (foraDaFila) os.foraDaOrdem = { previsto, motivo: motivoForaDaFila.trim() };
     // Retorno não refaz o checklist completo: o atendimento foca no problema relatado.
     let ckId: string | undefined;
@@ -292,6 +293,53 @@ export async function iniciarOS(u: Usuario, osId: string, mecanicoId: string, mo
   });
 }
 
+// ───────────────────────── Assistência ─────────────────────────
+
+/** Fim do atendimento (concluída, pausada, cancelada): quem estava ajudando para de contar. */
+const fecharAjudasDaOS = (os: OrdemServico, quando: string, por: string) =>
+  os.assistencias?.forEach(a => { if (!a.fim) { a.fim = quando; a.encerradoPor = por; } });
+
+/** Quem assume um carro (ou vai ajudar em outro) para de ajudar onde estava. */
+const fecharAjudasDe = (d: DB, mecanicoId: string, quando: string, por: string) =>
+  d.os.forEach(o => o.assistencias?.forEach(a => { if (a.mecanicoId === mecanicoId && !a.fim) { a.fim = quando; a.encerradoPor = por; } }));
+
+/** Ajudante atual de cada mecânico (OS em que está ajudando agora). */
+export const ajudandoEm = (d: DB, mecanicoId: string) =>
+  d.os.find(o => o.status === 'andamento' && o.assistencias?.some(a => a.mecanicoId === mecanicoId && !a.fim));
+
+/** O mecânico da OS (ou a liderança) registra quem veio ajudar. Não muda comissão nem rodízio. */
+export async function chamarAjuda(u: Usuario, osId: string, ajudanteId: string) {
+  return transacao(d => {
+    const os = osPorId(d, osId);
+    if (!(os.mecanicoId === u.id && pode(u, 'os.executar')) && !pode(u, 'rodizio.gerenciar')) throw new ErroPermissao('os.executar', 'Só o mecânico da OS ou a liderança registra ajuda.');
+    if (os.status !== 'andamento') throw new ErroValidacao('Só dá para registrar ajuda em OS em andamento.');
+    const aj = d.usuarios.find(x => x.id === ajudanteId && x.role === 'mecanico' && x.ativo);
+    if (!aj) throw new ErroValidacao('Escolha um mecânico ativo.');
+    if (aj.id === os.mecanicoId) throw new ErroValidacao('Quem atende a OS não pode ser o ajudante.');
+    if (os.assistencias?.some(a => a.mecanicoId === aj.id && !a.fim)) throw new ErroValidacao(`${primeiroNome(aj.nome)} já está ajudando nesta OS.`);
+    const propria = d.os.find(o => o.status === 'andamento' && o.mecanicoId === aj.id);
+    if (propria) throw new ErroValidacao(`${primeiroNome(aj.nome)} está com a OS #${propria.numero} em andamento.`);
+    const st = d.rodizio.dia === hojeKey() ? d.rodizio.status[aj.id] || 'disponivel' : 'disponivel';
+    if (st !== 'disponivel') throw new ErroValidacao(`${primeiroNome(aj.nome)} está marcado como ${st === 'almoco' ? 'almoço' : 'ausente'} no rodízio.`);
+    const agora = agoraISO();
+    fecharAjudasDe(d, aj.id, agora, u.id);
+    os.assistencias = [...(os.assistencias || []), { mecanicoId: aj.id, inicio: agora, chamadoPor: u.id }];
+    evento(d, u.id, 'os.ajuda_inicio', 'os', os.id, `${primeiroNome(aj.nome)} começou a ajudar na OS #${os.numero}`, { depois: { ajudante: aj.id } });
+  });
+}
+
+/** Fim da ajuda: o mecânico da OS, o próprio ajudante ou a liderança. */
+export async function encerrarAjuda(u: Usuario, osId: string, ajudanteId: string) {
+  return transacao(d => {
+    const os = osPorId(d, osId);
+    if (os.mecanicoId !== u.id && ajudanteId !== u.id && !pode(u, 'rodizio.gerenciar')) throw new ErroPermissao('os.executar', 'Só o mecânico da OS, o ajudante ou a liderança encerra a ajuda.');
+    const a = os.assistencias?.find(x => x.mecanicoId === ajudanteId && !x.fim);
+    if (!a) throw new ErroValidacao('Esta ajuda já foi encerrada.');
+    a.fim = agoraISO(); a.encerradoPor = u.id;
+    evento(d, u.id, 'os.ajuda_fim', 'os', os.id, `${primeiroNome(d.usuarios.find(x => x.id === ajudanteId)?.nome)} parou de ajudar na OS #${os.numero}`);
+  });
+}
+
 /** Pausa a OS (ex.: aguardando peça). O mecânico fica livre para assumir outra OS enquanto isso. */
 export async function pausarOS(u: Usuario, osId: string, motivo: Pausa['motivo'], detalhe = '') {
   if (motivo === 'outro' && !detalhe.trim()) throw new ErroValidacao('Descreva o motivo da pausa.');
@@ -301,6 +349,7 @@ export async function pausarOS(u: Usuario, osId: string, motivo: Pausa['motivo']
     if (!(os.mecanicoId === u.id && pode(u, 'os.executar')) && !lider) throw new ErroPermissao('os.executar', 'Só o mecânico da OS ou a liderança pausa a OS.');
     if (os.status !== 'andamento') throw new ErroValidacao('Só OS em andamento pode ser pausada.');
     os.status = 'pausada';
+    fecharAjudasDaOS(os, agoraISO(), u.id);
     os.pausas = [...(os.pausas || []), { inicio: agoraISO(), motivo, detalhe: detalhe.trim() || undefined, por: u.id }];
     evento(d, u.id, 'os.pausada', 'os', os.id, `OS #${os.numero} pausada: ${MOTIVO_PAUSA[motivo]}${detalhe.trim() ? ` — ${detalhe.trim()}` : ''}`, { motivo: detalhe.trim() || MOTIVO_PAUSA[motivo] });
   });
@@ -518,6 +567,7 @@ export async function finalizarRetorno(u: Usuario, osId: string, km: number | nu
     const v = veicPorId(d, os.veiculoId);
     const agora = agoraISO();
     os.km = km!; os.status = 'concluido'; os.concluidaEm = agora;
+    fecharAjudasDaOS(os, agora, u.id);
     os.obsCliente = os.retorno!.avisoCliente;
     os.servicos = os.servicos.map(s => ({ ...s, executado: true }));
     v.kmAtual = km!; v.kmAtualEm = agora;
@@ -599,6 +649,7 @@ export async function finalizarOS(u: Usuario, osId: string, f: FinalizarInput) {
     os.obsCliente = f.obsCliente?.trim() || undefined;
     os.status = 'concluido';
     os.concluidaEm = agora;
+    fecharAjudasDaOS(os, agora, u.id);
     const kmAntes = v.kmAtual;
     v.kmAtual = f.km!;
     v.kmAtualEm = agora;
@@ -649,6 +700,7 @@ export async function cancelarOS(u: Usuario, osId: string, motivo: string) {
     // Cancelamento lógico: a OS continua no histórico (hoje o sistema apaga o documento).
     os.status = 'cancelada';
     os.canceladaMotivo = motivo.trim();
+    fecharAjudasDaOS(os, agoraISO(), u.id);
     evento(d, u.id, 'os.cancelada', 'os', os.id, `OS #${os.numero} cancelada: ${motivo.trim()}`, { antes, depois: 'cancelada', motivo });
   });
 }
@@ -664,6 +716,7 @@ export async function encerrarOSEsquecida(u: Usuario, osId: string, motivo: stri
     const antes = os.status;
     os.status = 'encerrada';
     os.concluidaEm = os.abertaEm;
+    fecharAjudasDaOS(os, agoraISO(), u.id);
     os.canceladaMotivo = motivo.trim();
     evento(d, u.id, 'os.encerrada', 'os', os.id, `OS #${os.numero} encerrada sem execução: ${motivo.trim()}`, { antes, depois: 'encerrada', motivo });
   });

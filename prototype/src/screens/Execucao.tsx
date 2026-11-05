@@ -7,6 +7,7 @@ import type { ServicoKey, Usuario } from '../domain/types';
 import { addMeses, agoraISO, fmtBRL, fmtData, fmtKm } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Empty, Field, Placa, useAcao, useDB } from '../ui/components';
 import { ChecklistBadge } from './common';
+import { AjudaBotao } from './Ajuda';
 import { PausarBotao } from './Pausa';
 
 interface LinhaProx extends ProximaInput { chave: string; incluir: boolean; editavel: boolean; motivo: string }
@@ -91,7 +92,7 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
       <a className="back" href={`#/os/${os.id}`}>‹ OS #{os.numero}</a>
       <div className="page-head">
         <div><h1>Execução e finalização</h1><div className="row" style={{ marginTop: 6 }}><Placa placa={v.placa} /><b>{v.marca} {v.modelo}</b><ChecklistBadge c={c} /></div></div>
-        <PausarBotao u={u} os={os} />
+        <div className="row"><AjudaBotao u={u} os={os} /><PausarBotao u={u} os={os} /></div>
       </div>
 
       {c && c.status !== 'concluido' && c.status !== 'excecao_autorizada' && (

@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ir } from '../app/nav';
 import { acaoOcorrencia, auditarChecklist, concluirPlanoAcao, declararDiaExcecao, decidirExcecao, nomeDe, registrarOcorrencia, registrarPlanoAcao } from '../data/api';
+import { MODO_REAL } from '../data/modo';
+import { carregarEventosRodizio } from '../data/nuvem';
+import { indicadoresAssistencia, MIN_LIVRE_PARA_AJUDA } from '../domain/assistencia';
 import { DEFINICOES, indicadoresEquipe, indicadoresLideranca, indicadoresMecanico, painelHoje, serieMecanico } from '../data/metricas';
 import { fotosAtivasDoItem, pendenciasParaConcluir } from '../domain/checklist';
 import { CATEGORIAS_OCORRENCIA, STATUS_OCORRENCIA_LABEL, type AcaoOcorrencia } from '../domain/gestao';
@@ -10,7 +13,7 @@ import { addDias, agoraISO, fmtBRL, fmtData, fmtDataHora, fmtMes, fmtMin, fmtPct
 import { Alerta, Badge, Btn, Card, Empty, Field, Kpi, Placa, Segmented, Sheet, Tabs, useAcao, useDB, type Tom } from '../ui/components';
 import { EstadoBadge } from './common';
 
-type Aba = 'visao' | 'mecanicos' | 'auditoria' | 'excecoes' | 'ocorrencias' | 'retornos' | 'planos' | 'gestao';
+type Aba = 'visao' | 'mecanicos' | 'assistencia' | 'auditoria' | 'excecoes' | 'ocorrencias' | 'retornos' | 'planos' | 'gestao';
 
 export function Lideranca({ u, aba: abaRota }: { u: Usuario; aba?: string }) {
   const db = useDB();
@@ -20,20 +23,77 @@ export function Lideranca({ u, aba: abaRota }: { u: Usuario; aba?: string }) {
   const decisaoOcorr = u.role === 'direcao' ? p.ocorrenciasDecisao.length + p.ocorrenciasAplicar.length : p.ocorrenciasRascunho.length;
   return (
     <div>
-      <div className="page-head"><div><h1>Painel da liderança</h1><div className="sub">{fmtMes(mesKey(hojeKey() + 'T15:00:00Z'))} · dados fictícios</div></div></div>
+      <div className="page-head"><div><h1>Painel da liderança</h1><div className="sub">{fmtMes(mesKey(hojeKey() + 'T15:00:00Z'))}{MODO_REAL ? '' : ' · dados fictícios'}</div></div></div>
       <Tabs valor={aba} onChange={setAba} abas={[
-        { v: 'visao', r: 'Visão geral' }, { v: 'mecanicos', r: 'Por mecânico' }, { v: 'auditoria', r: 'Auditoria', n: p.correcoesPendentes.length },
+        { v: 'visao', r: 'Visão geral' }, { v: 'mecanicos', r: 'Por mecânico' }, { v: 'assistencia', r: 'Assistência' }, { v: 'auditoria', r: 'Auditoria', n: p.correcoesPendentes.length },
         { v: 'excecoes', r: 'Exceções', n: p.excecoesPendentes.length }, { v: 'ocorrencias', r: 'Ocorrências', n: decisaoOcorr },
         { v: 'retornos', r: 'Retornos' }, { v: 'planos', r: 'Conversas' }, { v: 'gestao', r: 'Indicadores da liderança' },
       ]} />
       {aba === 'visao' && <Visao u={u} />}
       {aba === 'mecanicos' && <PorMecanico />}
+      {aba === 'assistencia' && <Assistencia />}
       {aba === 'auditoria' && <Auditoria u={u} />}
       {aba === 'excecoes' && <Excecoes u={u} />}
       {aba === 'ocorrencias' && <Ocorrencias u={u} />}
       {aba === 'retornos' && <Retornos />}
       {aba === 'planos' && <Planos u={u} />}
       {aba === 'gestao' && <Gestao />}
+    </div>
+  );
+}
+
+type PeriodoAj = 'hoje' | '7d' | 'mes';
+
+/** Em quantos carros cada mecânico podia ter ajudado (livre 10+ min com carro de outro rodando) e em quantos ajudou. */
+function Assistencia() {
+  const db = useDB();
+  const [per, setPer] = useState<PeriodoAj>('hoje');
+  useEffect(() => { if (MODO_REAL) void carregarEventosRodizio(); }, []);
+  const hoje = hojeKey();
+  const de = per === 'hoje' ? hoje : per === '7d' ? addDias(hoje + 'T15:00:00Z', -6).slice(0, 10) : hoje.slice(0, 8) + '01';
+  const linhas = indicadoresAssistencia(db, de, hoje, agoraISO())
+    .map(l => ({ ...l, nome: db.usuarios.find(x => x.id === l.mecanicoId)?.nome || '—' }))
+    .sort((a, b) => b.podia - a.podia || a.nome.localeCompare(b.nome));
+  const agora = db.os.filter(o => o.status === 'andamento' && o.assistencias?.some(a => !a.fim));
+  const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : '—');
+  return (
+    <div className="stack">
+      <Card titulo="Assistência por mecânico" acao={<Segmented rotulo="Período" valor={per} onChange={setPer} opcoes={[{ v: 'hoje', r: 'Hoje' }, { v: '7d', r: '7 dias' }, { v: 'mes', r: 'Mês' }]} />}>
+        <div className="tbl-wrap">
+          <table className="tbl">
+            <thead><tr><th>Mecânico</th><th className="num">Podia ajudar</th><th className="num">Ajudou</th><th className="num">Aproveitamento</th><th className="num">Tempo ajudando</th><th className="num">Livre com carro rodando</th></tr></thead>
+            <tbody>
+              {linhas.map(l => (
+                <tr key={l.mecanicoId}>
+                  <td>{l.nome}</td>
+                  <td className="num">{l.podia}</td>
+                  <td className="num">{l.ajudou}</td>
+                  <td className="num">{pct(l.ajudou, l.podia)}</td>
+                  <td className="num">{fmtMin(l.minutosAjudando)}</td>
+                  <td className="num">{fmtMin(l.minutosLivre)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="small muted" style={{ marginTop: 10 }}>
+          <b>Podia ajudar</b>: carros de outro mecânico em andamento enquanto ele esteve livre por {MIN_LIVRE_PARA_AJUDA} min ou mais (sem OS própria, fora do almoço/ausência marcados no rodízio, entre o primeiro e o último carro dele no dia). <b>Ajudou</b>: carros em que o mecânico da OS registrou a ajuda. É informação para conversa; não muda comissão nem gera consequência automática.
+        </p>
+      </Card>
+      <Card titulo="Ajudando agora">
+        {agora.length === 0 ? <Empty titulo="Ninguém ajudando agora." /> : (
+          <div className="list">
+            {agora.map(o => (
+              <a className="li" key={o.id} href={`#/os/${o.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                <div className="grow">
+                  <div className="ttl">OS #{o.numero} · com {primeiroNome(db.usuarios.find(x => x.id === o.mecanicoId)?.nome)}</div>
+                  <div className="meta">Ajuda: {o.assistencias!.filter(a => !a.fim).map(a => `${primeiroNome(db.usuarios.find(x => x.id === a.mecanicoId)?.nome)} desde ${fmtDataHora(a.inicio).slice(-5)}`).join(', ')}</div>
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

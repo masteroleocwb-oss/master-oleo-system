@@ -39,6 +39,7 @@ export function OSCard({ db, os, mostrarMecanico = true, previsto, euId }: {
   const p = c ? progresso(c, db.evidencias) : null;
   const espera = os.status === 'aguardando' ? diffMin(os.abertaEm, agoraISO()) : null;
   const pausa = os.status === 'pausada' ? os.pausas?.at(-1) : undefined;
+  const ajudantes = (os.assistencias || []).filter(x => !x.fim).map(x => primeiroNome(db.usuarios.find(y => y.id === x.mecanicoId)?.nome));
   const prevMec = previsto?.mecanicoId ? db.usuarios.find(x => x.id === previsto.mecanicoId) : undefined;
   return (
     <a className={`os-card st-${os.status} ${os.retornoDeOsId ? 'retorno' : ''} ${previsto && previsto.mecanicoId && previsto.mecanicoId === euId ? 'minha-vez' : ''}`} href={`#/os/${os.id}`} data-os={os.numero}>
@@ -51,7 +52,7 @@ export function OSCard({ db, os, mostrarMecanico = true, previsto, euId }: {
         <span className="row nowrap" style={{ gap: 6 }}><span className={`st-pill st-${os.status}`}>{STATUS_OS[os.status].r}</span><span className="small muted mono">#{os.numero}</span></span>
       </div>
       {mostrarMecanico && mec && (os.status === 'andamento' || os.status === 'pausada') && (
-        <div className="com-mecanico">Com: <b>{mec.nome}</b></div>
+        <div className="com-mecanico">Com: <b>{mec.nome}</b>{ajudantes.length > 0 && <> · Ajuda: <b>{ajudantes.join(', ')}</b></>}</div>
       )}
       {previsto && os.status === 'aguardando' && (
         <div className="com-mecanico previsto">

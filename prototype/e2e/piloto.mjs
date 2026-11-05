@@ -125,6 +125,14 @@ try {
   await ate(mec, 'Checklist técnico');
   const emAndamento = (await listar('orders')).find(o => o.numeroOrdem === 7006);
   ok(emAndamento.status === 'andamento' && emAndamento.lubrificador === 'Caio' && /^\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}:\d{2}$/.test(emAndamento.inicio), 'Assumir grava status, lubrificador e início como o sistema atual');
+  // Ajuda: o mecânico da OS registra quem veio ajudar.
+  await clicar(mec, 'Chamar ajuda');
+  await ate(mec, 'Quem veio ajudar');
+  await mec.evaluate(() => { const li = [...document.querySelectorAll('.sheet .li')].find(x => x.textContent.includes('Joilson')); li.querySelector('button').click(); });
+  await ate(mec, 'Ajuda: Joilson');
+  const comAjuda = (await listar('orders')).find(o => o.numeroOrdem === 7006);
+  const aj = comAjuda.plataforma?.assistencias?.[0];
+  ok(aj && !aj.fim && comAjuda.lubrificador === 'Caio', 'Ajuda registrada na OS (sem mudar o mecânico do sistema atual)');
   const ids = await mec.$$eval('[data-item]', es => es.map(e => e.getAttribute('data-item')));
   for (const id of ids) {
     if (!(await mec.$(`[data-item="${id}"] .ck-body:not([hidden])`))) await tocar(mec, `[data-item="${id}"] .ck-head`);
@@ -147,6 +155,7 @@ try {
   ok(fim.status === 'concluido' && fim.km === '81000' && /^\d{2}\/\d{2}\/\d{4}, /.test(fim.fim), 'Finalização grava status, km e fim no formato do sistema atual');
   ok(fim.valorUpsell === 89 && fim.valorTotal === 389 && fim.fezUpsell === true && fim.quantidadeItensUpsell === 1, 'Upsell e total corretos para comissão/faturamento do sistema atual');
   ok(fim.upsells?.militec?.aceito === 'sim' && fim.upsells?.aditivo?.aceito === 'nao', 'Ofertas aceitas e recusadas no mapa `upsells`');
+  ok(!!fim.plataforma?.assistencias?.[0]?.fim, 'Ajuda encerra sozinha quando a OS é concluída');
   ok(!!fim.plataforma?.checklistId && (await listar('checklists')).some(c => c.id === fim.plataforma.checklistId && c.status === 'concluido'), 'Checklist concluído salvo e ligado à OS');
   const mp = (await listar('manutencoes')).find(m => m.osOrigemId === fim.plataforma && false) || (await listar('manutencoes')).find(m => m.servicoKey === 'oleoMotor');
   ok(mp && mp.kmPrevisto === 91000 && !!mp.dataPrevista, 'Próxima troca: 91.000 km e data prevista');

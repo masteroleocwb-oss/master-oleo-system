@@ -166,7 +166,7 @@ async function aoMudarLogin(u: User | null) {
   raw.orders.clear(); raw.usuarios.clear(); raw.global = {}; raw.acessos = [];
   CHAVES.forEach(c => raw.col[c].clear());
   Object.assign(carregou, { orders: false, usuarios: false, global: false });
-  pediuAntigas = false; placasBuscadas.clear();
+  pediuAntigas = false; placasBuscadas.clear(); eventosRodizio = false;
   uidAtual = u?.uid ?? null;
   if (!u) { estado = 'desconectado'; db = dbVazio(); notificar(); return; }
   // Sessão aberta fora da tela de login (ou vencida): sai.
@@ -242,6 +242,18 @@ async function carregarHistorico() {
     s.forEach(d => { if (!raw.orders.has(d.id)) raw.orders.set(d.id, d.data()); });
     agendar();
   } catch (e) { console.warn('Histórico completo indisponível', e); }
+}
+
+let eventosRodizio = false;
+/** Marcações de almoço/ausência (poucas por dia) para o painel de assistência; o resto do histórico vem pela janela. */
+export async function carregarEventosRodizio() {
+  if (eventosRodizio || !fs || !uidAtual) return;
+  eventosRodizio = true;
+  try {
+    const s = await getDocs(query(collection(fs, 'eventos'), where('tipo', '==', 'rodizio.status')));
+    s.forEach(d => { if (!raw.col.eventos.has(d.id)) raw.col.eventos.set(d.id, d.data()); });
+    agendar();
+  } catch (e) { eventosRodizio = false; console.warn('Marcações do rodízio indisponíveis', e); }
 }
 
 /** Sem o histórico inteiro: busca as OS antigas só das placas que estão em atendimento (km, últimas trocas). */

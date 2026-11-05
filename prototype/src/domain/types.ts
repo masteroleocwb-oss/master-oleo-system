@@ -106,6 +106,15 @@ export interface OfertaAdicional {
   em: string;
 }
 
+/** Outro mecânico ajudando na OS (chamado por quem atende). Não muda comissão nem rodízio. */
+export interface Assistencia {
+  mecanicoId: string;
+  inicio: string;
+  fim?: string;
+  chamadoPor: string;
+  encerradoPor?: string;
+}
+
 export interface Pausa {
   inicio: string;
   fim?: string;
@@ -152,6 +161,7 @@ export interface OrdemServico {
   retornoDeOsId?: string;
   retorno?: AtendimentoRetorno;
   pausas?: Pausa[];
+  assistencias?: Assistencia[];
   ofertas?: OfertaAdicional[];
   /** Mecânico que assumiu fora da ordem prevista (motivo fica no evento). */
   foraDaOrdem?: { previsto?: string; motivo: string };

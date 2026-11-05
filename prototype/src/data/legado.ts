@@ -169,6 +169,7 @@ export interface Plataforma {
   execucao?: Partial<Record<ServicoKey, { executado: boolean; quantidadeExecutada?: string; intervaloKm?: number }>>;
   ofertas?: OrdemServico['ofertas'];
   pausas?: OrdemServico['pausas'];
+  assistencias?: OrdemServico['assistencias'];
   foraDaOrdem?: OrdemServico['foraDaOrdem'];
   checklistId?: string;
   naoOferecer?: OrdemServico['naoOferecer'];
@@ -244,6 +245,7 @@ export function osDeLegado(id: string, o: DocLegado, nomes: MapaNomes): OrdemSer
     obsInterna: txt(o.obsCarro) || undefined,
     obsCliente: p.obsCliente,
     pausas: p.pausas,
+    assistencias: p.assistencias,
     ofertas: ofertas.length ? ofertas : undefined,
     foraDaOrdem: p.foraDaOrdem,
     checklistId: p.checklistId,
@@ -310,7 +312,7 @@ export function legadoDeOS(os: OrdemServico, v: Veiculo | undefined, c: Cliente 
   for (const s of balcao) execucao[s.key] = { executado: s.executado, ...(s.quantidadeExecutada ? { quantidadeExecutada: s.quantidadeExecutada } : {}), ...(s.intervaloKm ? { intervaloKm: s.intervaloKm } : {}) };
   const plataforma: Plataforma = {
     vendedorId: os.vendedorId, mecanicoId: os.mecanicoId, criadaPor: os.criadaPor, extras, execucao,
-    ofertas: os.ofertas, pausas: os.pausas, foraDaOrdem: os.foraDaOrdem, checklistId: os.checklistId, naoOferecer: os.naoOferecer,
+    ofertas: os.ofertas, pausas: os.pausas, assistencias: os.assistencias, foraDaOrdem: os.foraDaOrdem, checklistId: os.checklistId, naoOferecer: os.naoOferecer,
     retornoDeOsId: os.retornoDeOsId, atendimentoRetorno: os.retorno, canceladaMotivo: os.canceladaMotivo, obsCliente: os.obsCliente,
     iniciadaEm: os.iniciadaEm, concluidaEm: os.status === 'concluido' || os.status === 'encerrada' ? os.concluidaEm : undefined,
   };

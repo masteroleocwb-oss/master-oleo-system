@@ -10,6 +10,7 @@ import { textoPrevisto } from '../domain/manutencao';
 import { Alerta, Badge, Btn, Empty, Field, Placa, Progress, SaveIndicator, Segmented, Sheet, useAcao, useDB, type SaveState } from '../ui/components';
 import { PhotoCapture } from '../ui/PhotoCapture';
 import { EstadoBadge } from './common';
+import { AjudaBotao } from './Ajuda';
 import { PausarBotao } from './Pausa';
 
 type Modo = 'lista' | 'compacto';
@@ -61,7 +62,7 @@ export function Checklist({ u, osId, foco }: { u: Usuario; osId: string; foco: s
         </div>
         <div className="row">
           <Segmented rotulo="Modo de visualização" valor={modo} onChange={setModo} opcoes={[{ v: 'lista', r: 'Lista' }, { v: 'compacto', r: 'Compacto' }]} />
-          <PausarBotao u={u} os={os} />
+          <AjudaBotao u={u} os={os} /><PausarBotao u={u} os={os} />
         </div>
       </div>
       {os.status === 'pausada' && <div style={{ marginBottom: 10 }}><Alerta tipo="warn">OS pausada. Retome na Operação para continuar o checklist.</Alerta></div>}
