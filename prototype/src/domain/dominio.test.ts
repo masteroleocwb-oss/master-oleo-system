@@ -3,6 +3,7 @@ import { CATALOGO_INICIAL, REGRAS_INICIAIS, TIPOS_CAMBIO_AUTO } from './catalogo
 import { aprendidoPeloSistema, naoSeAplicaAprendido, novoChecklist, pendenciasParaConcluir, registrarItem, validarItem } from './checklist';
 import { aprovarVersao, calcularProposta, calcularVigente, descontoChecklist, proporVersao, scoreExecucao, transicaoOcorrencia, versaoEm } from './gestao';
 import { statusManutencao, sugerirProxima } from './manutencao';
+import { enderecoDoCliente, urlRelatorio } from './contato';
 import { pode } from './permissions';
 import type { Meta, Ocorrencia, OrdemServico, Usuario, Veiculo } from './types';
 import { fixarAgora, novoToken, placaValida } from './util';
@@ -208,5 +209,17 @@ describe('permissões e utilitários', () => {
     expect(placaValida('abc-1234')).toBe(true);
     expect(placaValida('ABC1D23')).toBe(true);
     expect(placaValida('AB12345')).toBe(false);
+  });
+});
+
+describe('link do cliente', () => {
+  const loc = (hostname: string) => ({ hostname, origin: `https://${hostname}`, pathname: '/' });
+  it('na base real sai sempre pelo endereço dos clientes; fora dela, pelo endereço aberto', () => {
+    expect(urlRelatorio('abc', true, loc('sistema.masteroleo.com.br'))).toBe('https://cliente.masteroleo.com.br/#/r/abc');
+    expect(urlRelatorio('abc', true, loc('master-oleo-novo.vercel.app'))).toBe('https://cliente.masteroleo.com.br/#/r/abc');
+    expect(urlRelatorio('abc', false, loc('sistema.masteroleo.com.br'))).toBe('https://sistema.masteroleo.com.br/#/r/abc');
+    expect(urlRelatorio('abc', true, loc('127.0.0.1'))).toBe('https://127.0.0.1/#/r/abc');
+    expect(enderecoDoCliente('cliente.masteroleo.com.br')).toBe(true);
+    expect(enderecoDoCliente('sistema.masteroleo.com.br')).toBe(false);
   });
 });

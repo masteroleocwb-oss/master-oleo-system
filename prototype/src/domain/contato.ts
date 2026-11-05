@@ -9,8 +9,8 @@ export const linkWhatsappMaster = (texto: string) =>
 
 /** Endereço dos relatórios dos clientes (só abre relatório, nunca a tela de login). */
 export const URL_CLIENTE = 'https://cliente.masteroleo.com.br';
-/** Ligar só depois que o endereço do cliente estiver respondendo (DNS na Hostinger). */
-const CLIENTE_NO_AR = false;
+/** Endereço do cliente no ar (CNAME na Hostinger desde 05/11/2026). */
+const CLIENTE_NO_AR = true;
 
 /** É o endereço dos clientes? Ali só o relatório abre. */
 export const enderecoDoCliente = (host = location.hostname) => host.startsWith('cliente.');
