@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Master Óleo Curitiba - Sistema de Gestão</title>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+    <script crossorigin="anonymous" src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z"></script>
+    <script crossorigin="anonymous" src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1"></script>
+    <script crossorigin="anonymous" src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js" integrity="sha384-ezQ6HS3FLspd9te19o2McUV6FAK091+GG7KO54f/R8DKgCDi7fULhapNrd5LY+vG"></script>
+    <script crossorigin="anonymous" src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js" integrity="sha384-ViccRjS0k/lvYsrtaKXk+ES61/4PAZlFI/mPHmLC1YWzK0AIbXbI5ZXDzcm3F8gH"></script>
+    <script crossorigin="anonymous" src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js" integrity="sha384-+/4lqMnmLqwbdHXshvGDmBTeWlNoPRdjXi4ZsiBj10EhQXaTBe3RF5JZktdSjug6"></script>
+    <script crossorigin="anonymous" src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js" integrity="sha384-7TetnPNdXXu6qURzIEXWCwpXedGGBJSXIR5Cv0gOWTB34UD5TxPHx33PhjA6wFQ3"></script>
+    <script crossorigin="anonymous" src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js" integrity="sha384-oFrOL1TiREYNET0lsYF3LjQuyi2gL7vhjH1X8vFr+umcmzAdPELopeSgbcrv4uRm"></script>
     <style>
         * {
             margin: 0;
@@ -674,6 +674,9 @@
          * @param {string} orderId - ID da ordem
          * @returns {Promise<string>} - URL da imagem
          */
+        // Link de foto salvo na OS: só abre endereço web ou imagem (nunca "javascript:" ou parecido).
+        const urlFotoSegura = (u) => /^(https?:\/\/|data:image\/)/i.test(String(u || '').trim()) ? u : undefined;
+
         const uploadImagem = async (file, folder, orderId) => {
             try {
                 const timestamp = Date.now();
@@ -5691,7 +5694,7 @@
                                                 <span>
                                                     {u.aceito ? '✅' : '❌'} {u.label}
                                                     {u.foto && (
-                                                        <a href={u.foto} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '8px', color: '#4299e1', textDecoration: 'none', fontSize: '13px' }}>📷 ver foto</a>
+                                                        <a href={urlFotoSegura(u.foto)} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '8px', color: '#4299e1', textDecoration: 'none', fontSize: '13px' }}>📷 ver foto</a>
                                                     )}
                                                 </span>
                                                 <span style={{ fontWeight: 'bold', color: u.aceito ? '#48bb78' : '#a0aec0' }}>
@@ -5826,7 +5829,7 @@
                                                 {order.inspecao.fotosVazamento.map((url, idx) => (
                                                     <a 
                                                         key={idx}
-                                                        href={url} 
+                                                        href={urlFotoSegura(url)} 
                                                         target="_blank" 
                                                         rel="noopener noreferrer"
                                                         style={{
@@ -5896,7 +5899,7 @@
                                                     {order.retorno.fotosRetorno.map((url, idx) => (
                                                         <a 
                                                             key={idx}
-                                                            href={url} 
+                                                            href={urlFotoSegura(url)} 
                                                             target="_blank" 
                                                             rel="noopener noreferrer"
                                                             style={{
