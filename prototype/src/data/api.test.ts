@@ -403,6 +403,16 @@ describe('carro de loja e liderança que atende', () => {
     expect(depois.baseChecklist).toBe(antes.baseChecklist);
   });
 
+  it('item do checklist de serviço que o cliente já contratou na OS não vira recomendação', async () => {
+    const os = await novaOS(); // já vem com troca de óleo
+    const livre = filaRodizio(getDB()).find(f => !f.ocupado && f.status === 'disponivel')!.mecanico.id;
+    const ck = await iniciarOS(U(livre), os.id, livre, 'teste');
+    await adicionarEvidencia(U(livre), ck, 'oleo_motor', { url: 'data:,', demo: true });
+    await registrarItemChecklist(U(livre), ck, 'oleo_motor', 'prioritario', { recomendacao: 'Óleo muito escuro' });
+    expect(getDB().oportunidades.some(o => o.osId === os.id && o.itemDefId === 'oleo_motor')).toBe(false);
+    expect(getDB().checklists.find(c => c.id === ck)!.itens.oleo_motor.estado).toBe('prioritario');
+  });
+
   it('líder marcado para atender entra no rodízio, assume para si e sai da fila quando não está atendendo', async () => {
     const seed = gerarSeed();
     seed.usuarios.find(x => x.id === 'u_lid')!.atendeComoMecanico = true;

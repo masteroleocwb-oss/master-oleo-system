@@ -5,7 +5,7 @@ import { atendeOS } from '../domain/permissions';
 import { descontoChecklist, scoreExecucao, versaoEm } from '../domain/gestao';
 import type { DB, OrdemServico } from '../domain/types';
 import { diaKey, diasUteis, diffMin, hojeKey, media, minutosTrabalhados, mesKey, pct, soma, ultimoDiaDoMes } from '../domain/util';
-import { valoresOS } from './api';
+import { servicoNaOS, valoresOS } from './api';
 
 export const DEFINICOES: Record<string, { nome: string; formula: string; porque: string }> = {
   carros: { nome: 'Carros atendidos', formula: 'OS concluídas por você no mês (retornos ficam fora: não são um carro novo).', porque: 'Volume sozinho não diz qualidade; por isso aparece ao lado do checklist.' },
@@ -156,7 +156,7 @@ export function painelHoje(d: DB) {
     faturamentoHoje: soma(concluidasHoje.map(o => valoresOS(o).total)),
     excecoesPendentes: d.checklists.filter(c => c.solicitacaoExcecao?.status === 'pendente'),
     correcoesPendentes: d.checklists.filter(c => c.correcaoSolicitada && !c.correcaoSolicitada.resolvidaEm),
-    oportunidadesNovas: d.oportunidades.filter(o => o.situacao === 'nova'),
+    oportunidadesNovas: d.oportunidades.filter(o => o.situacao === 'nova' && !servicoNaOS(d.os.find(x => x.id === o.osId), o.servicoKey)),
     ocorrenciasDecisao: d.ocorrencias.filter(o => o.status === 'em_revisao' || o.status === 'contestada'),
     ocorrenciasRascunho: d.ocorrencias.filter(o => o.status === 'registrada'),
     ocorrenciasAplicar: d.ocorrencias.filter(o => o.status === 'aprovada'),

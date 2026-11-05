@@ -5,6 +5,7 @@ import { ESTADOS, ORIGEM_LABEL, RECOMENDACAO } from '../domain/catalogo';
 import type { EstadoItem } from '../domain/types';
 import { fmtData, fmtDataHora, fmtKm } from '../domain/util';
 import { Badge, Btn } from '../ui/components';
+import { ImgAmpliavel } from '../ui/Ampliar';
 
 const ORDEM: EstadoItem[] = ['prioritario', 'atencao', 'pendente_avaliacao', 'ok', 'nao_aplicavel'];
 
@@ -71,7 +72,7 @@ export function RelatorioPublico({ token }: { token: string }) {
               {(['antes', 'depois'] as const).map(et => rel.retorno![et].length > 0 && (
                 <div key={et}>
                   <div className="small strong">{et === 'antes' ? 'Antes' : 'Depois'}</div>
-                  <div className="gallery">{rel.retorno![et].map((f, k) => <figure key={k}><img src={f.url} alt={f.legenda || et} /><figcaption>{[f.legenda, f.demo && 'imagem demonstrativa'].filter(Boolean).join(' · ')}</figcaption></figure>)}</div>
+                  <div className="gallery">{rel.retorno![et].map((f, k) => <figure key={k}><ImgAmpliavel src={f.url} alt={f.legenda || et} /><figcaption>{[f.legenda, f.demo && 'imagem demonstrativa'].filter(Boolean).join(' · ')}</figcaption></figure>)}</div>
                 </div>
               ))}
             </div>
@@ -96,7 +97,7 @@ export function RelatorioPublico({ token }: { token: string }) {
                   {i.recomendacao && <p className="small" style={{ marginTop: 4 }}>{i.recomendacao}</p>}
                   {fotosDe(i.nome).length > 0 && (
                     <div className="gallery" style={{ marginTop: 8 }}>
-                      {fotosDe(i.nome).map((f, k) => <figure key={k}><img src={f.url} alt={f.legenda || i.nome} /><figcaption>{[f.legenda, f.demo && 'imagem demonstrativa'].filter(Boolean).join(' · ')}</figcaption></figure>)}
+                      {fotosDe(i.nome).map((f, k) => <figure key={k}><ImgAmpliavel src={f.url} alt={f.legenda || i.nome} /><figcaption>{[f.legenda, f.demo && 'imagem demonstrativa'].filter(Boolean).join(' · ')}</figcaption></figure>)}
                     </div>
                   )}
                 </div>

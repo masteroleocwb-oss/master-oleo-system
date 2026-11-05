@@ -395,3 +395,10 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .retorno-box { border: 1px dashed var(--line-strong); border-radius: var(--r-sm); padding: 8px 12px; }
 .adicional { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .adicional:last-child { border-bottom: 0; }
+
+/* Foto ampliada ao tocar */
+img.ampliavel { cursor: zoom-in; }
+.foto-ampliada { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.92); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; cursor: zoom-out; }
+.foto-ampliada img { max-width: 100%; max-height: calc(100vh - 90px); object-fit: contain; border-radius: 6px; }
+.foto-ampliada .legenda { color: #fff; font-size: 14px; margin-top: 10px; text-align: center; max-width: 720px; }
+.foto-ampliada .fechar { position: absolute; top: 12px; right: 12px; width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255,255,255,.18); color: #fff; font-size: 26px; line-height: 1; cursor: pointer; }

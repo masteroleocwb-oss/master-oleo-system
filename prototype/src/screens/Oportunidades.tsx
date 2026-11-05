@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { nomeDe, tratarOportunidade } from '../data/api';
+import { nomeDe, oportunidadePendente, servicoNaOS, tratarOportunidade } from '../data/api';
 import { ESTADOS, SERVICOS } from '../domain/catalogo';
 import { pode } from '../domain/permissions';
 import type { Oportunidade, SituacaoOportunidade, Usuario } from '../domain/types';
@@ -19,7 +19,7 @@ export function Oportunidades({ u }: { u: Usuario }) {
   const [filtro, setFiltro] = useState<Filtro>('abertas');
   const [sel, setSel] = useState<Oportunidade | null>(null);
   const lista = db.oportunidades
-    .filter(o => filtro === 'todas' ? true : filtro === 'abertas' ? (o.situacao === 'nova' || o.situacao === 'apresentada') && db.os.find(x => x.id === o.osId)?.status !== 'concluido' : diaKey(o.criadaEm) === hojeKey())
+    .filter(o => filtro === 'todas' ? true : filtro === 'abertas' ? oportunidadePendente(db, o) && db.os.find(x => x.id === o.osId)?.status !== 'concluido' : diaKey(o.criadaEm) === hojeKey())
     .sort((a, b) => (a.estadoItem === 'prioritario' ? -1 : 0) - (b.estadoItem === 'prioritario' ? -1 : 0) || b.criadaEm.localeCompare(a.criadaEm))
     .slice(0, 60);
   return (
@@ -59,7 +59,8 @@ function OportunidadeSheet({ u, op, onClose }: { u: Usuario; op: Oportunidade; o
   const [obs, setObs] = useState('');
   const os = db.os.find(x => x.id === op.osId)!;
   const fotos = db.evidencias.filter(e => op.evidenciaIds.includes(e.id) && !e.removida);
-  const podeTratar = pode(u, 'oportunidade.tratar') && op.situacao !== 'nao_oferecer' && op.situacao !== 'aceita';
+  const jaNaOS = servicoNaOS(os, op.servicoKey);
+  const podeTratar = pode(u, 'oportunidade.tratar') && op.situacao !== 'nao_oferecer' && op.situacao !== 'aceita' && !jaNaOS;
   const fazer = async (s: SituacaoOportunidade, msg: string) => {
     const r = await acao.executar(() => tratarOportunidade(u, op.id, s, { valor: Number(valor.replace(',', '.')) || undefined, obs }), msg);
     if (r !== undefined) onClose();
@@ -68,6 +69,7 @@ function OportunidadeSheet({ u, op, onClose }: { u: Usuario; op: Oportunidade; o
     <Sheet titulo={op.recomendacao} sub={`OS #${os.numero} · ${SIT[op.situacao].r}`} onClose={onClose}>
       {fotos.length > 0 && <div className="fotos" style={{ marginBottom: 12 }}>{fotos.map(f => <div key={f.id} className="foto"><FotoImg url={f.url} alt={f.legenda || ''} /><div className="cap">{f.legenda}</div></div>)}</div>}
       {op.servicoKey && <p className="small">Serviço relacionado: <b>{SERVICOS[op.servicoKey].nome}</b></p>}
+      {jaNaOS && <div style={{ margin: '8px 0' }}><Alerta tipo="info">O cliente já contratou este serviço nesta OS: não precisa oferecer. As fotos ficam no checklist e no relatório.</Alerta></div>}
       {os.status === 'concluido' && op.situacao !== 'aceita' && <div style={{ margin: '8px 0' }}><Alerta tipo="info">A OS já foi concluída. Se o cliente aceitar agora, abra uma nova OS para o serviço.</Alerta></div>}
       {op.situacao === 'nao_oferecer' && <Alerta tipo="info">Frota com instrução de não oferecer. Registro mantido para o histórico do veículo.</Alerta>}
       {podeTratar && os.status !== 'concluido' && (

@@ -6,7 +6,7 @@ import { fotosAtivasDoItem, novoChecklist, pendenciasParaConcluir, registrarItem
 import { aprovarVersao, descartarRascunho, proporVersao, transicaoOcorrencia, type AcaoOcorrencia } from '../domain/gestao';
 import { atendeOS, exigir, ErroPermissao, pode, podeAtenderCarros } from '../domain/permissions';
 import type {
-  AtendimentoRetorno, Cambio, Checklist, Cliente, DB, EstadoItem, EstadoRecomendado, Evento, ItemInspecaoDef, ManutencaoPrevista, Meta, Ocorrencia, OrdemServico, OrigemIntervalo,
+  AtendimentoRetorno, Cambio, Checklist, Cliente, DB, EstadoItem, EstadoRecomendado, Evento, ItemInspecaoDef, ManutencaoPrevista, Meta, Ocorrencia, Oportunidade, OrdemServico, OrigemIntervalo,
   Pausa, Role, ServicoKey, ServicoOS, SituacaoOportunidade, Usuario, Veiculo,
 } from '../domain/types';
 import { addDias, agoraISO, diaKey, fmtPlaca, hojeKey, novoId, novoToken, normalizarPlaca, placaValida, primeiroNome, telefoneValido } from '../domain/util';
@@ -210,6 +210,14 @@ export async function abrirOS(u: Usuario, i: NovaOSInput) {
  */
 export const statusNoRodizio = (d: Pick<DB, 'rodizio'>, u: Pick<Usuario, 'id' | 'role'>): 'disponivel' | 'almoco' | 'ausente' =>
   (d.rodizio.dia === hojeKey() ? d.rodizio.status[u.id] : undefined) || (u.role === 'mecanico' ? 'disponivel' : 'ausente');
+
+/** O cliente já contratou este serviço nesta OS (não é recomendação para vender). */
+export const servicoNaOS = (os: Pick<OrdemServico, 'servicos'> | undefined, key: ServicoKey | undefined) =>
+  !!os && !!key && os.servicos.some(s => s.key === key);
+
+/** Recomendação que o comercial ainda precisa tratar (fora as de serviço que já está na OS). */
+export const oportunidadePendente = (d: Pick<DB, 'os'>, o: Oportunidade) =>
+  (o.situacao === 'nova' || o.situacao === 'apresentada') && !servicoNaOS(d.os.find(x => x.id === o.osId), o.servicoKey);
 
 export const filaRodizio = (d: DB) => {
   const hoje = hojeKey();
@@ -437,9 +445,10 @@ export async function registrarItemChecklist(u: Usuario, checklistId: string, de
     const novo = registrarItem(c, defId, estado, dados, u.id, agoraISO(), emCorrecao ? `Correção solicitada: ${c.correcaoSolicitada!.motivo}` : undefined);
     Object.assign(c, novo);
     const reg = c.itens[defId];
-    // Oportunidade para o comercial: registrar a inspeção não é vender.
+    // Oportunidade para o comercial: registrar a inspeção não é vender. Serviço que o cliente já
+    // contratou nesta OS não vira recomendação (o item e as fotos ficam no checklist e no relatório).
     const existente = d.oportunidades.find(o => o.osId === os.id && o.itemDefId === defId);
-    if ((estado === 'atencao' || estado === 'prioritario') && def.permiteRecomendacao) {
+    if ((estado === 'atencao' || estado === 'prioritario') && def.permiteRecomendacao && !servicoNaOS(os, def.servicoRelacionado)) {
       if (existente) {
         existente.estadoItem = estado; existente.recomendacao = reg.recomendacao || existente.recomendacao; existente.evidenciaIds = reg.evidenciaIds;
       } else {
