@@ -3,7 +3,7 @@ import { registrarSaida } from '../data/acesso';
 import { MODO_REAL } from '../data/modo';
 import * as nuvem from '../data/nuvem';
 import { painelHoje } from '../data/metricas';
-import { pode, ROLE_LABEL, type Capacidade } from '../domain/permissions';
+import { atendeOS, pode, ROLE_LABEL, type Capacidade } from '../domain/permissions';
 import type { Usuario } from '../domain/types';
 import { Admin } from '../screens/Admin';
 import { Checklist } from '../screens/Checklist';
@@ -62,6 +62,7 @@ export function App() {
   if (MODO_REAL) {
     const est = nuvem.getEstado();
     if (est.estado === 'desconectado') return <LoginReal />;
+    if (est.estado === 'iniciando') return <div className="login-wrap"><div className="login-hero"><img src={LOGO} alt="Master Óleo" /><h1>Abrindo…</h1></div></div>;
     if (est.estado === 'carregando') return <div className="login-wrap"><div className="login-hero"><img src={LOGO} alt="Master Óleo" /><h1>Carregando os dados da oficina…</h1></div></div>;
     const sairJa = (motivo = 'saiu') => { void nuvem.sair(motivo); };
     if (est.estado === 'erro' || !u) {
@@ -116,7 +117,7 @@ export function App() {
   const badges: Record<string, number> = {
     '/lideranca': pode(u, 'checklist.autorizar_excecao') ? p.excecoesPendentes.length + (u.role === 'direcao' ? p.ocorrenciasDecisao.length + p.metasAguardando.length : 0) : 0,
     '/oportunidades': p.oportunidadesNovas.length,
-    '/operacao': u.role === 'mecanico' ? p.correcoesPendentes.filter(c => db.os.find(o => o.id === c.osId)?.mecanicoId === u.id).length : 0,
+    '/operacao': atendeOS(u) ? p.correcoesPendentes.filter(c => db.os.find(o => o.id === c.osId)?.mecanicoId === u.id).length : 0,
   };
   const nav = navPorPerfil(u.role).filter(i => pode(u, i.cap)).map(i => ({ ...i, badge: badges[i.rota] || 0 }));
 

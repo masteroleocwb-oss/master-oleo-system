@@ -429,7 +429,7 @@ const PERFIS_REAIS: Role[] = ['direcao', 'lider', 'vendedor', 'mecanico'];
 function UsuariosReal({ u }: { u: Usuario }) {
   const db = useDB();
   const acao = useAcao();
-  const [ed, setEd] = useState<{ id: string; nome: string; role: Role; ativo: boolean; nivel?: string; nomeLegado: string } | null>(null);
+  const [ed, setEd] = useState<{ id: string; nome: string; role: Role; ativo: boolean; nivel?: string; nomeLegado: string; atendeComoMecanico: boolean } | null>(null);
   const reais = db.usuarios.filter(x => !x.id.startsWith('legado:'));
   const desde = new Date(agora().getTime() - 60 * 864e5).toISOString();
   const semConta = db.usuarios.filter(x => x.id.startsWith('legado:')).map(x => ({
@@ -456,12 +456,12 @@ function UsuariosReal({ u }: { u: Usuario }) {
           <tbody>{reais.map(x => (
             <tr key={x.id} data-usuario={x.id}>
               <td><b>{x.nome}</b>{x.nivel && <div className="tiny muted">{x.nivel}</div>}</td>
-              <td>{ROLE_LABEL[x.role]}</td>
+              <td>{ROLE_LABEL[x.role]}{x.role === 'lider' && x.atendeComoMecanico && <div className="tiny muted">Atende carros também</div>}</td>
               <td className="small">{x.email || '—'}</td>
-              <td className="small">{x.role === 'vendedor' || x.role === 'mecanico' || x.nomeLegado ? (x.nomeLegado || <span className="muted">{nomeLegadoDe(x)} (automático)</span>) : '—'}</td>
+              <td className="small">{x.role === 'vendedor' || x.role === 'mecanico' || x.atendeComoMecanico || x.nomeLegado ? (x.nomeLegado || <span className="muted">{nomeLegadoDe(x)} (automático)</span>) : '—'}</td>
               <td>{!x.ativo ? <Badge tom="muted">Desativado</Badge> : x.trocarSenha ? <Badge tom="atencao">Aguardando 1º acesso</Badge> : <Badge tom="ok">Ativo</Badge>}</td>
               <td className="row">
-                <Btn tamanho="sm" variante="ghost" onClick={() => setEd({ id: x.id, nome: x.nome, role: x.role, ativo: x.ativo, nivel: x.nivel, nomeLegado: x.nomeLegado || '' })}>Editar</Btn>
+                <Btn tamanho="sm" variante="ghost" onClick={() => setEd({ id: x.id, nome: x.nome, role: x.role, ativo: x.ativo, nivel: x.nivel, nomeLegado: x.nomeLegado || '', atendeComoMecanico: !!x.atendeComoMecanico })}>Editar</Btn>
                 {x.id !== u.id && <Btn tamanho="sm" variante={x.ativo ? 'danger' : 'sec'} carregando={acao.ocupado} onClick={() => acao.executar(() => salvarUsuario(u, { ...x, ativo: !x.ativo }), x.ativo ? 'Acesso desativado.' : 'Acesso reativado.')}>{x.ativo ? 'Desativar' : 'Reativar'}</Btn>}
               </td>
             </tr>))}</tbody>
@@ -479,6 +479,12 @@ function UsuariosReal({ u }: { u: Usuario }) {
             <input id="us-legado" className="input" list="nomes-atuais" value={ed.nomeLegado} maxLength={40} onChange={e => setEd({ ...ed, nomeLegado: e.target.value })} />
             <datalist id="nomes-atuais">{nomesAtuais.map(n => <option key={n} value={n} />)}</datalist>
           </Field>
+          {ed.role === 'lider' && (
+            <label className="row nowrap" style={{ gap: 8, margin: '4px 0 10px' }}>
+              <input type="checkbox" checked={ed.atendeComoMecanico} onChange={e => setEd({ ...ed, atendeComoMecanico: e.target.checked })} data-atende />
+              <span><b>Atende carros também</b> <span className="small muted">— entra no rodízio, assume e executa OS como mecânico. Quando não estiver atendendo, ele mesmo toca em “Não estou atendendo” na Operação.</span></span>
+            </label>
+          )}
           {acao.erro && <Alerta tipo="crit">{acao.erro}</Alerta>}
         </Sheet>
       )}

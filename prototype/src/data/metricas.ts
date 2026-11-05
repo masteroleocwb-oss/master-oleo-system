@@ -1,6 +1,7 @@
 // Indicadores. Cada indicador tem fórmula explícita (mostrada na interface) para
 // ninguém precisar adivinhar como o número foi calculado.
 import { checklistCompleto, fotosAtivasDoItem } from '../domain/checklist';
+import { atendeOS } from '../domain/permissions';
 import { descontoChecklist, scoreExecucao, versaoEm } from '../domain/gestao';
 import type { DB, OrdemServico } from '../domain/types';
 import { diaKey, diasUteis, diffMin, hojeKey, media, minutosTrabalhados, mesKey, pct, soma, ultimoDiaDoMes } from '../domain/util';
@@ -8,7 +9,7 @@ import { valoresOS } from './api';
 
 export const DEFINICOES: Record<string, { nome: string; formula: string; porque: string }> = {
   carros: { nome: 'Carros atendidos', formula: 'OS concluídas por você no mês (retornos ficam fora: não são um carro novo).', porque: 'Volume sozinho não diz qualidade; por isso aparece ao lado do checklist.' },
-  checklist: { nome: 'Checklist completo', formula: 'OS com checklist completo ÷ OS concluídas. Exceção autorizada NÃO conta como completo.', porque: 'É a base da recomendação ao cliente: sem inspeção completa, não há confiança no que foi recomendado.' },
+  checklist: { nome: 'Checklist completo', formula: 'OS com checklist completo ÷ OS concluídas. Exceção autorizada NÃO conta como completo. Carro de loja (checklist opcional) só entra quando o checklist foi completado.', porque: 'É a base da recomendação ao cliente: sem inspeção completa, não há confiança no que foi recomendado.' },
   excecoes: { nome: 'Exceções autorizadas', formula: 'OS concluídas com checklist fechado por exceção aprovada pela liderança.', porque: 'Mostra quando a operação impediu a inspeção completa — separado para não punir nem esconder.' },
   evidencias: { nome: 'Evidência quando exigida', formula: 'Itens com foto obrigatória que têm foto ÷ itens com foto obrigatória.', porque: 'A foto sustenta a recomendação para o cliente e para a auditoria.' },
   identificados: { nome: 'Itens identificados', formula: 'Itens marcados Atenção ou Prioritário no checklist.', porque: 'Mede a inspeção, não a venda. Identificar não depende do cliente aceitar.' },
@@ -26,6 +27,8 @@ export interface IndicadoresMecanico {
   carros: number;
   carrosElegiveis: number;
   checklistCompletos: number;
+  /** OS que contam para o checklist % (carro de loja sem checklist fica fora). */
+  baseChecklist: number;
   excecoes: number;
   checklistPct: number | null;
   fotosExigidas: number;
@@ -70,7 +73,9 @@ export function indicadoresMecanico(d: DB, mecanicoId: string, mes = mesKey(hoje
   const diasExc = new Set(d.diasExcecao.map(x => x.data));
   const elegiveis = os.filter(o => !diasExc.has(diaKey(o.abertaEm)) && !o.naoOferecer).length;
   const retornos = d.os.filter(o => o.retornoDeOsId && mesKey(o.abertaEm) === mes && d.os.find(x => x.id === o.retornoDeOsId)?.mecanicoId === mecanicoId).length;
-  const checklistPct = os.length ? pct(completos, os.length) : null;
+  // Carro de loja tem checklist opcional: só entra na base do checklist % quando foi completado.
+  const baseChecklist = os.filter((o, i) => !o.carroDeLoja || checklistCompleto(cks[i])).length;
+  const checklistPct = baseChecklist ? pct(completos, baseChecklist) : null;
   const desc = descontoChecklist(checklistPct);
   const aplicadas = d.ocorrencias.filter(o => o.profissionalId === mecanicoId && o.status === 'aplicada' && mesKey(o.dataHora) === mes);
   const r: IndicadoresMecanico = {
@@ -78,6 +83,7 @@ export function indicadoresMecanico(d: DB, mecanicoId: string, mes = mesKey(hoje
     carros: os.length,
     carrosElegiveis: elegiveis,
     checklistCompletos: completos,
+    baseChecklist,
     excecoes,
     checklistPct,
     fotosExigidas: exig,
@@ -118,14 +124,14 @@ export function indicadoresMecanico(d: DB, mecanicoId: string, mes = mesKey(hoje
 }
 
 export function indicadoresEquipe(d: DB, mes = mesKey(hojeKey() + 'T15:00:00Z')) {
-  const mecs = d.usuarios.filter(u => u.role === 'mecanico' && u.ativo);
+  const mecs = d.usuarios.filter(u => atendeOS(u) && u.ativo);
   const porMec = mecs.map(m => ({ usuario: m, ind: indicadoresMecanico(d, m.id, mes) }));
   const tot = (k: keyof IndicadoresMecanico) => soma(porMec.map(x => Number(x.ind[k]) || 0));
   const carros = tot('carros');
   return {
     porMec,
     carros,
-    checklistPct: carros ? pct(tot('checklistCompletos'), carros) : null,
+    checklistPct: tot('baseChecklist') ? pct(tot('checklistCompletos'), tot('baseChecklist')) : null,
     excecoes: tot('excecoes'),
     evidenciasPct: tot('fotosExigidas') ? pct(tot('fotosFeitas'), tot('fotosExigidas')) : null,
     identificados: tot('identificados'),

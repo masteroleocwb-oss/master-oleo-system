@@ -91,8 +91,11 @@ const raw = {
 };
 const carregou = { orders: false, usuarios: false, global: false };
 
-export type EstadoBase = 'desconectado' | 'carregando' | 'pronto' | 'erro';
-let estado: EstadoBase = 'desconectado';
+// 'iniciando': o aparelho ainda está lendo o login salvo. Sem isso, cada recarga da página (o Android
+// recarrega a aba ao voltar da câmera ou de outro app) mostrava a tela de login por alguns segundos e o
+// mecânico entrava de novo achando que tinha sido deslogado.
+export type EstadoBase = 'iniciando' | 'desconectado' | 'carregando' | 'pronto' | 'erro';
+let estado: EstadoBase = 'iniciando';
 let erroCarga = '';
 let uidAtual: string | null = null;
 let db: DB = dbVazio();
@@ -118,6 +121,7 @@ const isoDe = (x: unknown): string => {
 const usuarioDeDoc = (id: string, u: DocumentData): Usuario => ({
   id, nome: u.nome || u.email || 'Sem nome', role: (u.perfil || 'mecanico') as Role, ativo: u.ativo === true, criadoEm: isoDe(u.criadoEm),
   email: u.email, nomeLegado: u.nomeLegado || undefined, nivel: u.nivel || undefined, trocarSenha: u.trocarSenha === true,
+  atendeComoMecanico: u.atendeComoMecanico === true || undefined,
 });
 
 let reconstruir = false;
@@ -200,9 +204,9 @@ async function aoMudarLogin(u: User | null) {
   memo.nomes = null; memo.cadastros = null;
   uidAtual = u?.uid ?? null;
   if (!u) { estado = 'desconectado'; db = dbVazio(); notificar(); return; }
-  // Sessão aberta fora da tela de login (ou vencida): sai.
-  const desde = Number(localStorage.getItem(CHAVE_SESSAO) || 0);
-  if (!desde) { await signOut(auth); return; }
+  // Login salvo sem a marca do turno (o navegador limpou só uma parte dos dados): conta o turno a partir
+  // de agora em vez de deslogar. O prazo de 12 horas continua valendo.
+  try { if (!Number(localStorage.getItem(CHAVE_SESSAO) || 0)) localStorage.setItem(CHAVE_SESSAO, String(Date.now())); } catch { /* segue */ }
   estado = 'carregando'; erroCarga = '';
   notificar();
   const falha = (e: unknown) => {
@@ -667,7 +671,7 @@ async function gravar(antes: DB, depois: DB) {
       }
 
       for (const u of mudUsuarios) {
-        const dados = { nome: u.nome, perfil: u.role, ativo: u.ativo, nivel: u.nivel ?? null, nomeLegado: u.nomeLegado ?? null, atualizadoEm: serverTimestamp(), atualizadoPor: uid };
+        const dados = { nome: u.nome, perfil: u.role, ativo: u.ativo, nivel: u.nivel ?? null, nomeLegado: u.nomeLegado ?? null, atendeComoMecanico: u.role === 'lider' && !!u.atendeComoMecanico, atualizadoEm: serverTimestamp(), atualizadoPor: uid };
         tx.update(doc(fs, 'usuarios', u.id), dados);
         escritasLocais.push(() => raw.usuarios.set(u.id, { ...raw.usuarios.get(u.id), ...dados, atualizadoEm: new Date().toISOString() }));
       }

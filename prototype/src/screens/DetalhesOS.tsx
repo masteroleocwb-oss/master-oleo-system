@@ -7,7 +7,7 @@ import { pode } from '../domain/permissions';
 import type { Compartilhamento, OrdemServico, Usuario } from '../domain/types';
 import { fmtBRL, fmtData, fmtDataHora, fmtKm, fmtMin, diffMin, diaKey, hojeKey, primeiroNome } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Empty, Field, Placa, Sheet, Tabs, useAcao, useDB, useToast } from '../ui/components';
-import { ChecklistBadge, EstadoBadge, STATUS_OS } from './common';
+import { CarroDeLojaBadge, ChecklistBadge, EstadoBadge, STATUS_OS } from './common';
 import { AuditoriaSheet } from './Lideranca';
 import { rotaTrabalho } from './Operacao';
 import { AjudaBotao } from './Ajuda';
@@ -43,7 +43,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
       {query.get('criada') && <div style={{ marginBottom: 12 }}><Alerta tipo="ok">OS #{os.numero} criada e colocada na fila do rodízio.</Alerta></div>}
       <div className="page-head">
         <div>
-          <div className="row"><h1>OS #{os.numero}</h1><Badge tom={STATUS_OS[os.status].tom}>{STATUS_OS[os.status].r}</Badge>{os.retornoDeOsId && <Badge tom="critico" icone="↺">Retorno</Badge>}</div>
+          <div className="row"><h1>OS #{os.numero}</h1><Badge tom={STATUS_OS[os.status].tom}>{STATUS_OS[os.status].r}</Badge>{os.retornoDeOsId && <Badge tom="critico" icone="↺">Retorno</Badge>}<CarroDeLojaBadge os={os} /></div>
           <div className="row" style={{ marginTop: 8 }}>
             <a href={`#/veiculos/${v.id}`} style={{ textDecoration: 'none' }}><Placa placa={v.placa} /></a>
             <span className="strong">{v.marca} {v.modelo} {v.ano}</span>
@@ -53,7 +53,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
         <div className="row">
           {souExecutor && os.status === 'andamento' && (() => {
             const ckOk = c?.status === 'concluido' || c?.status === 'excecao_autorizada';
-            return <Btn onClick={() => ir(rotaTrabalho(os, ckOk))}>{os.retornoDeOsId ? 'Atendimento do retorno' : ckOk ? 'Executar e finalizar' : 'Abrir checklist'}</Btn>;
+            return <Btn onClick={() => ir(rotaTrabalho(os, ckOk))}>{os.retornoDeOsId ? 'Atendimento do retorno' : ckOk || os.carroDeLoja ? 'Executar e finalizar' : 'Abrir checklist'}</Btn>;
           })()}
           <RetomarBotao u={u} os={os} /><AjudaBotao u={u} os={os} /><PausarBotao u={u} os={os} />
           {pode(u, 'checklist.auditar') && c && (c.status === 'concluido' || c.status === 'excecao_autorizada') && os.mecanicoId !== u.id && <Btn variante="sec" onClick={() => setAuditar(true)}>Auditar checklist</Btn>}

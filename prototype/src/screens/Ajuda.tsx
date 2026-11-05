@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ajudandoEm, chamarAjuda, encerrarAjuda } from '../data/api';
-import { pode } from '../domain/permissions';
+import { atendeOS, pode } from '../domain/permissions';
 import type { OrdemServico, Usuario } from '../domain/types';
 import { fmtHora, hojeKey, primeiroNome } from '../domain/util';
 import { Alerta, Badge, Btn, Sheet, useAcao, useDB } from '../ui/components';
@@ -40,7 +40,7 @@ function ChamarAjudaSheet({ u, os, onClose }: { u: Usuario; os: OrdemServico; on
   const db = useDB();
   const acao = useAcao();
   const st = (id: string) => (db.rodizio.dia === hojeKey() ? db.rodizio.status[id] : undefined) || 'disponivel';
-  const mecs = db.usuarios.filter(x => x.role === 'mecanico' && x.ativo && x.id !== os.mecanicoId)
+  const mecs = db.usuarios.filter(x => atendeOS(x) && x.ativo && x.id !== os.mecanicoId)
     .map(m => {
       const propria = db.os.find(o => o.status === 'andamento' && o.mecanicoId === m.id);
       const ajuda = ajudandoEm(db, m.id);

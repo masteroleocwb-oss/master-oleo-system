@@ -4,7 +4,7 @@
 import { SERVICOS, MOTIVO_PAUSA, servicoAplicavel } from '../domain/catalogo';
 import { fotosAtivasDoItem, novoChecklist, pendenciasParaConcluir, registrarItem, validarItem, type DadosItem, type Pendencia } from '../domain/checklist';
 import { aprovarVersao, descartarRascunho, proporVersao, transicaoOcorrencia, type AcaoOcorrencia } from '../domain/gestao';
-import { exigir, ErroPermissao, pode } from '../domain/permissions';
+import { atendeOS, exigir, ErroPermissao, pode } from '../domain/permissions';
 import type {
   AtendimentoRetorno, Cambio, Checklist, Cliente, DB, EstadoItem, EstadoRecomendado, Evento, ItemInspecaoDef, ManutencaoPrevista, Meta, Ocorrencia, OrdemServico, OrigemIntervalo,
   Pausa, Role, ServicoKey, ServicoOS, SituacaoOportunidade, Usuario, Veiculo,
@@ -211,7 +211,7 @@ export const filaRodizio = (d: DB) => {
   const conta = (o: OrdemServico) => o.status === 'andamento' || o.status === 'concluido' || o.status === 'pausada';
   const diaOntem = [...new Set(d.os.map(diaDa))].filter(x => x < hoje).sort().at(-1);
   return d.usuarios
-    .filter(x => x.role === 'mecanico' && x.ativo)
+    .filter(x => atendeOS(x) && x.ativo)
     .map(m => {
       const minhas = d.os.filter(o => o.mecanicoId === m.id);
       const doDia = minhas.filter(o => diaDa(o) === hoje);
@@ -260,13 +260,13 @@ export async function iniciarOS(u: Usuario, osId: string, mecanicoId: string, mo
   return transacao(d => {
     const os = osPorId(d, osId);
     if (os.status !== 'aguardando') throw new ErroValidacao('Esta OS já foi iniciada.');
-    const mec = d.usuarios.find(x => x.id === mecanicoId && x.role === 'mecanico' && x.ativo);
+    const mec = d.usuarios.find(x => x.id === mecanicoId && atendeOS(x) && x.ativo);
     if (!mec) throw new ErroValidacao('Mecânico inválido ou inativo.');
     if (d.os.some(o => o.status === 'andamento' && o.mecanicoId === mecanicoId)) {
       throw new ErroValidacao(`${primeiroNome(mec.nome)} já tem uma OS em andamento.`);
     }
     const doRetorno = mecanicoDoRetorno(d, os);
-    if (u.role === 'mecanico' && d.rodizio.dia === hojeKey() && (d.rodizio.status[mecanicoId] || 'disponivel') !== 'disponivel') {
+    if ((u.role === 'mecanico' || mecanicoId === u.id) && d.rodizio.dia === hojeKey() && (d.rodizio.status[mecanicoId] || 'disponivel') !== 'disponivel') {
       throw new ErroValidacao('Marque que voltou (almoço/ausência) antes de assumir uma OS.');
     }
     if (doRetorno && doRetorno !== mecanicoId && u.role === 'mecanico') throw new ErroValidacao('Retorno vai para o mecânico que fez o serviço original. Se ele não puder, a liderança designa outro.');
@@ -339,7 +339,7 @@ export async function chamarAjuda(u: Usuario, osId: string, ajudanteId: string) 
     const os = osPorId(d, osId);
     if (!(os.mecanicoId === u.id && pode(u, 'os.executar')) && !pode(u, 'rodizio.gerenciar')) throw new ErroPermissao('os.executar', 'Só o mecânico da OS ou a liderança registra ajuda.');
     if (os.status !== 'andamento') throw new ErroValidacao('Só dá para registrar ajuda em OS em andamento.');
-    const aj = d.usuarios.find(x => x.id === ajudanteId && x.role === 'mecanico' && x.ativo);
+    const aj = d.usuarios.find(x => x.id === ajudanteId && atendeOS(x) && x.ativo);
     if (!aj) throw new ErroValidacao('Escolha um mecânico ativo.');
     if (aj.id === os.mecanicoId) throw new ErroValidacao('Quem atende a OS não pode ser o ajudante.');
     if (os.assistencias?.some(a => a.mecanicoId === aj.id && !a.fim)) throw new ErroValidacao(`${primeiroNome(aj.nome)} já está ajudando nesta OS.`);
@@ -662,7 +662,8 @@ export interface FinalizarInput {
 export const pendenciasFinalizacao = (d: DB, os: OrdemServico, f: FinalizarInput): string[] => {
   const p: string[] = [];
   const c = d.checklists.find(x => x.id === os.checklistId);
-  if (!c || (c.status !== 'concluido' && c.status !== 'excecao_autorizada')) {
+  // Carro de loja: checklist opcional.
+  if (!os.carroDeLoja && (!c || (c.status !== 'concluido' && c.status !== 'excecao_autorizada'))) {
     p.push(c?.solicitacaoExcecao?.status === 'pendente' ? 'Checklist aguardando autorização de exceção da liderança' : 'Concluir o checklist');
   }
   const pk = pendenciaKm(d, os, f.km, f.fotoKm);
@@ -1135,12 +1136,13 @@ export async function voltarAMostrarItem(u: Usuario, defId: string, indice: numb
   });
 }
 
-export async function salvarUsuario(u: Usuario, x: { id?: string; nome: string; role: Role; ativo: boolean; nivel?: string; nomeLegado?: string }): Promise<string> {
+export async function salvarUsuario(u: Usuario, x: { id?: string; nome: string; role: Role; ativo: boolean; nivel?: string; nomeLegado?: string; atendeComoMecanico?: boolean }): Promise<string> {
   exigir(u, 'admin.usuarios');
   if (!x.nome.trim()) throw new ErroValidacao('Informe o nome.');
   if (x.id === u.id && !x.ativo) throw new ErroValidacao('Você não pode desativar o próprio acesso.');
   // Só os campos de cadastro: login e senha mudam por definirAcesso, e o hash nunca vai para o histórico.
-  const campos = { nome: x.nome.trim(), role: x.role, ativo: x.ativo, nivel: x.nivel || undefined, ...(x.nomeLegado !== undefined ? { nomeLegado: x.nomeLegado.trim() || undefined } : {}) };
+  const campos = { nome: x.nome.trim(), role: x.role, ativo: x.ativo, nivel: x.nivel || undefined, ...(x.nomeLegado !== undefined ? { nomeLegado: x.nomeLegado.trim() || undefined } : {}),
+    ...(x.atendeComoMecanico !== undefined ? { atendeComoMecanico: (x.role === 'lider' && x.atendeComoMecanico) || undefined } : {}) };
   const semSegredo = ({ senha: _s, ...resto }: Usuario) => resto;
   return transacao(d => {
     if (x.id) {

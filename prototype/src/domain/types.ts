@@ -10,6 +10,8 @@ export interface Usuario {
   ativo: boolean;
   /** Nível de carreira (proposta do playbook, só informativo). */
   nivel?: string;
+  /** Liderança que também atende carros: entra no rodízio, assume e executa OS (e sai da fila quando não está atendendo). */
+  atendeComoMecanico?: boolean;
   criadoEm: string;
   /** Conta de demonstração: entra sem senha (pode ser desligado no Admin). */
   demo?: boolean;

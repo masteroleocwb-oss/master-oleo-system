@@ -41,7 +41,7 @@ export function Performance({ u }: { u: Usuario }) {
       <div className="section-title">Qualidade da inspeção</div>
       <div className="grid k3">
         <div>
-          <Kpi rotulo="Checklist completo" valor={fmtPct(ind.checklistPct)} dica={`${ind.checklistCompletos} de ${ind.carros} OS · meta ${alvoCk}%`} explicacao={DEFINICOES.checklist} alerta={ind.checklistPct != null && ind.checklistPct < alvoCk - 10} />
+          <Kpi rotulo="Checklist completo" valor={fmtPct(ind.checklistPct)} dica={`${ind.checklistCompletos} de ${ind.baseChecklist} OS · meta ${alvoCk}%`} explicacao={DEFINICOES.checklist} alerta={ind.checklistPct != null && ind.checklistPct < alvoCk - 10} />
           {ind.checklistPct != null && <div style={{ marginTop: 6 }}><Progress valor={ind.checklistPct} tom={tomPct(ind.checklistPct, alvoCk)} rotulo="Checklist completo" /></div>}
         </div>
         <Kpi rotulo="Evidência quando exigida" valor={fmtPct(ind.evidenciasPct)} dica={`${ind.fotosFeitas} de ${ind.fotosExigidas} itens`} explicacao={DEFINICOES.evidencias} />

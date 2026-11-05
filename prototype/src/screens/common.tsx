@@ -20,6 +20,9 @@ export const EstadoBadge = ({ estado }: { estado: EstadoItem }) => {
   return <Badge tom={e.tom === 'neutro' ? 'neutro' : e.tom} icone={e.icone}>{e.curto}</Badge>;
 };
 
+/** Carro de loja (revenda): o checklist é opcional; o mecânico vê isso em todas as telas da OS. */
+export const CarroDeLojaBadge = ({ os }: { os: OrdemServico }) => os.carroDeLoja ? <Badge tom="info">Carro de loja · checklist opcional</Badge> : null;
+
 export const ChecklistBadge = ({ c }: { c?: Checklist }) => c
   ? <Badge tom={TOM_CHECKLIST[c.status]}>Checklist: {STATUS_CHECKLIST_LABEL[c.status]}</Badge>
   : <Badge tom="muted">Sem checklist (registro anterior)</Badge>;
@@ -64,8 +67,9 @@ export function OSCard({ db, os, mostrarMecanico = true, previsto, euId }: {
       <div className="row" style={{ marginTop: 8 }}>
         {os.retornoDeOsId && <Badge tom="critico" icone="↺">Retorno</Badge>}
         {os.naoOferecer && <Badge tom="muted">Frota · não oferecer</Badge>}
+        <CarroDeLojaBadge os={os} />
         {semTeste(os).length > 0 && <Badge tom="atencao">Não fazer teste{semTeste(os).length > 1 ? '' : ` (${semTeste(os)[0].toLowerCase()})`}</Badge>}
-        {os.status !== 'aguardando' && !os.retornoDeOsId && <ChecklistBadge c={c} />}
+        {os.status !== 'aguardando' && !os.retornoDeOsId && !(os.carroDeLoja && (!c || c.status === 'nao_iniciado')) && <ChecklistBadge c={c} />}
         {mostrarMecanico && mec && os.status === 'concluido' && <span className="small muted">{primeiroNome(mec.nome)}</span>}
         {espera != null && <span className="small muted">Aberta às {fmtHora(os.abertaEm)} · espera {fmtMin(espera)}</span>}
         {os.pedidoOlist && <span className="small muted">Pedido Olist {os.pedidoOlist}</span>}

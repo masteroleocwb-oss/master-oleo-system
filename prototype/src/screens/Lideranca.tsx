@@ -185,7 +185,7 @@ function DetalheMecanico({ id, onClose }: { id: string; onClose: () => void }) {
   return (
     <Sheet titulo={u.nome} sub={`${u.nivel || ''} · mês atual`} onClose={onClose}>
       <div className="grid k2">
-        <Kpi rotulo="Checklist completo" valor={fmtPct(ind.checklistPct)} dica={`${ind.checklistCompletos}/${ind.carros}`} explicacao={DEFINICOES.checklist} />
+        <Kpi rotulo="Checklist completo" valor={fmtPct(ind.checklistPct)} dica={`${ind.checklistCompletos}/${ind.baseChecklist}`} explicacao={DEFINICOES.checklist} />
         <Kpi rotulo="Itens realizados" valor={`${ind.realizados}${ind.meta ? ` / ${ind.meta.alvo}` : ''}`} dica={ind.meta ? `Projeção ${ind.meta.projecao}` : undefined} explicacao={DEFINICOES.realizados} />
         <Kpi rotulo="Evidência" valor={fmtPct(ind.evidenciasPct)} explicacao={DEFINICOES.evidencias} />
         <Kpi rotulo="Tempo do checklist" valor={fmtMin(ind.tempoChecklistMin)} />

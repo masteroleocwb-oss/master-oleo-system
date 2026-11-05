@@ -5,7 +5,7 @@ import { PausarSheet } from './Pausa';
 import { painelHoje } from '../data/metricas';
 import { MOTIVO_PAUSA } from '../domain/catalogo';
 import { progresso } from '../domain/checklist';
-import { pode } from '../domain/permissions';
+import { atendeOS, pode } from '../domain/permissions';
 import type { OrdemServico, Usuario } from '../domain/types';
 import { agora, fmtBRL, fmtHora, primeiroNome } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Empty, Field, Kpi, Placa, Sheet, useAcao, useDB } from '../ui/components';
@@ -13,9 +13,9 @@ import { nomeServicos, OSCard } from './common';
 
 const ROD_LABEL = { disponivel: 'Disponível', almoco: 'Almoço', ausente: 'Ausente' } as const;
 
-/** Rota de trabalho da OS: retorno tem atendimento próprio; as demais, checklist → execução. */
+/** Rota de trabalho da OS: retorno tem atendimento próprio; as demais, checklist → execução (carro de loja vai direto). */
 export const rotaTrabalho = (os: OrdemServico, ckOk: boolean) =>
-  os.retornoDeOsId ? `/os/${os.id}/retorno` : ckOk ? `/os/${os.id}/execucao` : `/os/${os.id}/checklist`;
+  os.retornoDeOsId ? `/os/${os.id}/retorno` : ckOk || os.carroDeLoja ? `/os/${os.id}/execucao` : `/os/${os.id}/checklist`;
 
 export function Operacao({ u }: { u: Usuario }) {
   const db = useDB();
@@ -28,7 +28,9 @@ export function Operacao({ u }: { u: Usuario }) {
   const [assumirFora, setAssumirFora] = useState<OrdemServico | null>(null);
   const [pausar, setPausar] = useState<OrdemServico | null>(null);
   const [busca, setBusca] = useState('');
-  const mec = u.role === 'mecanico';
+  // Bancada: quem atende carros (mecânico ou liderança que também atende). Painel de gestão: quem não é só mecânico.
+  const mec = atendeOS(u);
+  const soMec = u.role === 'mecanico';
   const minha = mec ? p.andamento.find(o => o.mecanicoId === u.id) : undefined;
   const minhasPausadas = mec ? p.pausadas.filter(o => o.mecanicoId === u.id) : [];
   const minhasCorrecoes = mec ? p.correcoesPendentes.filter(c => db.os.find(o => o.id === c.osId)?.mecanicoId === u.id) : [];
@@ -67,7 +69,7 @@ export function Operacao({ u }: { u: Usuario }) {
         );
       })}
 
-      {!mec && (
+      {!soMec && (
         <div className="grid k4" style={{ marginBottom: 16 }}>
           <Kpi rotulo="Aguardando" valor={p.aguardando.length} />
           <Kpi rotulo="Em andamento" valor={p.andamento.length} />
@@ -90,15 +92,22 @@ export function Operacao({ u }: { u: Usuario }) {
                   <div className="stack">
                     <div className="row"><Placa placa={v.placa} /><b>{v.marca} {v.modelo}</b><span className="muted small">OS #{minha.numero} · início {fmtHora(minha.iniciadaEm)}</span></div>
                     {minha.retorno ? <Alerta tipo="warn"><b>Retorno.</b> Problema relatado: {minha.retorno.problemaRelatado}</Alerta> : <div className="small muted">{nomeServicos(minha)}</div>}
+                    {minha.carroDeLoja && <Alerta tipo="info"><b>Carro de loja.</b> Checklist opcional: pode ir direto para a execução.</Alerta>}
                     {pr && <div className="small"><b>{pr.verificados}</b> de {pr.total} itens verificados</div>}
                     {c?.solicitacaoExcecao?.status === 'pendente' && <Alerta tipo="info">Exceção do checklist aguardando a liderança.</Alerta>}
                     <Btn block carregando={acao.ocupado} onClick={async () => {
                       // OS iniciada no sistema antigo chega sem checklist: cria antes de abrir.
-                      if (!c && !minha.retornoDeOsId && (await acao.executar(() => garantirChecklist(u, minha.id))) === undefined) return;
+                      if (!c && !minha.retornoDeOsId && !minha.carroDeLoja && (await acao.executar(() => garantirChecklist(u, minha.id))) === undefined) return;
                       ir(rotaTrabalho(minha, ckOk));
                     }}>
-                      {minha.retornoDeOsId ? 'Abrir atendimento do retorno' : ckOk ? 'Executar e finalizar' : pr?.verificados ? 'Continuar checklist' : 'Começar checklist'}
+                      {minha.retornoDeOsId ? 'Abrir atendimento do retorno' : ckOk || minha.carroDeLoja ? 'Executar e finalizar' : pr?.verificados ? 'Continuar checklist' : 'Começar checklist'}
                     </Btn>
+                    {minha.carroDeLoja && !ckOk && !minha.retornoDeOsId && (
+                      <Btn block variante="sec" carregando={acao.ocupado} onClick={async () => {
+                        if (!c && (await acao.executar(() => garantirChecklist(u, minha.id))) === undefined) return;
+                        ir(`/os/${minha.id}/checklist`);
+                      }}>{pr?.verificados ? 'Continuar checklist (opcional)' : 'Fazer checklist (opcional)'}</Btn>
+                    )}
                     <Btn block variante="sec" onClick={() => setPausar(minha)}>Pausar OS (ex.: aguardando peça)</Btn>
                   </div>
                 );
@@ -109,9 +118,14 @@ export function Operacao({ u }: { u: Usuario }) {
                     : <p className="small muted">Sem OS em andamento. {proximo ? `Próximo do rodízio: ${primeiroNome(proximo.nome)}.` : 'Ninguém disponível no rodízio.'}</p>}
                   {meuStatus && (
                     <div className="row">
-                      {meuStatus.status === 'almoco'
+                      {meuStatus.status === 'ausente'
+                        ? <Btn variante="sec" carregando={acao.ocupado} onClick={() => acao.executar(() => setStatusRodizio(u, u.id, 'disponivel'), 'Você voltou para a fila do rodízio.')}>Voltar a atender</Btn>
+                        : meuStatus.status === 'almoco'
                         ? <Btn variante="sec" carregando={acao.ocupado} onClick={() => acao.executar(() => setStatusRodizio(u, u.id, 'disponivel'), 'Você voltou do almoço. Sua posição na fila foi mantida.')}>Voltei do almoço</Btn>
                         : <Btn variante="sec" carregando={acao.ocupado} onClick={() => acao.executar(() => setStatusRodizio(u, u.id, 'almoco'), 'Almoço registrado. Você sai da fila sem perder a posição.')}>Sair para almoço</Btn>}
+                      {!soMec && meuStatus.status === 'disponivel' && (
+                        <Btn variante="sec" carregando={acao.ocupado} onClick={() => acao.executar(() => setStatusRodizio(u, u.id, 'ausente'), 'Você saiu da fila do rodízio. Toque em "Voltar a atender" quando for pegar carro.')}>Não estou atendendo</Btn>
+                      )}
                     </div>
                   )}
                 </div>
@@ -150,7 +164,7 @@ export function Operacao({ u }: { u: Usuario }) {
                       {prev?.mecanicoId === u.id ? 'Assumir esta OS' : 'Assumir fora da vez'}
                     </Btn>
                   )}
-                  {!mec && pode(u, 'os.iniciar') && <Btn tamanho="sm" variante="sec" onClick={() => setDesignar(os)}>Designar mecânico</Btn>}
+                  {!soMec && pode(u, 'os.iniciar') && <Btn tamanho="sm" variante="sec" onClick={() => setDesignar(os)}>Designar mecânico</Btn>}
                 </div>
               </div>
             );
@@ -165,7 +179,7 @@ export function Operacao({ u }: { u: Usuario }) {
             {p.pausadas.map(os => (
               <div key={os.id} style={{ marginBottom: 8 }}>
                 <OSCard db={db} os={os} />
-                {!mec && pode(u, 'rodizio.gerenciar') && (
+                {!soMec && pode(u, 'rodizio.gerenciar') && (
                   <div className="row" style={{ marginTop: 6, justifyContent: 'flex-end' }}>
                     <Btn tamanho="sm" variante="sec" carregando={acao.ocupado} onClick={() => acao.executar(() => retomarOS(u, os.id), `OS #${os.numero} retomada.`)}>Retomar</Btn>
                   </div>

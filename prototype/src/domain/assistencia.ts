@@ -1,6 +1,7 @@
 // Indicador de assistência: em quantos carros cada mecânico podia ter ajudado e em quantos ajudou.
 // É só informação para a liderança: não muda comissão, rodízio nem gera consequência automática.
 import type { DB, OrdemServico } from './types';
+import { atendeOS } from './permissions';
 import { diaKey } from './util';
 
 type Faixa = [number, number];
@@ -62,7 +63,7 @@ export interface LinhaAssistencia {
 /** Indicador por mecânico ativo, no período [de, ate] (dias no formato AAAA-MM-DD, horário de Brasília). */
 export function indicadoresAssistencia(d: Pick<DB, 'os' | 'usuarios' | 'eventos'>, de: string, ate: string, agoraISO: string): LinhaAssistencia[] {
   const agora = ms(agoraISO);
-  const mecs = d.usuarios.filter(u => u.role === 'mecanico' && u.ativo);
+  const mecs = d.usuarios.filter(u => atendeOS(u) && u.ativo);
   const noPeriodo = (iso: string) => { const k = diaKey(iso); return k >= de && k <= ate; };
   const linhas = new Map(mecs.map(m => [m.id, { mecanicoId: m.id, podia: 0, ajudou: 0, minutosAjudando: 0, minutosLivre: 0 }]));
 

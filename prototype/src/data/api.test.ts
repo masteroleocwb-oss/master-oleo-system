@@ -387,6 +387,40 @@ describe('km rodados por mês', () => {
   });
 });
 
+describe('carro de loja e liderança que atende', () => {
+  const loja = { veiculoId: 'v5', vendedorId: 'u_ven', servicos: [{ key: 'oleoMotor' as const, origem: 'balcao' as const, executado: false }], valorInicial: 300, pedidoOlist: '100301', carroDeLoja: true };
+
+  it('carro de loja finaliza sem checklist e fica fora da base do checklist %', async () => {
+    const os = await abrirOS(U('u_ven'), loja);
+    const livre = filaRodizio(getDB()).find(f => !f.ocupado && f.status === 'disponivel')!.mecanico.id;
+    await iniciarOS(U(livre), os.id, livre, 'teste');
+    const v = getDB().veiculos.find(x => x.id === 'v5')!;
+    const antes = indicadoresMecanico(getDB(), livre);
+    await finalizarOS(U(livre), os.id, { km: (v.kmAtual || 0) + 500, servicos: [{ key: 'oleoMotor', executado: true, intervaloKm: 7000 }], proximas: [] });
+    expect(getDB().os.find(o => o.id === os.id)!.status).toBe('concluido');
+    const depois = indicadoresMecanico(getDB(), livre);
+    expect(depois.carros).toBe(antes.carros + 1);
+    expect(depois.baseChecklist).toBe(antes.baseChecklist);
+  });
+
+  it('líder marcado para atender entra no rodízio, assume para si e sai da fila quando não está atendendo', async () => {
+    const seed = gerarSeed();
+    seed.usuarios.find(x => x.id === 'u_lid')!.atendeComoMecanico = true;
+    _definirDB(seed);
+    expect(filaRodizio(getDB()).some(f => f.mecanico.id === 'u_lid')).toBe(true);
+    await setStatusRodizio(U('u_lid'), 'u_lid', 'ausente');
+    const os = await novaOS();
+    await expect(iniciarOS(U('u_lid'), os.id, 'u_lid', 'teste')).rejects.toThrow(/Marque que voltou/);
+    await setStatusRodizio(U('u_lid'), 'u_lid', 'disponivel');
+    await iniciarOS(U('u_lid'), os.id, 'u_lid', 'teste');
+    const c = getDB().os.find(o => o.id === os.id)!;
+    await registrarItemChecklist(U('u_lid'), c.checklistId!, 'palhetas', 'ok', {});
+    // Sem a marcação, a liderança continua só designando.
+    _definirDB(gerarSeed());
+    expect(filaRodizio(getDB()).some(f => f.mecanico.id === 'u_lid')).toBe(false);
+  });
+});
+
 describe('cadastro do cliente e pedido do Olist na abertura', () => {
   const base = { vendedorId: 'u_ven', kmPorMes: 1200, servicos: [{ key: 'oleoMotor' as const, origem: 'balcao' as const, executado: false }], valorInicial: 300, pedidoOlist: '100201' };
   const novo = { placa: 'QAT3C45', marca: 'Fiat', modelo: 'Argo', ano: 2021, motor: '1.3', cambio: 'manual' as const, combustivel: 'Flex' as const };

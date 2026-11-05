@@ -73,7 +73,12 @@ export const ROLE_LABEL: Record<Role, string> = {
   direcao: 'Direção / ADM',
 };
 
-export const pode = (u: Usuario | null | undefined, c: Capacidade) => !!u && u.ativo && MATRIZ[u.role].includes(c);
+/** Quem atende carros: mecânico, ou liderança marcada para atender também (ex.: chefe de oficina). */
+export const atendeOS = (u: Pick<Usuario, 'role' | 'atendeComoMecanico'> | null | undefined) =>
+  !!u && (u.role === 'mecanico' || (u.role === 'lider' && !!u.atendeComoMecanico));
+
+export const pode = (u: Usuario | null | undefined, c: Capacidade) =>
+  !!u && u.ativo && (MATRIZ[u.role].includes(c) || (atendeOS(u) && MATRIZ.mecanico.includes(c)));
 
 export class ErroPermissao extends Error {
   constructor(public capacidade: Capacidade, msg?: string) {

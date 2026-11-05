@@ -6,7 +6,7 @@ import { sugerirProxima, textoPrevisto } from '../domain/manutencao';
 import type { ServicoKey, Usuario } from '../domain/types';
 import { addMeses, agoraISO, fmtBRL, fmtData, fmtKm } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Empty, Field, Placa, useAcao, useDB } from '../ui/components';
-import { ChecklistBadge } from './common';
+import { CarroDeLojaBadge, ChecklistBadge } from './common';
 import { AjudaBotao } from './Ajuda';
 import { FotoPainelKm } from './KmPainel';
 import { PausarBotao, RetomarBotao } from './Pausa';
@@ -114,11 +114,11 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
     <div style={{ maxWidth: 820 }}>
       <a className="back" href={`#/os/${os.id}`}>‹ OS #{os.numero}</a>
       <div className="page-head">
-        <div><h1>Execução e finalização</h1><div className="row" style={{ marginTop: 6 }}><Placa placa={v.placa} /><b>{v.marca} {v.modelo}</b><ChecklistBadge c={c} /></div></div>
+        <div><h1>Execução e finalização</h1><div className="row" style={{ marginTop: 6 }}><Placa placa={v.placa} /><b>{v.marca} {v.modelo}</b>{os.carroDeLoja ? <CarroDeLojaBadge os={os} /> : <ChecklistBadge c={c} />}</div></div>
         <div className="row"><AjudaBotao u={u} os={os} /><PausarBotao u={u} os={os} /></div>
       </div>
 
-      {c && c.status !== 'concluido' && c.status !== 'excecao_autorizada' && (
+      {c && !os.carroDeLoja && c.status !== 'concluido' && c.status !== 'excecao_autorizada' && (
         <div style={{ marginBottom: 12 }}><Alerta tipo="warn">O checklist precisa estar concluído (ou com exceção autorizada) antes de finalizar. <a href={`#/os/${os.id}/checklist`}>Abrir checklist</a></Alerta></div>
       )}
 
