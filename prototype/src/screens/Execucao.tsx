@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ir } from '../app/nav';
 import { finalizarOS, kmAnteriorMaior, pendenciasFinalizacao, type AdicionalInput, type FinalizarInput, type FotoKm, type ProximaInput } from '../data/api';
-import { ADICIONAIS, ESTADOS, ORIGEM_LABEL, RECOMENDACAO, RESPOSTA_CLIENTE, SERVICO_KEYS, SERVICOS, servicoAplicavel } from '../domain/catalogo';
+import { ADICIONAIS, ESTADOS, ORIGEM_LABEL, RECOMENDACAO, RESPOSTA_CLIENTE, SERVICOS, servicoAplicavel } from '../domain/catalogo';
 import { sugerirProxima, textoPrevisto } from '../domain/manutencao';
 import type { ServicoKey, Usuario } from '../domain/types';
 import { addMeses, agoraISO, fmtBRL, fmtData, fmtKm } from '../domain/util';
@@ -12,6 +12,7 @@ import { FotoPainelKm } from './KmPainel';
 import { PausarBotao, RetomarBotao } from './Pausa';
 
 interface LinhaProx extends ProximaInput { chave: string; incluir: boolean; editavel: boolean; motivo: string }
+type Oferta = { resultado: 'aceito' | 'recusado'; marca?: string; quantidade?: string; codigo?: string; valor?: string };
 
 export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
   const db = useDB();
@@ -27,8 +28,8 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
   const [extras, setExtras] = useState<Record<string, Partial<LinhaProx>>>({});
   const [intervaloOleo, setIntervaloOleo] = useState<number | undefined>();
   /** Adicionais: aceito (com dados) | recusado | não oferecido (ausente). */
-  const [ofertas, setOfertas] = useState<Partial<Record<ServicoKey, { resultado: 'aceito' | 'recusado'; marca?: string; quantidade?: string; valor?: string }>>>({});
-  const [outro, setOutro] = useState<ServicoKey | ''>('');
+  /** Por item da lista de adicionais (ADICIONAIS[].id): aceito (com dados) | recusado | não oferecido (ausente). */
+  const [ofertas, setOfertas] = useState<Record<string, Oferta>>({});
 
   const v = os && db.veiculos.find(x => x.id === os.veiculoId);
   const c = os && db.checklists.find(x => x.id === os.checklistId);
@@ -53,6 +54,7 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
       const sit = db.oportunidades.find(o => o.osId === os.id && o.itemDefId === d.id)?.situacao;
       if (sit === 'aceita' || !(it.estado === 'atencao' || it.estado === 'prioritario' || it.estado === 'pendente_avaliacao')) return;
       if (d.servicoRelacionado && os.servicos.some((sv, i) => sv.key === d.servicoRelacionado && exec[`${sv.key}:${i}`]?.executado)) return; // feito nesta OS
+      if (d.servicoRelacionado && ADICIONAIS.some(a => a.key === d.servicoRelacionado && ofertas[a.id]?.resultado === 'aceito')) return; // aceito na bancada
       linhas.push({
         chave: `i:${d.id}`, itemDefId: d.id, estadoItem: it.estado, descricao: it.estado === 'pendente_avaliacao' ? `Avaliar ${d.nome.toLowerCase()}` : it.recomendacao || `Revisar ${d.nome.toLowerCase()}`,
         origem: 'profissional', fonte: `Checklist da OS #${os.numero}`, incluir: true, editavel: true,
@@ -60,7 +62,7 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
       });
     });
     return linhas.map(l => ({ ...l, ...extras[l.chave], ...(l.estadoItem ? { incluir: true } : {}) }));
-  }, [os, v, c, db, exec, kmNum, extras, intervaloOleo]);
+  }, [os, v, c, db, exec, kmNum, extras, intervaloOleo, ofertas]);
 
   if (!os || !v) return <div className="card"><Empty titulo="OS não encontrada." /></div>;
   if (os.mecanicoId !== u.id) return <div className="card"><Empty titulo="Só o mecânico desta OS registra a execução." /></div>;
@@ -70,16 +72,33 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
   const regraOleo = db.regrasIntervalo.find(r => r.ativo && r.servicoKey === 'oleoMotor' && r.validada && r.opcoesKm?.length);
   const oleoExecutado = os.servicos.some((s, i) => s.key === 'oleoMotor' && exec[`${s.key}:${i}`]?.executado);
   const naOS = new Set(os.servicos.map(s => s.key));
-  const adicionaisLista = ADICIONAIS.filter(a => servicoAplicavel(a.key, v.cambio) && !naOS.has(a.key));
-  const outrosPossiveis = SERVICO_KEYS.filter(k => servicoAplicavel(k, v.cambio) && !naOS.has(k) && !adicionaisLista.some(a => a.key === k));
-  const aceitos = (Object.entries(ofertas) as [ServicoKey, NonNullable<(typeof ofertas)[ServicoKey]>][]).filter(([, o]) => o.resultado === 'aceito');
+  // Indicado pelo checklist (Atenção/Prioritário) aparece primeiro.
+  const indicacao = (itemId?: string) => {
+    const it = itemId && c?.itens[itemId];
+    return it && (it.estado === 'atencao' || it.estado === 'prioritario') ? `${c!.defs.find(d => d.id === itemId)?.nome}: ${ESTADOS[it.estado].curto}` : null;
+  };
+  const adicionaisLista = ADICIONAIS.filter(a => servicoAplicavel(a.key, v.cambio) && !naOS.has(a.key))
+    .map(a => ({ ...a, motivo: indicacao(a.itemRelacionado) }))
+    .sort((x, y) => Number(!!y.motivo) - Number(!!x.motivo));
+  const valorNum = (x?: string) => Number(String(x || '').replace(/\./g, '').replace(',', '.')) || undefined;
+  // Os dois aditivos (radiador e combustível) são um serviço só no sistema atual: vão juntos, com os valores somados.
+  const porServico = new Map<ServicoKey, AdicionalInput>();
+  for (const a of adicionaisLista) {
+    const o = ofertas[a.id];
+    if (o?.resultado !== 'aceito') continue;
+    const marca = [a.marcaPadrao, o.marca?.trim()].filter(Boolean).join(' · ') || undefined;
+    const ja = porServico.get(a.key);
+    if (ja) { ja.marca = [ja.marca, marca].filter(Boolean).join(' + ') || undefined; ja.valor = ((ja.valor || 0) + (valorNum(o.valor) || 0)) || undefined; }
+    else porServico.set(a.key, { key: a.key, marca, quantidade: o.quantidade, codigo: o.codigo, valor: valorNum(o.valor) });
+  }
+  const recusadosKeys = [...new Set(adicionaisLista.filter(a => ofertas[a.id]?.resultado === 'recusado' && !porServico.has(a.key)).map(a => a.key))];
   const kmAnterior = kmAnteriorMaior(db, os, kmNum);
   const entrada: FinalizarInput = {
     km: kmNum,
     fotoKm: kmAnterior != null ? fotoKm : undefined,
     servicos: os.servicos.map((s, i) => ({ key: s.key, executado: !!exec[`${s.key}:${i}`]?.executado, quantidadeExecutada: exec[`${s.key}:${i}`]?.qtd, intervaloKm: s.key === 'oleoMotor' ? intervaloOleo : undefined })),
-    adicionais: aceitos.map(([key, o]): AdicionalInput => ({ key, marca: o.marca, quantidade: o.quantidade, valor: Number(String(o.valor || '').replace(/\./g, '').replace(',', '.')) || undefined })),
-    recusados: (Object.entries(ofertas) as [ServicoKey, { resultado: string }][]).filter(([, o]) => o.resultado === 'recusado').map(([k]) => k),
+    adicionais: [...porServico.values()],
+    recusados: recusadosKeys,
     obsInterna, obsCliente,
     proximas: proximas.filter(p => p.incluir).map(({ chave: _c, incluir: _i, editavel: _e, motivo: _m, ...p }) => p),
   };
@@ -138,41 +157,26 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
       )}
 
       <Card titulo="Adicionais oferecidos ao cliente">
-        <p className="small muted" style={{ marginBottom: 6 }}>Registre o que você ofereceu na bancada. Aceito vira serviço executado nesta OS e conta como adicional vendido.</p>
+        <p className="small muted" style={{ marginBottom: 6 }}>Registre o que você ofereceu na bancada. Aceito vira serviço executado nesta OS e conta como adicional vendido (não precisa passar pelo vendedor). Os indicados pelo seu checklist aparecem primeiro.</p>
         {adicionaisLista.map(a => {
-          const o = ofertas[a.key];
-          const it = a.itemRelacionado && c?.itens[a.itemRelacionado];
-          const motivo = it && (it.estado === 'atencao' || it.estado === 'prioritario') ? `${c!.defs.find(d => d.id === a.itemRelacionado)?.nome}: ${ESTADOS[it.estado].curto}` : null;
+          const o = ofertas[a.id];
           return (
-            <div key={a.key} className="adicional" data-adicional={a.key}>
+            <div key={a.id} className="adicional" data-adicional={a.id}>
               <div className="row between">
-                <div><b>{a.rotulo}</b>{motivo && <div className="small" style={{ color: 'var(--warn)' }}>Indicado pelo checklist — {motivo}</div>}</div>
+                <div><b>{a.rotulo}</b>{a.motivo && <div className="small" style={{ color: 'var(--warn)' }}>Indicado pelo checklist — {a.motivo}</div>}</div>
                 <div className="row">
                   {(['aceito', 'recusado'] as const).map(r => (
                     <button key={r} type="button" className={`chip ${o?.resultado === r ? 'on' : ''}`}
-                      onClick={() => { const n = { ...ofertas }; if (o?.resultado === r) delete n[a.key]; else n[a.key] = { ...o, resultado: r }; setOfertas(n); }}>
+                      onClick={() => { const n = { ...ofertas }; if (o?.resultado === r) delete n[a.id]; else n[a.id] = { ...o, resultado: r }; setOfertas(n); }}>
                       {r === 'aceito' ? 'Cliente aceitou' : 'Ofereci, recusou'}
                     </button>
                   ))}
                 </div>
               </div>
-              {o?.resultado === 'aceito' && <DadosAdicional k={a.key} o={o} onChange={x => setOfertas({ ...ofertas, [a.key]: { ...o, ...x } })} />}
+              {o?.resultado === 'aceito' && <DadosAdicional k={a.key} rotulo={a.rotulo} o={o} onChange={x => setOfertas({ ...ofertas, [a.id]: { ...o, ...x } })} />}
             </div>
           );
         })}
-        {aceitos.filter(([k]) => !adicionaisLista.some(a => a.key === k)).map(([k, o]) => (
-          <div key={k} className="adicional" data-adicional={k}>
-            <div className="row between"><b>{SERVICOS[k].nome}</b><Btn tamanho="sm" variante="ghost" onClick={() => { const n = { ...ofertas }; delete n[k]; setOfertas(n); }}>Remover</Btn></div>
-            <DadosAdicional k={k} o={o} onChange={x => setOfertas({ ...ofertas, [k]: { ...o, ...x } })} />
-          </div>
-        ))}
-        <div className="row" style={{ marginTop: 10 }}>
-          <select aria-label="Outro serviço vendido" id="outro-servico" className="input" style={{ width: 'auto', flex: 1 }} value={outro} onChange={e => setOutro(e.target.value as ServicoKey)}>
-            <option value="">Vendeu outro serviço?</option>
-            {outrosPossiveis.filter(k => !ofertas[k]).map(k => <option key={k} value={k}>{SERVICOS[k].nome}</option>)}
-          </select>
-          <Btn variante="sec" disabled={!outro} onClick={() => { if (outro) { setOfertas({ ...ofertas, [outro]: { resultado: 'aceito' } }); setOutro(''); } }}>Adicionar</Btn>
-        </div>
       </Card>
 
       <Card titulo="Quilometragem">
@@ -226,13 +230,14 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
   );
 }
 
-function DadosAdicional({ k, o, onChange }: { k: ServicoKey; o: { marca?: string; quantidade?: string; valor?: string }; onChange: (x: { marca?: string; quantidade?: string; valor?: string }) => void }) {
+function DadosAdicional({ k, rotulo, o, onChange }: { k: ServicoKey; rotulo: string; o: Oferta; onChange: (x: Partial<Oferta>) => void }) {
   const campos = SERVICOS[k].campos;
   return (
-    <div className="row nowrap" style={{ marginTop: 6 }}>
-      {campos.includes('marca') && <input aria-label={`Produto de ${SERVICOS[k].nome}`} className="input" placeholder="Produto/marca" value={o.marca || ''} onChange={e => onChange({ marca: e.target.value })} />}
-      {campos.includes('quantidade') && <input aria-label={`Litros de ${SERVICOS[k].nome}`} className="input" style={{ width: 90 }} placeholder="L" inputMode="decimal" value={o.quantidade || ''} onChange={e => onChange({ quantidade: e.target.value })} />}
-      <input aria-label={`Valor de ${SERVICOS[k].nome}`} className="input" style={{ width: 130 }} placeholder="Valor R$ (se souber)" inputMode="decimal" value={o.valor || ''} onChange={e => onChange({ valor: e.target.value.replace(/[^\d,.]/g, '') })} />
+    <div className="row" style={{ marginTop: 6 }}>
+      {campos.includes('marca') && <input aria-label={`Produto de ${rotulo}`} className="input" style={{ flex: 1, minWidth: 140 }} placeholder="Produto/marca" value={o.marca || ''} onChange={e => onChange({ marca: e.target.value })} />}
+      {campos.includes('codigo') && <input aria-label={`Código de ${rotulo}`} className="input" style={{ flex: 1, minWidth: 120 }} placeholder={k === 'cambioAutomatico' ? 'Código do filtro (se tiver)' : 'Código'} value={o.codigo || ''} onChange={e => onChange({ codigo: e.target.value })} />}
+      {campos.includes('quantidade') && <input aria-label={`Litros de ${rotulo}`} className="input" style={{ width: 90 }} placeholder="L" inputMode="decimal" value={o.quantidade || ''} onChange={e => onChange({ quantidade: e.target.value })} />}
+      <input aria-label={`Valor de ${rotulo}`} className="input" style={{ width: 130 }} placeholder="Valor R$ (se souber)" inputMode="decimal" value={o.valor || ''} onChange={e => onChange({ valor: e.target.value.replace(/[^\d,.]/g, '') })} />
     </div>
   );
 }

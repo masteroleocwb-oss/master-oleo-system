@@ -169,8 +169,8 @@ try {
   await ate(mec, 'Escolha o intervalo conforme o óleo aplicado');
   await tocar(mec, '[data-intervalo="10000"]');
   await clicar(mec, 'Cliente aceitou', '[data-adicional="militec"]');
-  await preencher(mec, '[aria-label="Valor de Militec/Nano"]', '89');
-  await clicar(mec, 'Ofereci, recusou', '[data-adicional="aditivo"]');
+  await preencher(mec, '[aria-label="Valor de Militec/Nano no motor"]', '89');
+  await clicar(mec, 'Ofereci, recusou', '[data-adicional="aditivoRadiador"]');
   await foto(mec, '03-execucao');
   await clicar(mec, 'Finalizar OS');
   await ate(mec, 'Concluída');

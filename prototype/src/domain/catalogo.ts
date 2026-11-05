@@ -102,15 +102,28 @@ export const ORIGEM_LABEL: Record<RegraIntervalo['origem'], { rotulo: string; cl
 };
 
 /**
- * Adicionais que o mecânico oferece na bancada. `itemRelacionado` liga a oferta ao item do
- * checklist que a justifica (ex.: líquido de arrefecimento em Atenção → aditivo).
+ * Tudo o que o mecânico pode oferecer na bancada (registrado na OS, sem passar pelo vendedor).
+ * `itemRelacionado` liga a oferta ao item do checklist que a justifica (ex.: filtro de ar em Atenção →
+ * troca do filtro). Aditivo de radiador e de combustível são o mesmo serviço "Aditivo" do sistema atual.
  */
-export const ADICIONAIS: { key: ServicoKey; rotulo: string; itemRelacionado?: string; aplicavelA?: { cambio?: 'manual' | 'automatico' } }[] = [
-  { key: 'militec', rotulo: 'Militec/Nano no motor', itemRelacionado: 'oleo_motor' },
-  { key: 'aditivo', rotulo: 'Aditivo no radiador', itemRelacionado: 'arrefecimento' },
-  { key: 'flush', rotulo: 'Flush do câmbio', itemRelacionado: 'fluido_cambio', aplicavelA: { cambio: 'automatico' } },
-  { key: 'higienizacaoAC', rotulo: 'Higienização do ar-condicionado', itemRelacionado: 'filtro_cabine' },
-  { key: 'palhetas', rotulo: 'Palhetas do limpador', itemRelacionado: 'palhetas' },
+export const ADICIONAIS: { id: string; key: ServicoKey; rotulo: string; itemRelacionado?: string; marcaPadrao?: string }[] = [
+  { id: 'arMotor', key: 'arMotor', rotulo: 'Filtro de ar do motor', itemRelacionado: 'filtro_ar_motor' },
+  { id: 'arCondicionado', key: 'arCondicionado', rotulo: 'Filtro de cabine (ar-condicionado)', itemRelacionado: 'filtro_cabine' },
+  { id: 'filtroCombustivel', key: 'filtroCombustivel', rotulo: 'Filtro de combustível', itemRelacionado: 'filtro_combustivel' },
+  { id: 'filtroOleo', key: 'filtroOleo', rotulo: 'Filtro de óleo' },
+  { id: 'oleoMotor', key: 'oleoMotor', rotulo: 'Troca de óleo do motor', itemRelacionado: 'oleo_motor' },
+  { id: 'fluidoFreio', key: 'fluidoFreio', rotulo: 'Fluido de freio', itemRelacionado: 'fluido_freio' },
+  { id: 'cambioAutomatico', key: 'cambioAutomatico', rotulo: 'Fluido do câmbio automático', itemRelacionado: 'fluido_cambio' },
+  { id: 'cambioManual', key: 'cambioManual', rotulo: 'Óleo do câmbio manual', itemRelacionado: 'oleo_cambio_manual' },
+  { id: 'flush', key: 'flush', rotulo: 'Flush do câmbio', itemRelacionado: 'fluido_cambio' },
+  { id: 'difDianteiro', key: 'difDianteiro', rotulo: 'Óleo do diferencial dianteiro', itemRelacionado: 'diferencial' },
+  { id: 'difTraseiro', key: 'difTraseiro', rotulo: 'Óleo do diferencial traseiro', itemRelacionado: 'diferencial' },
+  { id: 'caixaTransferencia', key: 'caixaTransferencia', rotulo: 'Óleo da caixa de transferência', itemRelacionado: 'diferencial' },
+  { id: 'aditivoRadiador', key: 'aditivo', rotulo: 'Aditivo de radiador', itemRelacionado: 'arrefecimento', marcaPadrao: 'Radiador' },
+  { id: 'aditivoCombustivel', key: 'aditivo', rotulo: 'Aditivo de combustível', marcaPadrao: 'Combustível' },
+  { id: 'militec', key: 'militec', rotulo: 'Militec/Nano no motor', itemRelacionado: 'oleo_motor' },
+  { id: 'higienizacaoAC', key: 'higienizacaoAC', rotulo: 'Higienização do ar-condicionado', itemRelacionado: 'filtro_cabine' },
+  { id: 'palhetas', key: 'palhetas', rotulo: 'Palhetas do limpador', itemRelacionado: 'palhetas' },
 ];
 
 /** Recomendação do checklist nas próximas manutenções: como a equipe e o cliente leem cada estado. */

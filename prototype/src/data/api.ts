@@ -637,7 +637,7 @@ export interface ProximaInput {
   estadoItem?: EstadoRecomendado;
 }
 
-export interface AdicionalInput { key: ServicoKey; marca?: string; quantidade?: string; valor?: number }
+export interface AdicionalInput { key: ServicoKey; marca?: string; quantidade?: string; codigo?: string; valor?: number }
 
 export interface FinalizarInput {
   km: number | null;
@@ -687,7 +687,14 @@ export async function finalizarOS(u: Usuario, osId: string, f: FinalizarInput) {
     for (const a of f.adicionais || []) {
       if (!servicoAplicavel(a.key, v.cambio)) throw new ErroValidacao(`${SERVICOS[a.key].nome} não se aplica a este câmbio.`);
       if (os.servicos.some(s => s.key === a.key)) continue;
-      os.servicos.push({ key: a.key, marca: a.marca?.trim() || undefined, quantidade: a.quantidade, quantidadeExecutada: a.quantidade, origem: 'adicional', executado: true, valor: a.valor && a.valor > 0 ? a.valor : undefined, adicionadoPor: u.id });
+      // Recomendação do checklist para este serviço: o mecânico registrou o aceite do cliente na bancada.
+      const op = d.oportunidades.find(o => o.osId === os.id && o.servicoKey === a.key && o.situacao !== 'aceita' && o.situacao !== 'nao_oferecer');
+      if (op) {
+        op.situacao = 'aceita';
+        if (a.valor && a.valor > 0) op.valor = a.valor;
+        op.historico.push({ situacao: 'aceita', por: u.id, em: agoraISO(), obs: 'Cliente aceitou na bancada' });
+      }
+      os.servicos.push({ key: a.key, marca: a.marca?.trim() || undefined, quantidade: a.quantidade, codigo: a.codigo?.trim() || undefined, quantidadeExecutada: a.quantidade, origem: 'adicional', executado: true, valor: a.valor && a.valor > 0 ? a.valor : undefined, adicionadoPor: u.id, oportunidadeId: op?.id });
     }
     os.ofertas = [
       ...(f.adicionais || []).map(a => ({ key: a.key, resultado: 'aceito' as const, por: u.id, em: agoraISO() })),
@@ -713,7 +720,12 @@ export async function finalizarOS(u: Usuario, osId: string, f: FinalizarInput) {
     });
     // Itens com desgaste, em mau estado ou a avaliar que não foram feitos: sempre viram recomendação,
     // mesmo que a tela não mande (o cliente pode recusar agora, mas continua recomendado).
-    const proximas = [...f.proximas];
+    // Item do checklist resolvido nesta OS (serviço feito, inclusive adicional da bancada) não vira recomendação.
+    const feitoNaOS = (itemDefId?: string) => {
+      const sr = itemDefId && ckAtual?.defs.find(x => x.id === itemDefId)?.servicoRelacionado;
+      return !!sr && os.servicos.some(sv => sv.executado && sv.key === sr);
+    };
+    const proximas = f.proximas.filter(p => !feitoNaOS(p.itemDefId));
     ckAtual?.defs.forEach(df => {
       const it = ckAtual.itens[df.id];
       if (!(it.estado === 'atencao' || it.estado === 'prioritario' || it.estado === 'pendente_avaliacao')) return;

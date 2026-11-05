@@ -152,6 +152,27 @@ describe('checklist e finalização', () => {
     expect(fim.servicos.find(s => s.key === 'oleoMotor')?.intervaloKm).toBe(7000);
   });
 
+  it('mecânico registra na bancada o aceite do item do checklist: vira adicional, recomendação aceita e não volta como pendência', async () => {
+    const os = emAndamento();
+    const c = getDB().checklists.find(x => x.id === os.checklistId)!;
+    expect(c.defs.some(d => d.id === 'filtro_ar_motor')).toBe(true);
+    await adicionarEvidencia(U('u_m1'), c.id, 'filtro_ar_motor', { url: 'data:,', demo: true });
+    await registrarItemChecklist(U('u_m1'), c.id, 'filtro_ar_motor', 'atencao', { recomendacao: 'Trocar o filtro de ar' });
+    for (const d of c.defs) if (getDB().checklists.find(x => x.id === c.id)!.itens[d.id].estado === 'nao_verificado') await registrarItemChecklist(U('u_m1'), c.id, d.id, 'ok', {});
+    await concluirChecklist(U('u_m1'), c.id);
+    const v = getDB().veiculos.find(x => x.id === os.veiculoId)!;
+    const servicos = os.servicos.map(s => ({ key: s.key, executado: true, intervaloKm: s.key === 'oleoMotor' ? 10000 : undefined }));
+    await finalizarOS(U('u_m1'), os.id, {
+      km: (v.kmAtual || 0) + 400, servicos, adicionais: [{ key: 'arMotor', codigo: 'CA123', valor: 85 }],
+      proximas: [{ itemDefId: 'filtro_ar_motor', estadoItem: 'atencao', origem: 'profissional', fonte: 'teste', descricao: 'Trocar o filtro de ar' }],
+    });
+    const fim = getDB().os.find(o => o.id === os.id)!;
+    expect(fim.servicos.find(s => s.key === 'arMotor')).toMatchObject({ origem: 'adicional', executado: true, valor: 85, codigo: 'CA123' });
+    const op = getDB().oportunidades.find(o => o.osId === os.id && o.itemDefId === 'filtro_ar_motor')!;
+    expect(op.situacao).toBe('aceita');
+    expect(getDB().manutencoes.some(m => m.osOrigemId === os.id && m.itemDefId === 'filtro_ar_motor')).toBe(false);
+  });
+
   it('KM menor que o registrado (registro antigo errado) fecha só com foto do painel, que fica interna', async () => {
     const os = emAndamento();
     const c = getDB().checklists.find(x => x.id === os.checklistId)!;
