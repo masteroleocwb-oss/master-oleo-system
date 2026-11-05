@@ -81,7 +81,7 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
     .map(a => ({ ...a, motivo: indicacao(a.itemRelacionado) }))
     .sort((x, y) => Number(!!y.motivo) - Number(!!x.motivo));
   const valorNum = (x?: string) => Number(String(x || '').replace(/\./g, '').replace(',', '.')) || undefined;
-  // Os dois aditivos (radiador e combustível) são um serviço só no sistema atual: vão juntos, com os valores somados.
+  // Os aditivos (radiador, combustível, câmbio) são um serviço só no sistema atual: vão juntos, com os valores somados.
   const porServico = new Map<ServicoKey, AdicionalInput>();
   for (const a of adicionaisLista) {
     const o = ofertas[a.id];

@@ -2,7 +2,7 @@
 // inicial de itens de inspeção (Playbook — checklist fase 1 + itens pedidos pela direção).
 import type { EstadoItem, EstadoRecomendado, ItemInspecaoDef, OrdemServico, RegraIntervalo, ServicoKey, SituacaoOportunidade } from './types';
 
-export const SERVICOS: Record<ServicoKey, { nome: string; campos: ('marca' | 'quantidade' | 'codigo')[] }> = {
+export const SERVICOS: Record<ServicoKey, { nome: string; campos: ('marca' | 'quantidade' | 'carter' | 'codigo')[] }> = {
   oleoMotor: { nome: 'Óleo de motor', campos: ['marca', 'quantidade'] },
   fluidoFreio: { nome: 'Fluido de freio', campos: ['marca', 'quantidade'] },
   filtroOleo: { nome: 'Filtro de óleo', campos: ['codigo'] },
@@ -10,7 +10,7 @@ export const SERVICOS: Record<ServicoKey, { nome: string; campos: ('marca' | 'qu
   arCondicionado: { nome: 'Filtro de cabine (ar-condicionado)', campos: ['codigo'] },
   filtroCombustivel: { nome: 'Filtro de combustível', campos: ['codigo'] },
   cambioManual: { nome: 'Troca de óleo do câmbio manual', campos: ['marca', 'quantidade'] },
-  cambioAutomatico: { nome: 'Troca de fluido do câmbio automático', campos: ['marca', 'quantidade', 'codigo'] },
+  cambioAutomatico: { nome: 'Troca de fluido do câmbio automático', campos: ['marca', 'quantidade', 'carter', 'codigo'] },
   difDianteiro: { nome: 'Óleo do diferencial dianteiro', campos: ['marca', 'quantidade'] },
   difTraseiro: { nome: 'Óleo do diferencial traseiro', campos: ['marca', 'quantidade'] },
   caixaTransferencia: { nome: 'Óleo da caixa de transferência', campos: ['marca', 'quantidade'] },
@@ -18,7 +18,7 @@ export const SERVICOS: Record<ServicoKey, { nome: string; campos: ('marca' | 'qu
   palhetas: { nome: 'Palhetas', campos: ['codigo'] },
   militec: { nome: 'Militec/Nano', campos: [] },
   aditivo: { nome: 'Aditivo', campos: ['marca'] },
-  flush: { nome: 'Flush', campos: [] },
+  flush: { nome: 'Flush do motor', campos: [] },
 };
 export const SERVICO_KEYS = Object.keys(SERVICOS) as ServicoKey[];
 
@@ -104,7 +104,7 @@ export const ORIGEM_LABEL: Record<RegraIntervalo['origem'], { rotulo: string; cl
 /**
  * Tudo o que o mecânico pode oferecer na bancada (registrado na OS, sem passar pelo vendedor).
  * `itemRelacionado` liga a oferta ao item do checklist que a justifica (ex.: filtro de ar em Atenção →
- * troca do filtro). Aditivo de radiador e de combustível são o mesmo serviço "Aditivo" do sistema atual.
+ * troca do filtro). Aditivo de radiador, de combustível e do câmbio são o mesmo serviço "Aditivo" do sistema atual.
  */
 export const ADICIONAIS: { id: string; key: ServicoKey; rotulo: string; itemRelacionado?: string; marcaPadrao?: string }[] = [
   { id: 'arMotor', key: 'arMotor', rotulo: 'Filtro de ar do motor', itemRelacionado: 'filtro_ar_motor' },
@@ -115,13 +115,14 @@ export const ADICIONAIS: { id: string; key: ServicoKey; rotulo: string; itemRela
   { id: 'fluidoFreio', key: 'fluidoFreio', rotulo: 'Fluido de freio', itemRelacionado: 'fluido_freio' },
   { id: 'cambioAutomatico', key: 'cambioAutomatico', rotulo: 'Fluido do câmbio automático', itemRelacionado: 'fluido_cambio' },
   { id: 'cambioManual', key: 'cambioManual', rotulo: 'Óleo do câmbio manual', itemRelacionado: 'oleo_cambio_manual' },
-  { id: 'flush', key: 'flush', rotulo: 'Flush do câmbio', itemRelacionado: 'fluido_cambio' },
   { id: 'difDianteiro', key: 'difDianteiro', rotulo: 'Óleo do diferencial dianteiro', itemRelacionado: 'diferencial' },
   { id: 'difTraseiro', key: 'difTraseiro', rotulo: 'Óleo do diferencial traseiro', itemRelacionado: 'diferencial' },
   { id: 'caixaTransferencia', key: 'caixaTransferencia', rotulo: 'Óleo da caixa de transferência', itemRelacionado: 'diferencial' },
   { id: 'aditivoRadiador', key: 'aditivo', rotulo: 'Aditivo de radiador', itemRelacionado: 'arrefecimento', marcaPadrao: 'Radiador' },
   { id: 'aditivoCombustivel', key: 'aditivo', rotulo: 'Aditivo de combustível', marcaPadrao: 'Combustível' },
   { id: 'militec', key: 'militec', rotulo: 'Militec/Nano no motor', itemRelacionado: 'oleo_motor' },
+  { id: 'flush', key: 'flush', rotulo: 'Flush do motor (limpeza interna)', itemRelacionado: 'oleo_motor' },
+  { id: 'aditivoCambio', key: 'aditivo', rotulo: 'Aditivo de proteção do câmbio', marcaPadrao: 'Câmbio' },
   { id: 'higienizacaoAC', key: 'higienizacaoAC', rotulo: 'Higienização do ar-condicionado', itemRelacionado: 'filtro_cabine' },
   { id: 'palhetas', key: 'palhetas', rotulo: 'Palhetas do limpador', itemRelacionado: 'palhetas' },
 ];
@@ -159,7 +160,7 @@ export function semTeste(os: Pick<OrdemServico, 'servicos' | 'naoFazerTesteFreio
 }
 
 export const servicoAplicavel = (k: ServicoKey, cambio?: 'manual' | 'automatico') =>
-  !cambio || !((k === 'cambioManual' && cambio === 'automatico') || ((k === 'cambioAutomatico' || k === 'flush') && cambio === 'manual'));
+  !cambio || !((k === 'cambioManual' && cambio === 'automatico') || (k === 'cambioAutomatico' && cambio === 'manual'));
 
 export const MOTIVO_PAUSA: Record<'peca' | 'aprovacao_cliente' | 'outro', string> = {
   peca: 'Aguardando peça',

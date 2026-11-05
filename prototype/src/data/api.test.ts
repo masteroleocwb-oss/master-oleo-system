@@ -208,7 +208,7 @@ describe('checklist e finalização', () => {
     const v = getDB().veiculos.find(x => x.id === os.veiculoId)!;
     const servicos = os.servicos.map(s => ({ key: s.key, executado: true, intervaloKm: s.key === 'oleoMotor' ? 10000 : undefined }));
     const base = { km: (v.kmAtual || 0) + 400, servicos, proximas: [] };
-    if (v.cambio === 'manual') await expect(finalizarOS(U('u_m1'), os.id, { ...base, adicionais: [{ key: 'flush' }] })).rejects.toThrow(/câmbio/);
+    if (v.cambio === 'manual') await expect(finalizarOS(U('u_m1'), os.id, { ...base, adicionais: [{ key: 'cambioAutomatico' }] })).rejects.toThrow(/câmbio/);
     await finalizarOS(U('u_m1'), os.id, { ...base, adicionais: [{ key: 'militec', valor: 90 }], recusados: ['aditivo'] });
     const fim = getDB().os.find(o => o.id === os.id)!;
     const mil = fim.servicos.find(s => s.key === 'militec')!;

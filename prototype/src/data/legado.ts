@@ -10,7 +10,7 @@ import { normalizarPlaca, primeiroNome, TZ } from '../domain/util';
 export type DocLegado = Record<string, unknown>;
 
 /** Campos de detalhe de cada serviço no documento do sistema atual. */
-export const CAMPOS_LEGADO: Record<ServicoKey, { marca?: string; quantidade?: string; codigo?: string; extras?: Record<string, unknown> }> = {
+export const CAMPOS_LEGADO: Record<ServicoKey, { marca?: string; quantidade?: string; carter?: string; codigo?: string; extras?: Record<string, unknown> }> = {
   oleoMotor: { marca: 'oleoMarca', quantidade: 'oleoQuantidade' },
   fluidoFreio: { marca: 'fluidoFreioMarca', quantidade: 'fluidoFreioQuantidade' },
   filtroOleo: { codigo: 'filtroOleoTipo' },
@@ -19,7 +19,8 @@ export const CAMPOS_LEGADO: Record<ServicoKey, { marca?: string; quantidade?: st
   filtroCombustivel: { codigo: 'filtroCombustivelCodigo' },
   cambioManual: { marca: 'cambioManualMarca', quantidade: 'cambioManualQuantidade' },
   // Câmbio automático: o código é o do filtro do câmbio (opcional; nem todo câmbio tem filtro).
-  cambioAutomatico: { marca: 'cambioAutomaticoMarca', quantidade: 'cambioAutomaticoQuantidade', codigo: 'cambioAutomaticoFiltroCodigo', extras: { cambioAutomaticoTemFiltro: false, cambioAutomaticoFluidoCarter: '' } },
+  // Total de fluido e quanto vai dentro do câmbio ("Quantidade de Fluído no Carter" no sistema atual).
+  cambioAutomatico: { marca: 'cambioAutomaticoMarca', quantidade: 'cambioAutomaticoQuantidade', carter: 'cambioAutomaticoFluidoCarter', codigo: 'cambioAutomaticoFiltroCodigo', extras: { cambioAutomaticoTemFiltro: false } },
   difDianteiro: { marca: 'difDianteiroMarca', quantidade: 'difDianteiroQuantidade' },
   difTraseiro: { marca: 'difTraseiroMarca', quantidade: 'difTraseiroQuantidade' },
   caixaTransferencia: { marca: 'caixaTransferenciaMarca', quantidade: 'caixaTransferenciaQuantidade' },
@@ -205,6 +206,7 @@ export function osDeLegado(id: string, o: DocLegado, nomes: MapaNomes): OrdemSer
       key, origem: 'balcao',
       marca: c.marca ? txt(o[c.marca]) || undefined : undefined,
       quantidade: c.quantidade ? txt(o[c.quantidade]) || undefined : undefined,
+      carter: c.carter ? txt(o[c.carter]) || undefined : undefined,
       codigo: c.codigo ? txt(o[c.codigo]) || undefined : undefined,
       executado: ex ? ex.executado : concluida,
       ...(ex?.quantidadeExecutada ? { quantidadeExecutada: ex.quantidadeExecutada } : {}),
@@ -307,6 +309,7 @@ export function legadoDeOS(os: OrdemServico, v: Veiculo | undefined, c: Cliente 
     d[key] = !!s;
     if (c2.marca) d[c2.marca] = s?.marca || '';
     if (c2.quantidade) d[c2.quantidade] = s?.quantidade || '';
+    if (c2.carter) d[c2.carter] = s?.carter || '';
     if (c2.codigo) d[c2.codigo] = s?.codigo || '';
   }
   // No sistema atual o código do filtro do câmbio só aparece com "Tem filtro? Sim".

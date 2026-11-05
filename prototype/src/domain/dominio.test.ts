@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CATALOGO_INICIAL, REGRAS_INICIAIS } from './catalogo';
-import { novoChecklist, pendenciasParaConcluir, registrarItem, validarItem } from './checklist';
+import { aprendidoPeloSistema, naoSeAplicaAprendido, novoChecklist, pendenciasParaConcluir, registrarItem, validarItem } from './checklist';
 import { aprovarVersao, calcularProposta, calcularVigente, descontoChecklist, proporVersao, scoreExecucao, transicaoOcorrencia, versaoEm } from './gestao';
 import { statusManutencao, sugerirProxima } from './manutencao';
 import { pode } from './permissions';
@@ -12,6 +12,33 @@ const os = { id: 'os1' } as OrdemServico;
 const usuario = (role: Usuario['role'], id = 'x', ativo = true): Usuario => ({ id, nome: 'Fulano', role, ativo, criadoEm: '' });
 
 beforeEach(() => fixarAgora(new Date('2026-10-26T15:00:00Z')));
+
+describe('"Não se aplica" aprendido', () => {
+  const v = (id: string, modelo = 'Y'): Veiculo => ({ ...veic('manual'), id, placa: `ABC1D${id.padStart(2, '0')}`.slice(0, 7), modelo });
+  const comNA = (id: string, veiculoId: string, defId: string, estado: 'nao_aplicavel' | 'ok') =>
+    registrarItem({ ...novoChecklist(id, os, v(veiculoId), CATALOGO_INICIAL), veiculoId }, defId, estado, { justificativa: 'Não tem' }, 'm', '2026-10-01T12:00:00Z');
+
+  it('mesmo carro: o que não se aplicou na visita anterior já chega marcado; o que se aplicou, não', () => {
+    const ant = registrarItem(comNA('c1', 'a', 'diferencial', 'nao_aplicavel'), 'palhetas', 'ok', {}, 'm', '2026-10-01T12:00:00Z');
+    const r = naoSeAplicaAprendido([ant], [v('a')], v('a'), CATALOGO_INICIAL);
+    expect(r.diferencial).toMatch(/visita anterior/);
+    expect(r.palhetas).toBeUndefined();
+    const c = novoChecklist('c2', os, v('a'), CATALOGO_INICIAL, r, '2026-11-05T12:00:00Z');
+    expect(aprendidoPeloSistema(c.itens.diferencial)).toBe(true);
+    expect(c.itens.palhetas.estado).toBe('nao_verificado');
+  });
+
+  it('modelo: só a partir de 10 inspeções com 90% ou mais de "não se aplica"', () => {
+    const vs = Array.from({ length: 10 }, (_, i) => v(String(i + 1)));
+    const nove = vs.slice(0, 9).map((x, i) => comNA(`k${i}`, x.id, 'diferencial', 'nao_aplicavel'));
+    const novo = v('99');
+    expect(naoSeAplicaAprendido(nove, [...vs, novo], novo, CATALOGO_INICIAL).diferencial).toBeUndefined();
+    const dez = [...nove, comNA('k9', vs[9].id, 'diferencial', 'nao_aplicavel')];
+    expect(naoSeAplicaAprendido(dez, [...vs, novo], novo, CATALOGO_INICIAL).diferencial).toMatch(/10 de 10/);
+    const outroModelo = v('98', 'Z');
+    expect(naoSeAplicaAprendido(dez, [...vs, outroModelo], outroModelo, CATALOGO_INICIAL).diferencial).toBeUndefined();
+  });
+});
 
 describe('checklist', () => {
   it('todos os itens começam "A verificar" e não existe preenchimento automático', () => {

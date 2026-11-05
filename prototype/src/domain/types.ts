@@ -85,6 +85,8 @@ export interface ServicoOS {
   key: ServicoKey;
   marca?: string;
   quantidade?: string;
+  /** Câmbio automático: litros que vão dentro do câmbio (cárter); `quantidade` é o total. */
+  carter?: string;
   codigo?: string;
   /**
    * balcao = vendido na abertura; checklist = identificado na inspeção e aceito pelo cliente;

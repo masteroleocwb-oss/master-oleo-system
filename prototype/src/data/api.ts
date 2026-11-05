@@ -2,7 +2,7 @@
 // Ela aplica as permissões (não basta esconder botões), registra a trilha de
 // auditoria e é o lugar que, no produto final, vira Security Rules + funções de servidor.
 import { SERVICOS, MOTIVO_PAUSA, servicoAplicavel } from '../domain/catalogo';
-import { fotosAtivasDoItem, novoChecklist, pendenciasParaConcluir, registrarItem, validarItem, type DadosItem, type Pendencia } from '../domain/checklist';
+import { defsAplicaveis, fotosAtivasDoItem, naoSeAplicaAprendido, novoChecklist, pendenciasParaConcluir, registrarItem, validarItem, type DadosItem, type Pendencia } from '../domain/checklist';
 import { aprovarVersao, descartarRascunho, proporVersao, transicaoOcorrencia, type AcaoOcorrencia } from '../domain/gestao';
 import { atendeOS, exigir, ErroPermissao, pode, podeAtenderCarros } from '../domain/permissions';
 import type {
@@ -300,7 +300,7 @@ export async function iniciarOS(u: Usuario, osId: string, mecanicoId: string, mo
     // Retorno não refaz o checklist completo: o atendimento foca no problema relatado.
     let ckId: string | undefined;
     if (!os.retornoDeOsId) {
-      const c = novoChecklist(novoId('ck'), os, v, d.catalogo);
+      const c = novoChecklist(novoId('ck'), os, v, d.catalogo, naoSeAplicaAprendido(d.checklists, d.veiculos, v, defsAplicaveis(d.catalogo, v)), os.iniciadaEm);
       d.checklists.push(c);
       os.checklistId = c.id;
       ckId = c.id;
@@ -325,7 +325,8 @@ export async function garantirChecklist(u: Usuario, osId: string) {
     if (atual) return atual.id;
     if (os.mecanicoId !== u.id && !pode(u, 'rodizio.gerenciar')) throw new ErroPermissao('os.executar', 'Só o mecânico desta OS (ou a liderança) abre o checklist.');
     if (os.status !== 'andamento') throw new ErroValidacao(os.status === 'pausada' ? 'OS pausada. Retome a OS para continuar.' : 'A OS não está em andamento.');
-    const c = novoChecklist(novoId('ck'), os, veicPorId(d, os.veiculoId), d.catalogo);
+    const vc = veicPorId(d, os.veiculoId);
+    const c = novoChecklist(novoId('ck'), os, vc, d.catalogo, naoSeAplicaAprendido(d.checklists, d.veiculos, vc, defsAplicaveis(d.catalogo, vc)), agoraISO());
     d.checklists.push(c);
     os.checklistId = c.id;
     evento(d, u.id, 'checklist.criado', 'os', os.id, `Checklist criado para a OS #${os.numero} (iniciada no sistema atual)`);
@@ -642,6 +643,7 @@ export async function finalizarRetorno(u: Usuario, osId: string, km: number | nu
     os.servicos = os.servicos.map(s => ({ ...s, executado: true }));
     v.kmAtual = km!; v.kmAtualEm = agora;
     evento(d, u.id, 'os.concluida', 'os', os.id, `Retorno OS #${os.numero} concluído · relação com o serviço anterior: ${os.retorno!.relacaoServicoAnterior}`);
+    linkAutomatico(d, u, os);
   });
 }
 
@@ -772,6 +774,7 @@ export async function finalizarOS(u: Usuario, osId: string, f: FinalizarInput) {
       });
     }
     evento(d, u.id, 'os.concluida', 'os', os.id, `OS #${os.numero} concluída · ${f.km!.toLocaleString('pt-BR')} km`, { antes: { kmVeiculo: kmAntes }, depois: { km: f.km } });
+    linkAutomatico(d, u, os);
   });
 }
 
@@ -838,6 +841,17 @@ export async function tratarOportunidade(u: Usuario, id: string, situacao: Situa
 
 // ───────────────────────── Relatório do cliente ─────────────────────────
 
+/** Validade do link do relatório criado na finalização (cobre o intervalo da próxima troca). */
+export const DIAS_LINK_AUTOMATICO = 180;
+
+/** Ao concluir a OS, o link do relatório já fica pronto para o vendedor enviar ao cliente. */
+function linkAutomatico(d: DB, u: Usuario, os: OrdemServico) {
+  if (d.compartilhamentos.some(s => s.osId === os.id && estadoLink(s) === 'ativo')) return;
+  const sh = { id: novoId('sh'), osId: os.id, token: novoToken(), criadoPor: u.id, criadoEm: agoraISO(), expiraEm: addDias(agoraISO(), DIAS_LINK_AUTOMATICO), acessos: 0 };
+  d.compartilhamentos.push(sh);
+  evento(d, u.id, 'link.criado', 'compartilhamento', sh.id, `Link do relatório da OS #${os.numero} criado na finalização (${DIAS_LINK_AUTOMATICO} dias)`);
+}
+
 export async function gerarLink(u: Usuario, osId: string, dias: number) {
   exigir(u, 'relatorio.gerar_link');
   return transacao(d => {
@@ -890,7 +904,7 @@ export interface RelatorioPublico {
   retorno?: { problema: string; solucao: string; aviso: string; antes: { url: string; legenda: string; demo: boolean }[]; depois: { url: string; legenda: string; demo: boolean }[] };
 }
 
-export type ResultadoPublico = { estado: 'ok'; relatorio: RelatorioPublico } | { estado: 'expirado' | 'revogado' | 'indisponivel' };
+export type ResultadoPublico = { estado: 'ok'; relatorio: RelatorioPublico } | { estado: 'expirado'; placa?: string } | { estado: 'revogado' | 'indisponivel' };
 
 export function obterRelatorioPublico(token: string): ResultadoPublico {
   const d = getDB();
@@ -898,8 +912,9 @@ export function obterRelatorioPublico(token: string): ResultadoPublico {
   const sh = d.compartilhamentos.find(s => s.token === token);
   if (!sh) return { estado: 'indisponivel' };
   const est = estadoLink(sh);
-  if (est !== 'ativo') return { estado: est };
   const os = d.os.find(o => o.id === sh.osId);
+  if (est === 'expirado') return { estado: 'expirado', placa: d.veiculos.find(v => v.id === os?.veiculoId)?.placa };
+  if (est !== 'ativo') return { estado: est };
   if (!os || os.status !== 'concluido') return { estado: 'indisponivel' };
   mutarSemLatencia(x => {
     const s = x.compartilhamentos.find(y => y.id === sh.id)!;
@@ -961,7 +976,7 @@ export function projetarRelatorio(d: DB, os: OrdemServico): RelatorioPublico {
     veiculo: { placa: fmtPlaca(v.placa), marca: v.marca, modelo: v.modelo, ano: v.ano, motor: v.motor },
     clientePrimeiroNome: primeiroNome(cli?.nome),
     tecnico: primeiroNome(mec?.nome) || 'Equipe técnica',
-    servicos: os.servicos.filter(s => s.executado).map(s => ({ nome: SERVICOS[s.key].nome, detalhe: [s.marca, s.quantidadeExecutada || s.quantidade ? `${s.quantidadeExecutada || s.quantidade} L` : null, s.codigo].filter(Boolean).join(' · ') || undefined })),
+    servicos: os.servicos.filter(s => s.executado).map(s => ({ nome: SERVICOS[s.key].nome, detalhe: [s.marca, s.quantidadeExecutada || s.quantidade ? `${s.quantidadeExecutada || s.quantidade} L${s.carter ? ' no total' : ''}` : null, s.carter ? `${s.carter} L dentro do câmbio` : null, s.codigo].filter(Boolean).join(' · ') || undefined })),
     itens,
     checklistStatus: c?.status || 'sem_checklist',
     fotos,
@@ -1220,6 +1235,7 @@ export async function obterRelatorioPublicoReal(token: string): Promise<Resultad
   const r = await lerRelatorio(token);
   if (!r || !r.relatorio) return { estado: r?.revogadoEm ? 'revogado' : 'indisponivel' };
   const est = estadoLink({ revogadoEm: r.revogadoEm || undefined, expiraEm: r.expiraEm || undefined });
+  if (est === 'expirado') return { estado: 'expirado', placa: (r.relatorio as RelatorioPublico).veiculo?.placa };
   return est === 'ativo' ? { estado: 'ok', relatorio: r.relatorio as RelatorioPublico } : { estado: est };
 }
 

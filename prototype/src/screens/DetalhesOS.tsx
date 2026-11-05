@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ir, useRota } from '../app/nav';
-import { cancelarOS, decidirExcecao, encerrarOSEsquecida, definirPedidoOlist, definirVisibilidadeFoto, estadoLink, gerarLink, marcarNaoOferecer, nomeDe, projetarRelatorio, registrarCompartilhamento, revogarLink, valoresOS } from '../data/api';
+import { cancelarOS, decidirExcecao, DIAS_LINK_AUTOMATICO, encerrarOSEsquecida, definirPedidoOlist, definirVisibilidadeFoto, estadoLink, gerarLink, marcarNaoOferecer, nomeDe, projetarRelatorio, registrarCompartilhamento, revogarLink, valoresOS } from '../data/api';
 import { ESTADOS, GRUPOS, MOTIVO_PAUSA, SERVICOS, semTeste } from '../domain/catalogo';
 import { fotosAtivasDoItem, progresso } from '../domain/checklist';
 import { pode } from '../domain/permissions';
@@ -81,7 +81,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
                 <tbody>
                   {os.servicos.map((s, i) => (
                     <tr key={i}>
-                      <td><b>{SERVICOS[s.key].nome}</b><div className="small muted">{[s.marca, s.quantidadeExecutada || s.quantidade ? `${s.quantidadeExecutada || s.quantidade} L` : null, s.codigo, s.intervaloKm ? `próxima em ${s.intervaloKm.toLocaleString('pt-BR')} km ou 6 meses` : null].filter(Boolean).join(' · ')}</div></td>
+                      <td><b>{SERVICOS[s.key].nome}</b><div className="small muted">{[s.marca, s.quantidadeExecutada || s.quantidade ? `${s.quantidadeExecutada || s.quantidade} L${s.carter ? ' no total' : ''}` : null, s.carter ? `${s.carter} L dentro do câmbio` : null, s.codigo, s.intervaloKm ? `próxima em ${s.intervaloKm.toLocaleString('pt-BR')} km ou 6 meses` : null].filter(Boolean).join(' · ')}</div></td>
                       <td>{s.origem === 'checklist' ? <Badge tom="info">Checklist</Badge> : s.origem === 'adicional' ? <Badge tom="info">Adicional</Badge> : <Badge tom="outline">Balcão</Badge>}</td>
                       <td>{s.executado ? <Badge tom="ok">Executado</Badge> : <Badge tom="neutro">Pendente</Badge>}</td>
                       {pode(u, 'os.ver_valores') && <td className="num">{s.valor ? fmtBRL(s.valor) : '—'}</td>}
@@ -261,7 +261,7 @@ function RelatorioInterno({ u, os }: { u: Usuario; os: OrdemServico }) {
   const db = useDB();
   const acao = useAcao();
   const toast = useToast();
-  const [dias, setDias] = useState(30);
+  const [dias, setDias] = useState(DIAS_LINK_AUTOMATICO);
   const [revogar, setRevogar] = useState<Compartilhamento | null>(null);
   const links = db.compartilhamentos.filter(s => s.osId === os.id).sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
   const ativo = links.find(s => estadoLink(s) === 'ativo');
@@ -287,7 +287,7 @@ function RelatorioInterno({ u, os }: { u: Usuario; os: OrdemServico }) {
               {pode(u, 'relatorio.gerar_link') && (
                 <div className="row">
                   <select className="input" style={{ width: 'auto' }} aria-label="Validade do link" value={dias} onChange={e => setDias(Number(e.target.value))}>
-                    <option value={7}>Válido por 7 dias</option><option value={30}>Válido por 30 dias</option><option value={90}>Válido por 90 dias</option>
+                    <option value={7}>Válido por 7 dias</option><option value={30}>Válido por 30 dias</option><option value={90}>Válido por 90 dias</option><option value={DIAS_LINK_AUTOMATICO}>Válido por {DIAS_LINK_AUTOMATICO} dias</option>
                   </select>
                   <Btn carregando={acao.ocupado} onClick={() => acao.executar(() => gerarLink(u, os.id, dias), 'Link criado.')}>{ativo ? 'Gerar novo link' : 'Gerar link do relatório'}</Btn>
                 </div>

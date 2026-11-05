@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ir } from '../app/nav';
 import { adicionarEvidencia, concluirChecklist, garantirChecklist, enviarCorrecao, recomendacoesAbertas, registrarItemChecklist, removerEvidencia, solicitarExcecao } from '../data/api';
 import { ESTADOS, ESTADOS_ORDEM, GRUPOS, semTeste } from '../domain/catalogo';
-import { fotosAtivasDoItem, pendenciasParaConcluir, progresso, validarItem, type DadosItem } from '../domain/checklist';
+import { fotosAtivasDoItem, pendenciasParaConcluir, progresso, validarItem, type DadosItem, aprendidoPeloSistema } from '../domain/checklist';
 import type { Checklist as TChecklist, DB, EstadoItem, ItemInspecaoDef, Usuario } from '../domain/types';
 import { fmtData, fmtDataHora, fmtKm, primeiroNome } from '../domain/util';
 import { ORIGEM_LABEL, RECOMENDACAO, RESPOSTA_CLIENTE } from '../domain/catalogo';
@@ -61,7 +61,9 @@ export function Checklist({ u, osId, foco }: { u: Usuario; osId: string; foco: s
     if (await acao.executar(() => concluirChecklist(u, c.id), 'Checklist concluído. Agora a execução do serviço.')) ir(`/os/${os.id}/execucao`);
   };
 
-  const defs = c.defs.filter(d => !soPendentes || c.itens[d.id].estado === 'nao_verificado' || destaque.includes(d.id));
+  // "Não se aplica" aprendido fica num bloco separado no fim (o mecânico abre se quiser mudar).
+  const aprendidos = c.defs.filter(d => aprendidoPeloSistema(c.itens[d.id]) && aberto !== d.id);
+  const defs = c.defs.filter(d => !aprendidos.includes(d) && (!soPendentes || c.itens[d.id].estado === 'nao_verificado' || destaque.includes(d.id)));
   const grupos = GRUPOS.filter(g => defs.some(d => d.grupo === g));
 
   return (
@@ -139,6 +141,21 @@ export function Checklist({ u, osId, foco }: { u: Usuario; osId: string; foco: s
           </section>
         );
       })}
+
+      {aprendidos.length > 0 && (
+        <section className="ck-group" data-aprendidos>
+          <h3><span>Não se aplica a este carro</span><span>{aprendidos.length}</span></h3>
+          <p className="small muted" style={{ margin: '0 0 8px' }}>Marcados pelo sistema pelo que já foi visto neste carro ou neste modelo. Se algum se aplicar, toque e mude.</p>
+          <div className="list ck-compact">
+            {aprendidos.map(d => (
+              <button key={d.id} id={`item-${d.id}`} className="li" onClick={() => setAberto(d.id)} disabled={!editavel(d.id)}>
+                <div className="grow"><div className="ttl">{d.nome}</div><div className="meta">{c.itens[d.id].justificativa}</div></div>
+                <EstadoBadge estado="nao_aplicavel" /><span className="chev">›</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {modo === 'compacto' && aberto && (() => {
         const d = c.defs.find(x => x.id === aberto)!;

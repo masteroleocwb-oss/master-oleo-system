@@ -6,6 +6,7 @@ import type { EstadoItem } from '../domain/types';
 import { fmtData, fmtDataHora, fmtKm } from '../domain/util';
 import { Badge, Btn } from '../ui/components';
 import { ImgAmpliavel } from '../ui/Ampliar';
+import { linkWhatsappMaster } from '../domain/contato';
 
 const ORDEM: EstadoItem[] = ['prioritario', 'atencao', 'pendente_avaliacao', 'ok', 'nao_aplicavel'];
 
@@ -23,8 +24,25 @@ export function RelatorioPublico({ token }: { token: string }) {
   }, [token]);
   if (!r) return null;
 
+  if (r.estado === 'expirado') {
+    // Link vencido (180 dias): chama o cliente para a próxima troca, sem mostrar o relatório.
+    const wpp = linkWhatsappMaster(`Olá, Master Óleo! O link do relatório do meu carro${r.placa ? ` (placa ${r.placa})` : ''} expirou e quero agendar a troca de óleo.`);
+    return (
+      <div className="rel">
+        <div className="rel-head"><img src="./brand/logo-master-oleo.png" alt="Master Óleo" /></div>
+        <div className="card" style={{ marginTop: 24, textAlign: 'center', padding: 32 }} data-estado-link="expirado">
+          <h1 style={{ marginBottom: 8 }}>Seu link expirou</h1>
+          <p style={{ marginBottom: 16 }}>Seu link expirou porque a <b>troca de óleo está pendente</b>. Entre em contato com urgência com a Master Óleo para agendar.</p>
+          {wpp
+            ? <a className="btn" href={wpp} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', background: '#25D366', color: '#fff', borderColor: '#25D366' }}>Falar com a Master Óleo no WhatsApp</a>
+            : <p className="muted">Fale com a equipe da Master Óleo.</p>}
+        </div>
+      </div>
+    );
+  }
+
   if (r.estado !== 'ok') {
-    // Mesma mensagem para link inválido, expirado ou revogado: não revela se o link existiu.
+    // Mesma mensagem para link inválido ou revogado: não revela se o link existiu.
     return (
       <div className="rel">
         <div className="rel-head"><img src="./brand/logo-master-oleo.png" alt="Master Óleo" /></div>

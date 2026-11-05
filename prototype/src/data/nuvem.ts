@@ -81,6 +81,8 @@ const idDe = (chave: ChaveCol, x: Record<string, unknown>): string =>
 
 /** Intervalos: só o óleo de motor foi definido pela direção (D-05). Os demais ficam como "acompanhar". */
 const REGRAS_REAIS = REGRAS_INICIAIS.map(r => r.id === 'r_oleo_motor' ? { ...r, validadaPor: 'direcao' }
+  // Câmbio automático: 3 anos definido pela direção em 05/11/2026; os km ainda não foram definidos.
+  : r.id === 'r_cambio_auto' ? { ...r, km: undefined, meses: 36, validada: true, validadaPor: 'direcao', origem: 'interna' as const, fonte: 'Regra Master Óleo (direção, 05/11/2026): 3 anos; km a definir' }
   : { ...r, km: undefined, meses: undefined, validada: false, validadaPor: undefined, origem: 'nao_confirmada' as const, fonte: 'Aguardando definição da direção (D-05)' });
 
 const raw = {

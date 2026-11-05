@@ -37,13 +37,49 @@ export const sugestoesOcultar = (checklists: Checklist[], veiculos: Veiculo[], c
     .sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome));
 };
 
-export const novoChecklist = (id: string, os: OrdemServico, v: Veiculo, catalogo: ItemInspecaoDef[]): Checklist => {
+/** Aprendizado do "Não se aplica" por modelo: a partir de quantas inspeções e com que proporção. */
+export const APRENDER_MIN_INSPECOES = 10;
+export const APRENDER_MIN_PCT = 90;
+/** Quem marcou um item aprendido (aparece como "sistema" no histórico). */
+export const POR_SISTEMA = 'sistema';
+
+/**
+ * Itens que já chegam "Não se aplica" (com o motivo): o mesmo carro marcou assim na visita anterior,
+ * ou o modelo (marca + modelo + motor) foi marcado assim em 90%+ de 10 ou mais inspeções.
+ */
+export function naoSeAplicaAprendido(checklists: Checklist[], veiculos: Veiculo[], v: Veiculo, defs: ItemInspecaoDef[]): Record<string, string> {
+  const r: Record<string, string> = {};
+  const doCarro = checklists.filter(c => c.veiculoId === v.id).sort((a, b) => (b.iniciadoEm || '').localeCompare(a.iniciadoEm || ''));
+  const mesmoModelo = new Set(veiculos.filter(x => norm(x.marca) === norm(v.marca) && norm(x.modelo) === norm(v.modelo) && norm(x.motor) === norm(v.motor)).map(x => x.id));
+  const doModelo = checklists.filter(c => mesmoModelo.has(c.veiculoId));
+  for (const d of defs) {
+    const ultimo = doCarro.map(c => c.itens[d.id]).find(it => it && it.estado !== 'nao_verificado');
+    if (ultimo) {
+      if (ultimo.estado === 'nao_aplicavel') r[d.id] = `Não se aplica a este carro (visita anterior${ultimo.justificativa ? `: ${ultimo.justificativa}` : ''})`;
+      continue; // na visita anterior o item se aplicou: segue para verificar
+    }
+    const regs = doModelo.map(c => c.itens[d.id]).filter(it => it && it.estado !== 'nao_verificado');
+    const na = regs.filter(it => it.estado === 'nao_aplicavel').length;
+    if (regs.length >= APRENDER_MIN_INSPECOES && (na / regs.length) * 100 >= APRENDER_MIN_PCT) r[d.id] = `Não se aplica a este modelo (${na} de ${regs.length} inspeções)`;
+  }
+  return r;
+}
+
+export const novoChecklist = (id: string, os: OrdemServico, v: Veiculo, catalogo: ItemInspecaoDef[], aprendido: Record<string, string> = {}, em = ''): Checklist => {
   const defs = defsAplicaveis(catalogo, v).map(d => ({ ...d }));
-  // Todo item começa "A verificar": nada é preenchido sem ação real do mecânico.
+  // Todo item começa "A verificar", menos o "Não se aplica" aprendido (fica separado e o mecânico pode mudar).
   const itens: Record<string, ItemRegistro> = {};
-  defs.forEach(d => { itens[d.id] = { defId: d.id, estado: 'nao_verificado', evidenciaIds: [], historico: [] }; });
+  defs.forEach(d => {
+    const motivo = aprendido[d.id];
+    itens[d.id] = motivo
+      ? { defId: d.id, estado: 'nao_aplicavel', justificativa: motivo, evidenciaIds: [], registradoPor: POR_SISTEMA, registradoEm: em, historico: [{ estado: 'nao_aplicavel', por: POR_SISTEMA, em, motivo: 'Aprendido pelo sistema' }] }
+      : { defId: d.id, estado: 'nao_verificado', evidenciaIds: [], historico: [] };
+  });
   return { id, osId: os.id, veiculoId: v.id, status: 'nao_iniciado', defs, itens };
 };
+
+/** Item marcado "Não se aplica" pelo aprendizado e ainda não mexido pelo mecânico. */
+export const aprendidoPeloSistema = (it?: ItemRegistro) => !!it && it.estado === 'nao_aplicavel' && it.registradoPor === POR_SISTEMA;
 
 export interface DadosItem {
   observacao?: string;

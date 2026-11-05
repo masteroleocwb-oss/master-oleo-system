@@ -58,6 +58,13 @@ describe('ponte com o sistema atual', () => {
     expect(sem.cambioAutomaticoTemFiltro).toBe(false);
   });
 
+  it('câmbio automático: total de litros e litros dentro do câmbio (cárter) vão e voltam', () => {
+    const nomes = new MapaNomes(usuarios);
+    const os = osDeLegado('doc6', { ...legado, cambioAutomatico: true, cambioAutomaticoQuantidade: '9', cambioAutomaticoFluidoCarter: '4.5' }, nomes);
+    expect(os.servicos.find(s => s.key === 'cambioAutomatico')).toMatchObject({ quantidade: '9', carter: '4.5' });
+    expect(legadoDeOS(os, undefined, undefined, nomes)).toMatchObject({ cambioAutomaticoQuantidade: '9', cambioAutomaticoFluidoCarter: '4.5' });
+  });
+
   it('"não fazer teste" só vale quando a OS tem o serviço (fluido de freio / câmbio)', () => {
     const nomes = new MapaNomes(usuarios);
     // Campo ausente no sistema atual = marcado, mas lá o aviso só aparece com o serviço.

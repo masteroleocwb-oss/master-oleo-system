@@ -202,11 +202,11 @@ try {
   await vend.goto(NOVO + `#/os/${fim.id}?aba=relatorio`);
   await ate(vend, 'OS #7006');
   await vend.evaluate(() => [...document.querySelectorAll('button, [role=tab]')].find(x => x.textContent.trim() === 'Relatório do cliente')?.click());
-  await ate(vend, 'Gerar link do relatório');
-  await clicar(vend, 'Gerar link do relatório');
-  await esperar(1500);
-  const sh = (await listar('compartilhamentos'))[0];
-  ok(!!sh && !!(await lerDoc(`relatorios/${sh.token}`))?.relatorio, 'Relatório público gravado pelo token');
+  const auto = (await listar('compartilhamentos')).filter(x => x.osId === fim.id);
+  ok(auto.length === 1 && Math.round((Date.parse(auto[0].expiraEm) - Date.now()) / 864e5) === 180, 'Link do cliente criado sozinho na finalização (180 dias)');
+  await ate(vend, 'Gerar novo link');
+  const sh = auto[0];
+  ok(!!(await lerDoc(`relatorios/${sh.token}`))?.relatorio, 'Relatório público gravado pelo token');
   const cliente = await nova();
   await cliente.goto(NOVO + `#/r/${sh.token}`);
   await ate(cliente, 'ABC-1234');
@@ -216,6 +216,10 @@ try {
   ok(relDoc.fotos?.length > 0 && relDoc.fotos.every(f => f.url.startsWith('data:image/jpeg')), 'Fotos vão dentro do relatório do cliente (abre sem login)');
   await foto(cliente, '06-relatorio-cliente');
   await cliente.goto(NOVO + '#/r/7006'); await ate(cliente, 'Este link não está disponível');
+  const relAtual = await lerDoc(`relatorios/${sh.token}`);
+  await gravarDoc(`relatorios/${sh.token}`, { ...relAtual, expiraEm: new Date(Date.now() - 864e5).toISOString() });
+  await cliente.goto('about:blank'); await cliente.goto(NOVO + `#/r/${sh.token}`); await ate(cliente, 'Seu link expirou');
+  ok((await txt(cliente)).includes('troca de óleo está pendente') && !(await txt(cliente)).includes('Itens inspecionados'), 'Link vencido chama para a troca e não mostra o relatório');
   ok(true, 'Número da OS na URL não abre nada');
 
   console.log('7. Segurança');

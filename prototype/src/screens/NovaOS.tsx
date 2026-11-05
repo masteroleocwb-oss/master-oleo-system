@@ -26,7 +26,7 @@ interface Form {
   kmMes?: string;
   retorno?: boolean; retornoDeOsId?: string; problema?: string;
   vendedorId: string;
-  servicos: Partial<Record<ServicoKey, { marca?: string; quantidade?: string; codigo?: string }>>;
+  servicos: Partial<Record<ServicoKey, { marca?: string; quantidade?: string; carter?: string; codigo?: string }>>;
   valor: string;
   naoTesteFreio: boolean; naoTesteCambio: boolean;
   carroDeLoja?: boolean;
@@ -311,7 +311,7 @@ export function NovaOS({ u }: { u: Usuario }) {
             <div className="small strong" style={{ marginBottom: 4 }}>{SERVICOS[k].nome}</div>
             <div className={SERVICOS[k].campos.length > 2 ? 'row' : 'row nowrap'}>
               {SERVICOS[k].campos.map(c => (
-                <input key={c} aria-label={`${SERVICOS[k].nome}: ${c}`} className="input" placeholder={k === 'cambioAutomatico' && c === 'codigo' ? 'Código do filtro (se tiver)' : { marca: 'Marca/produto', quantidade: 'Litros', codigo: 'Código' }[c]}
+                <input key={c} aria-label={`${SERVICOS[k].nome}: ${c}`} className="input" placeholder={k === 'cambioAutomatico' ? { marca: 'Marca do fluido', quantidade: 'Total de litros', carter: 'Litros dentro do câmbio', codigo: 'Código do filtro (se tiver)' }[c] : { marca: 'Marca/produto', quantidade: 'Litros', carter: 'Litros', codigo: 'Código' }[c]}
                   value={f.servicos[k]?.[c] || ''} onChange={e => set({ servicos: { ...f.servicos, [k]: { ...f.servicos[k], [c]: e.target.value } } })} />
               ))}
             </div>
