@@ -168,7 +168,7 @@ export interface Plataforma {
   /** Serviços fora do balcão (recomendação do checklist e adicionais da bancada). */
   extras?: ServicoOS[];
   /** Execução dos serviços de balcão. */
-  execucao?: Partial<Record<ServicoKey, { executado: boolean; quantidadeExecutada?: string; intervaloKm?: number }>>;
+  execucao?: Partial<Record<ServicoKey, { executado: boolean; quantidadeExecutada?: string; intervaloKm?: number; tipoCambio?: ServicoOS['tipoCambio'] }>>;
   ofertas?: OrdemServico['ofertas'];
   pausas?: OrdemServico['pausas'];
   assistencias?: OrdemServico['assistencias'];
@@ -211,6 +211,7 @@ export function osDeLegado(id: string, o: DocLegado, nomes: MapaNomes): OrdemSer
       executado: ex ? ex.executado : concluida,
       ...(ex?.quantidadeExecutada ? { quantidadeExecutada: ex.quantidadeExecutada } : {}),
       ...(ex?.intervaloKm ? { intervaloKm: ex.intervaloKm } : {}),
+      ...(ex?.tipoCambio ? { tipoCambio: ex.tipoCambio } : {}),
     });
   }
   const upsells = (o.upsells || {}) as Record<string, { aceito?: string; valor?: unknown }>;
@@ -319,7 +320,7 @@ export function legadoDeOS(os: OrdemServico, v: Veiculo | undefined, c: Cliente 
 
   const extras = os.servicos.filter(s => s.origem !== 'balcao');
   const execucao: Plataforma['execucao'] = {};
-  for (const s of balcao) execucao[s.key] = { executado: s.executado, ...(s.quantidadeExecutada ? { quantidadeExecutada: s.quantidadeExecutada } : {}), ...(s.intervaloKm ? { intervaloKm: s.intervaloKm } : {}) };
+  for (const s of balcao) execucao[s.key] = { executado: s.executado, ...(s.quantidadeExecutada ? { quantidadeExecutada: s.quantidadeExecutada } : {}), ...(s.intervaloKm ? { intervaloKm: s.intervaloKm } : {}), ...(s.tipoCambio ? { tipoCambio: s.tipoCambio } : {}) };
   const plataforma: Plataforma = {
     vendedorId: os.vendedorId, mecanicoId: os.mecanicoId, criadaPor: os.criadaPor, extras, execucao,
     ofertas: os.ofertas, pausas: os.pausas, assistencias: os.assistencias, foraDaOrdem: os.foraDaOrdem, checklistId: os.checklistId, naoOferecer: os.naoOferecer,

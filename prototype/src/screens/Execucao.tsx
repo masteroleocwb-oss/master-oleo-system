@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { ir } from '../app/nav';
 import { finalizarOS, kmAnteriorMaior, pendenciasFinalizacao, type AdicionalInput, type FinalizarInput, type FotoKm, type ProximaInput } from '../data/api';
-import { ADICIONAIS, ESTADOS, ORIGEM_LABEL, RECOMENDACAO, RESPOSTA_CLIENTE, SERVICOS, servicoAplicavel } from '../domain/catalogo';
+import { ADICIONAIS, ESTADOS, ORIGEM_LABEL, RECOMENDACAO, RESPOSTA_CLIENTE, SERVICOS, servicoAplicavel, TIPOS_CAMBIO_AUTO } from '../domain/catalogo';
 import { sugerirProxima, textoPrevisto } from '../domain/manutencao';
-import type { ServicoKey, Usuario } from '../domain/types';
+import type { ServicoKey, TipoCambioAuto, Usuario } from '../domain/types';
 import { addMeses, agoraISO, fmtBRL, fmtData, fmtKm } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Empty, Field, Placa, useAcao, useDB } from '../ui/components';
 import { CarroDeLojaBadge, ChecklistBadge } from './common';
@@ -27,6 +27,12 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
   const [tentou, setTentou] = useState(false);
   const [extras, setExtras] = useState<Record<string, Partial<LinhaProx>>>({});
   const [intervaloOleo, setIntervaloOleo] = useState<number | undefined>();
+  // Tipo do câmbio automático: vem do que foi informado na última visita do carro (o mecânico confirma ou troca).
+  const [tipoCambio, setTipoCambio] = useState<TipoCambioAuto | undefined>(() => db.os
+    .filter(o => o.id !== osId && o.veiculoId === os?.veiculoId && o.status === 'concluido')
+    .sort((a, b) => (b.concluidaEm || '').localeCompare(a.concluidaEm || ''))
+    .flatMap(o => o.servicos).find(s => s.key === 'cambioAutomatico' && s.tipoCambio)?.tipoCambio);
+  const intervaloCambio = tipoCambio ? TIPOS_CAMBIO_AUTO[tipoCambio].km : undefined;
   /** Adicionais: aceito (com dados) | recusado | não oferecido (ausente). */
   /** Por item da lista de adicionais (ADICIONAIS[].id): aceito (com dados) | recusado | não oferecido (ausente). */
   const [ofertas, setOfertas] = useState<Record<string, Oferta>>({});
@@ -40,13 +46,20 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
     const linhas: LinhaProx[] = [];
     os.servicos.forEach((s, i) => {
       if (!exec[`${s.key}:${i}`]?.executado) return;
-      const sug = sugerirProxima(s.key, SERVICOS[s.key].nome, db.regrasIntervalo, v, agoraISO(), kmNum ?? undefined, s.key === 'oleoMotor' ? intervaloOleo : undefined);
+      const sug = sugerirProxima(s.key, SERVICOS[s.key].nome, db.regrasIntervalo, v, agoraISO(), kmNum ?? undefined, s.key === 'oleoMotor' ? intervaloOleo : s.key === 'cambioAutomatico' ? intervaloCambio : undefined);
       if (!sug.regra) return;
       linhas.push({
         chave: `s:${s.key}`, servicoKey: s.key, descricao: sug.descricao, regraId: sug.regra.id, origem: sug.confirmavel ? sug.regra.origem : 'nao_confirmada',
         fonte: sug.regra.fonte, kmPrevisto: sug.kmPrevisto, dataPrevista: sug.dataPrevista, incluir: true, editavel: false, motivo: sug.motivo,
       });
     });
+    // Troca de câmbio vendida na bancada também entra nas próximas manutenções.
+    for (const k of ['cambioAutomatico', 'cambioManual'] as const) {
+      if (os.servicos.some(s => s.key === k) || !ADICIONAIS.some(a => a.key === k && ofertas[a.id]?.resultado === 'aceito')) continue;
+      const sug = sugerirProxima(k, SERVICOS[k].nome, db.regrasIntervalo, v, agoraISO(), kmNum ?? undefined, k === 'cambioAutomatico' ? intervaloCambio : undefined);
+      if (sug.regra) linhas.push({ chave: `s:${k}`, servicoKey: k, descricao: sug.descricao, regraId: sug.regra.id, origem: sug.confirmavel ? sug.regra.origem : 'nao_confirmada',
+        fonte: sug.regra.fonte, kmPrevisto: sug.kmPrevisto, dataPrevista: sug.dataPrevista, incluir: true, editavel: false, motivo: sug.motivo });
+    }
     // Itens com desgaste, em mau estado ou a avaliar que o cliente não fez agora: continuam recomendados
     // nas próximas manutenções (sempre registrados — o mecânico não pode tirar).
     c?.defs.forEach(d => {
@@ -62,7 +75,7 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
       });
     });
     return linhas.map(l => ({ ...l, ...extras[l.chave], ...(l.estadoItem ? { incluir: true } : {}) }));
-  }, [os, v, c, db, exec, kmNum, extras, intervaloOleo, ofertas]);
+  }, [os, v, c, db, exec, kmNum, extras, intervaloOleo, intervaloCambio, ofertas]);
 
   if (!os || !v) return <div className="card"><Empty titulo="OS não encontrada." /></div>;
   if (os.mecanicoId !== u.id) return <div className="card"><Empty titulo="Só o mecânico desta OS registra a execução." /></div>;
@@ -71,6 +84,8 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
 
   const regraOleo = db.regrasIntervalo.find(r => r.ativo && r.servicoKey === 'oleoMotor' && r.validada && r.opcoesKm?.length);
   const oleoExecutado = os.servicos.some((s, i) => s.key === 'oleoMotor' && exec[`${s.key}:${i}`]?.executado);
+  const regraCambio = db.regrasIntervalo.find(r => r.ativo && r.servicoKey === 'cambioAutomatico' && r.validada && r.opcoesKm?.length);
+  const cambioFeito = os.servicos.some((s, i) => s.key === 'cambioAutomatico' && exec[`${s.key}:${i}`]?.executado) || ADICIONAIS.some(a => a.key === 'cambioAutomatico' && ofertas[a.id]?.resultado === 'aceito');
   const naOS = new Set(os.servicos.map(s => s.key));
   // Indicado pelo checklist (Atenção/Prioritário) aparece primeiro.
   const indicacao = (itemId?: string) => {
@@ -89,14 +104,15 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
     const marca = [a.marcaPadrao, o.marca?.trim()].filter(Boolean).join(' · ') || undefined;
     const ja = porServico.get(a.key);
     if (ja) { ja.marca = [ja.marca, marca].filter(Boolean).join(' + ') || undefined; ja.valor = ((ja.valor || 0) + (valorNum(o.valor) || 0)) || undefined; }
-    else porServico.set(a.key, { key: a.key, marca, quantidade: o.quantidade, codigo: o.codigo, valor: valorNum(o.valor) });
+    else porServico.set(a.key, { key: a.key, marca, quantidade: o.quantidade, codigo: o.codigo, valor: valorNum(o.valor), ...(a.key === 'cambioAutomatico' ? { tipoCambio, intervaloKm: intervaloCambio } : {}) });
   }
   const recusadosKeys = [...new Set(adicionaisLista.filter(a => ofertas[a.id]?.resultado === 'recusado' && !porServico.has(a.key)).map(a => a.key))];
   const kmAnterior = kmAnteriorMaior(db, os, kmNum);
   const entrada: FinalizarInput = {
     km: kmNum,
     fotoKm: kmAnterior != null ? fotoKm : undefined,
-    servicos: os.servicos.map((s, i) => ({ key: s.key, executado: !!exec[`${s.key}:${i}`]?.executado, quantidadeExecutada: exec[`${s.key}:${i}`]?.qtd, intervaloKm: s.key === 'oleoMotor' ? intervaloOleo : undefined })),
+    servicos: os.servicos.map((s, i) => ({ key: s.key, executado: !!exec[`${s.key}:${i}`]?.executado, quantidadeExecutada: exec[`${s.key}:${i}`]?.qtd,
+      ...(s.key === 'oleoMotor' ? { intervaloKm: intervaloOleo } : s.key === 'cambioAutomatico' ? { intervaloKm: intervaloCambio, tipoCambio } : {}) })),
     adicionais: [...porServico.values()],
     recusados: recusadosKeys,
     obsInterna, obsCliente,
@@ -142,6 +158,20 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
           );
         })}
       </Card>
+
+      {cambioFeito && regraCambio && (
+        <Card titulo="Tipo do câmbio automático">
+          <p className="small muted" style={{ marginBottom: 8 }}>Define a próxima troca: {Object.values(TIPOS_CAMBIO_AUTO).map(t => `${t.rotulo} ${t.km / 1000} mil km`).join(' · ')}, ou {Math.round((regraCambio.meses || 36) / 12)} anos — o que vier primeiro.</p>
+          <div className="row" role="radiogroup" aria-label="Tipo do câmbio automático">
+            {(Object.keys(TIPOS_CAMBIO_AUTO) as TipoCambioAuto[]).map(t => (
+              <button key={t} type="button" role="radio" aria-checked={tipoCambio === t} data-tipo-cambio={t} className={`chip ${tipoCambio === t ? 'on' : ''}`} onClick={() => setTipoCambio(t)}>{TIPOS_CAMBIO_AUTO[t].rotulo}</button>
+            ))}
+          </div>
+          {tentou && !tipoCambio && <div className="small" style={{ color: 'var(--red)', marginTop: 6 }}>Informe o tipo do câmbio.</div>}
+          {intervaloCambio && kmNum && <div className="small" style={{ marginTop: 8 }}>Próxima troca do câmbio: <b>{fmtKm(kmNum + intervaloCambio)}</b> ou <b>{fmtData(addMeses(agoraISO(), regraCambio.meses || 36))}</b>, o que vier primeiro.</div>}
+          {intervaloCambio && !kmNum && <div className="small muted" style={{ marginTop: 8 }}>Informe a quilometragem atual abaixo para calcular a próxima troca.</div>}
+        </Card>
+      )}
 
       {oleoExecutado && regraOleo && (
         <Card titulo="Intervalo da próxima troca de óleo">

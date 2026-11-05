@@ -7,7 +7,7 @@ import { aprovarVersao, descartarRascunho, proporVersao, transicaoOcorrencia, ty
 import { atendeOS, exigir, ErroPermissao, pode, podeAtenderCarros } from '../domain/permissions';
 import type {
   AtendimentoRetorno, Cambio, Checklist, Cliente, DB, EstadoItem, EstadoRecomendado, Evento, ItemInspecaoDef, ManutencaoPrevista, Meta, Ocorrencia, Oportunidade, OrdemServico, OrigemIntervalo,
-  Pausa, Role, ServicoKey, ServicoOS, SituacaoOportunidade, Usuario, Veiculo,
+  Pausa, Role, ServicoKey, ServicoOS, SituacaoOportunidade, Usuario, Veiculo, TipoCambioAuto,
 } from '../domain/types';
 import { addDias, agoraISO, diaKey, fmtPlaca, hojeKey, novoId, novoToken, normalizarPlaca, placaValida, primeiroNome, telefoneValido } from '../domain/util';
 import { idCliente, idVeiculo } from './legado';
@@ -684,13 +684,13 @@ export interface ProximaInput {
   estadoItem?: EstadoRecomendado;
 }
 
-export interface AdicionalInput { key: ServicoKey; marca?: string; quantidade?: string; codigo?: string; valor?: number }
+export interface AdicionalInput { key: ServicoKey; marca?: string; quantidade?: string; codigo?: string; valor?: number; tipoCambio?: TipoCambioAuto; intervaloKm?: number }
 
 export interface FinalizarInput {
   km: number | null;
   /** Foto do painel, obrigatória quando o KM é menor que o último registrado. */
   fotoKm?: FotoKm;
-  servicos: { key: ServicoKey; executado: boolean; quantidadeExecutada?: string; intervaloKm?: number }[];
+  servicos: { key: ServicoKey; executado: boolean; quantidadeExecutada?: string; intervaloKm?: number; tipoCambio?: TipoCambioAuto }[];
   /** Serviços adicionais vendidos na bancada (aceitos pelo cliente). */
   adicionais?: AdicionalInput[];
   /** Ofertas recusadas (para a taxa de oferta). */
@@ -715,6 +715,10 @@ export const pendenciasFinalizacao = (d: DB, os: OrdemServico, f: FinalizarInput
   if (oleo && regraOleo && !(oleo.intervaloKm && regraOleo.opcoesKm!.includes(oleo.intervaloKm))) {
     p.push(`Escolher o intervalo do óleo aplicado (${regraOleo.opcoesKm!.map(x => x / 1000).join(', ')} mil km)`);
   }
+  // Câmbio automático: o tipo (CVT, automático, DCT) define o km da próxima troca.
+  const regraCambio = d.regrasIntervalo.find(r => r.ativo && r.servicoKey === 'cambioAutomatico' && r.validada && r.opcoesKm?.length);
+  const cambio = f.servicos.find(s => s.key === 'cambioAutomatico' && s.executado) || f.adicionais?.find(a => a.key === 'cambioAutomatico');
+  if (cambio && regraCambio && !cambio.tipoCambio) p.push('Informar o tipo do câmbio automático (CVT, automático ou DCT)');
   return p;
 };
 
@@ -729,7 +733,7 @@ export async function finalizarOS(u: Usuario, osId: string, f: FinalizarInput) {
     const agora = agoraISO();
     os.servicos = os.servicos.map(s => {
       const x = f.servicos.find(y => y.key === s.key);
-      return x ? { ...s, executado: x.executado, quantidadeExecutada: x.quantidadeExecutada ?? s.quantidade, intervaloKm: x.intervaloKm } : s;
+      return x ? { ...s, executado: x.executado, quantidadeExecutada: x.quantidadeExecutada ?? s.quantidade, intervaloKm: x.intervaloKm, tipoCambio: x.tipoCambio } : s;
     });
     // Adicionais vendidos na bancada entram como serviço executado de origem "adicional".
     for (const a of f.adicionais || []) {
@@ -742,7 +746,7 @@ export async function finalizarOS(u: Usuario, osId: string, f: FinalizarInput) {
         if (a.valor && a.valor > 0) op.valor = a.valor;
         op.historico.push({ situacao: 'aceita', por: u.id, em: agoraISO(), obs: 'Cliente aceitou na bancada' });
       }
-      os.servicos.push({ key: a.key, marca: a.marca?.trim() || undefined, quantidade: a.quantidade, codigo: a.codigo?.trim() || undefined, quantidadeExecutada: a.quantidade, origem: 'adicional', executado: true, valor: a.valor && a.valor > 0 ? a.valor : undefined, adicionadoPor: u.id, oportunidadeId: op?.id });
+      os.servicos.push({ key: a.key, marca: a.marca?.trim() || undefined, quantidade: a.quantidade, codigo: a.codigo?.trim() || undefined, quantidadeExecutada: a.quantidade, intervaloKm: a.intervaloKm, tipoCambio: a.tipoCambio, origem: 'adicional', executado: true, valor: a.valor && a.valor > 0 ? a.valor : undefined, adicionadoPor: u.id, oportunidadeId: op?.id });
     }
     os.ofertas = [
       ...(f.adicionais || []).map(a => ({ key: a.key, resultado: 'aceito' as const, por: u.id, em: agoraISO() })),

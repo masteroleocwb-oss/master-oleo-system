@@ -72,6 +72,14 @@ describe('ponte com o sistema atual', () => {
     expect(legadoDeOS(os, undefined, undefined, nomes)).toMatchObject({ cambioAutomaticoQuantidade: '9', cambioAutomaticoFluidoCarter: '4.5' });
   });
 
+  it('tipo do câmbio automático informado pelo mecânico vai e volta', () => {
+    const nomes = new MapaNomes(usuarios);
+    const os = osDeLegado('doc8', { ...legado, cambioAutomatico: true, cambioAutomaticoQuantidade: '9' }, nomes);
+    const feito = { ...os, servicos: os.servicos.map(s => s.key === 'cambioAutomatico' ? { ...s, executado: true, intervaloKm: 40000, tipoCambio: 'cvt' as const } : s) };
+    const volta = osDeLegado('doc8', legadoDeOS(feito, undefined, undefined, nomes), nomes);
+    expect(volta.servicos.find(s => s.key === 'cambioAutomatico')).toMatchObject({ tipoCambio: 'cvt', intervaloKm: 40000 });
+  });
+
   it('"não fazer teste" só vale quando a OS tem o serviço (fluido de freio / câmbio)', () => {
     const nomes = new MapaNomes(usuarios);
     // Campo ausente no sistema atual = marcado, mas lá o aviso só aparece com o serviço.

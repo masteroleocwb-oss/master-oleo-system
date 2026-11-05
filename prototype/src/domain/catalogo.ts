@@ -1,6 +1,6 @@
 // Catálogos: os 16 serviços do sistema atual (chaves preservadas) e o catálogo
 // inicial de itens de inspeção (Playbook — checklist fase 1 + itens pedidos pela direção).
-import type { EstadoItem, EstadoRecomendado, ItemInspecaoDef, OrdemServico, RegraIntervalo, ServicoKey, SituacaoOportunidade } from './types';
+import type { EstadoItem, EstadoRecomendado, ItemInspecaoDef, OrdemServico, RegraIntervalo, ServicoKey, SituacaoOportunidade, TipoCambioAuto } from './types';
 
 export const SERVICOS: Record<ServicoKey, { nome: string; campos: ('marca' | 'quantidade' | 'carter' | 'codigo')[] }> = {
   oleoMotor: { nome: 'Óleo de motor', campos: ['marca', 'quantidade'] },
@@ -160,6 +160,13 @@ export function semTeste(os: Pick<OrdemServico, 'servicos' | 'naoFazerTesteFreio
   if (os.naoFazerTesteCambio && tem('cambioManual', 'cambioAutomatico')) r.push('Câmbio');
   return r;
 }
+
+/** Câmbio automático: km da próxima troca pelo tipo (direção, 05/11/2026), ou 3 anos — o que vier primeiro. */
+export const TIPOS_CAMBIO_AUTO: Record<TipoCambioAuto, { rotulo: string; km: number }> = {
+  cvt: { rotulo: 'CVT', km: 40000 },
+  automatico: { rotulo: 'Automático convencional', km: 50000 },
+  dct: { rotulo: 'DCT (dupla embreagem)', km: 50000 },
+};
 
 export const servicoAplicavel = (k: ServicoKey, cambio?: 'manual' | 'automatico') =>
   !cambio || !((k === 'cambioManual' && cambio === 'automatico') || (k === 'cambioAutomatico' && cambio === 'manual'));

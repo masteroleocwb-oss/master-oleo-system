@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { CATALOGO_INICIAL, REGRAS_INICIAIS } from '../domain/catalogo';
 import { podeAtenderCarros } from '../domain/permissions';
+import { TIPOS_CAMBIO_AUTO } from '../domain/catalogo';
 import type { DB, RegistroAcesso, ResultadoAcesso, Role, Usuario } from '../domain/types';
 import { ErroSalvamento as ErroNuvem } from './erros';
 import { camposAlterados, derivarCadastros, legadoDeOS, MapaNomes, osDeLegado, PADRAO_CRIACAO, type DocLegado } from './legado';
@@ -81,8 +82,10 @@ const idDe = (chave: ChaveCol, x: Record<string, unknown>): string =>
 
 /** Intervalos: só o óleo de motor foi definido pela direção (D-05). Os demais ficam como "acompanhar". */
 const REGRAS_REAIS = REGRAS_INICIAIS.map(r => r.id === 'r_oleo_motor' ? { ...r, validadaPor: 'direcao' }
-  // Câmbio automático e manual: 3 anos, definido pela direção em 05/11/2026; os km ainda não foram definidos.
-  : r.id === 'r_cambio_auto' || r.id === 'r_cambio_manual' ? { ...r, km: undefined, meses: 36, validada: true, validadaPor: 'direcao', origem: 'interna' as const, fonte: 'Regra Master Óleo (direção, 05/11/2026): 3 anos; km a definir' }
+  // Câmbio: definido pela direção em 05/11/2026 (automático por tipo de câmbio; manual só por tempo).
+  : r.id === 'r_cambio_auto' ? { ...r, km: undefined, opcoesKm: [...new Set(Object.values(TIPOS_CAMBIO_AUTO).map(t => t.km))], meses: 36, validada: true, validadaPor: 'direcao', origem: 'interna' as const,
+    fonte: 'Regra Master Óleo (direção, 05/11/2026): CVT 40 mil km, automático convencional e DCT 50 mil km, ou 3 anos — o que vier primeiro' }
+  : r.id === 'r_cambio_manual' ? { ...r, km: undefined, meses: 36, validada: true, validadaPor: 'direcao', origem: 'interna' as const, fonte: 'Regra Master Óleo (direção, 05/11/2026): 3 anos' }
   : { ...r, km: undefined, meses: undefined, validada: false, validadaPor: undefined, origem: 'nao_confirmada' as const, fonte: 'Aguardando definição da direção (D-05)' });
 
 const raw = {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { CATALOGO_INICIAL, REGRAS_INICIAIS } from './catalogo';
+import { CATALOGO_INICIAL, REGRAS_INICIAIS, TIPOS_CAMBIO_AUTO } from './catalogo';
 import { aprendidoPeloSistema, naoSeAplicaAprendido, novoChecklist, pendenciasParaConcluir, registrarItem, validarItem } from './checklist';
 import { aprovarVersao, calcularProposta, calcularVigente, descontoChecklist, proporVersao, scoreExecucao, transicaoOcorrencia, versaoEm } from './gestao';
 import { statusManutencao, sugerirProxima } from './manutencao';
@@ -94,6 +94,15 @@ describe('próximas manutenções', () => {
     expect(s.kmPrevisto).toBeUndefined();
     expect(s.dataPrevista).toBeUndefined();
     expect(sugerirProxima('militec', 'Militec', REGRAS_INICIAIS, veic('manual'), '2026-10-26T15:00:00Z', 1).regra).toBeUndefined();
+  });
+
+  it('câmbio automático: km pelo tipo (CVT 40 mil, automático e DCT 50 mil) ou 3 anos', () => {
+    const regras = REGRAS_INICIAIS.map(r => r.id === 'r_cambio_auto' ? { ...r, km: undefined, opcoesKm: [40000, 50000], meses: 36, validada: true, origem: 'interna' as const } : r);
+    const cvt = sugerirProxima('cambioAutomatico', 'Câmbio', regras, veic('automatico'), '2026-10-26T15:00:00Z', 80000, TIPOS_CAMBIO_AUTO.cvt.km);
+    expect(cvt.kmPrevisto).toBe(120000);
+    expect(cvt.dataPrevista?.slice(0, 7)).toBe('2029-10');
+    expect(sugerirProxima('cambioAutomatico', 'Câmbio', regras, veic('automatico'), '2026-10-26T15:00:00Z', 80000, TIPOS_CAMBIO_AUTO.dct.km).kmPrevisto).toBe(130000);
+    expect(sugerirProxima('cambioAutomatico', 'Câmbio', regras, veic('automatico'), '2026-10-26T15:00:00Z', 80000).kmPrevisto).toBeUndefined();
   });
 
   it('com regra validada calcula km e data e classifica futura/próxima/vencida/concluída', () => {

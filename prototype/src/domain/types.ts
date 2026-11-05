@@ -81,6 +81,8 @@ export type ServicoKey =
   | 'cambioManual' | 'cambioAutomatico' | 'difDianteiro' | 'difTraseiro' | 'caixaTransferencia'
   | 'higienizacaoAC' | 'palhetas' | 'militec' | 'aditivo' | 'flush';
 
+export type TipoCambioAuto = 'cvt' | 'automatico' | 'dct';
+
 export interface ServicoOS {
   key: ServicoKey;
   marca?: string;
@@ -97,8 +99,10 @@ export interface ServicoOS {
   quantidadeExecutada?: string;
   valor?: number;
   oportunidadeId?: string;
-  /** Óleo de motor: intervalo escolhido pelo mecânico conforme o óleo aplicado (5, 7 ou 10 mil km). */
+  /** Óleo de motor: intervalo escolhido pelo mecânico conforme o óleo aplicado (5, 7 ou 10 mil km). Câmbio automático: pelo tipo do câmbio. */
   intervaloKm?: number;
+  /** Câmbio automático: tipo informado pelo mecânico na finalização (define o km da próxima troca). */
+  tipoCambio?: TipoCambioAuto;
   adicionadoPor?: string;
 }
 

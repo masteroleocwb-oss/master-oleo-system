@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ir, useRota } from '../app/nav';
 import { cancelarOS, decidirExcecao, DIAS_LINK_AUTOMATICO, encerrarOSEsquecida, definirPedidoOlist, definirVisibilidadeFoto, estadoLink, gerarLink, marcarNaoOferecer, nomeDe, projetarRelatorio, registrarCompartilhamento, revogarLink, valoresOS } from '../data/api';
-import { ESTADOS, GRUPOS, MOTIVO_PAUSA, SERVICOS, semTeste } from '../domain/catalogo';
+import { ESTADOS, GRUPOS, MOTIVO_PAUSA, SERVICOS, semTeste, TIPOS_CAMBIO_AUTO } from '../domain/catalogo';
 import { fotosAtivasDoItem, progresso } from '../domain/checklist';
 import { pode } from '../domain/permissions';
 import type { Compartilhamento, OrdemServico, Usuario } from '../domain/types';
@@ -81,7 +81,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
                 <tbody>
                   {os.servicos.map((s, i) => (
                     <tr key={i}>
-                      <td><b>{SERVICOS[s.key].nome}</b><div className="small muted">{[s.marca, s.quantidadeExecutada || s.quantidade ? `${s.quantidadeExecutada || s.quantidade} L${s.carter ? ' no total' : ''}` : null, s.carter ? `${s.carter} L dentro do câmbio` : null, s.codigo, s.intervaloKm ? `próxima em ${s.intervaloKm.toLocaleString('pt-BR')} km ou 6 meses` : null].filter(Boolean).join(' · ')}</div></td>
+                      <td><b>{SERVICOS[s.key].nome}</b><div className="small muted">{[s.marca, s.quantidadeExecutada || s.quantidade ? `${s.quantidadeExecutada || s.quantidade} L${s.carter ? ' no total' : ''}` : null, s.carter ? `${s.carter} L dentro do câmbio` : null, s.codigo, s.tipoCambio ? TIPOS_CAMBIO_AUTO[s.tipoCambio].rotulo : null, s.intervaloKm ? `próxima em ${s.intervaloKm.toLocaleString('pt-BR')} km ou ${s.key === 'cambioAutomatico' ? '3 anos' : '6 meses'}` : null].filter(Boolean).join(' · ')}</div></td>
                       <td>{s.origem === 'checklist' ? <Badge tom="info">Checklist</Badge> : s.origem === 'adicional' ? <Badge tom="info">Adicional</Badge> : <Badge tom="outline">Balcão</Badge>}</td>
                       <td>{s.executado ? <Badge tom="ok">Executado</Badge> : <Badge tom="neutro">Pendente</Badge>}</td>
                       {pode(u, 'os.ver_valores') && <td className="num">{s.valor ? fmtBRL(s.valor) : '—'}</td>}
