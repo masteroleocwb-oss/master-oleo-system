@@ -4,7 +4,7 @@ import { abrirOS, buscarVeiculosEClientes, cadastroFinal, faltasCadastroCliente,
 import { CIDADES_SUGERIDAS, COMO_CONHECEU, RECOMENDACAO, RESPOSTA_CLIENTE, SERVICO_KEYS, SERVICOS, servicoAplicavel } from '../domain/catalogo';
 import { ANOS, MARCAS, MARCAS_MODELOS, OUTRO } from '../domain/veiculosCatalogo';
 import type { Cambio, ServicoKey, ServicoOS, Usuario } from '../domain/types';
-import { fmtData, fmtKm, fmtTelefone, normalizarPlaca, placaValida, telefoneValido } from '../domain/util';
+import { fmtBRL, fmtData, fmtKm, fmtTelefone, lerReais, normalizarPlaca, placaValida, telefoneValido } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Field, Placa, SaveIndicator, Segmented, useAcao, useDB, type SaveState } from '../ui/components';
 
 const RASCUNHO = 'mo-proto:rascunho-nova-os';
@@ -92,7 +92,7 @@ export function NovaOS({ u }: { u: Usuario }) {
     vendedorId: f.vendedorId,
     servicos: Object.entries(f.servicos).filter(([key]) => servicoAplicavel(key as ServicoKey, cambioAtual))
       .map(([key, d]) => ({ key: key as ServicoKey, ...d, origem: 'balcao', executado: false }) as ServicoOS),
-    valorInicial: retorno ? 0 : Number(String(f.valor).replace(/\./g, '').replace(',', '.')) || 0,
+    valorInicial: retorno ? 0 : lerReais(f.valor),
     naoFazerTesteFreio: (f.naoTesteFreio && temFreio) || undefined,
     naoFazerTesteCambio: (f.naoTesteCambio && temCambio) || undefined,
   };
@@ -327,7 +327,8 @@ export function NovaOS({ u }: { u: Usuario }) {
       <Card titulo={retorno ? '3. Atendimento' : '3. Venda'}>
         <div className="grid k2">
           {!retorno && (
-            <Field rotulo="Valor da venda inicial (R$)" obrigatorio htmlFor="valor" erro={tentou && !(entrada.valorInicial > 0) ? 'Informe o valor' : null}>
+            <Field rotulo="Valor da venda inicial (R$)" obrigatorio htmlFor="valor" erro={tentou && !(entrada.valorInicial > 0) ? 'Informe o valor' : null}
+              dica={entrada.valorInicial > 0 ? `Vai gravar ${fmtBRL(entrada.valorInicial)}` : undefined}>
               <input id="valor" className="input" inputMode="decimal" value={f.valor} onChange={e => set({ valor: e.target.value.replace(/[^\d,.]/g, '') })} placeholder="0,00" />
             </Field>
           )}

@@ -6,7 +6,7 @@ import { statusManutencao, sugerirProxima } from './manutencao';
 import { enderecoDoCliente, urlRelatorio } from './contato';
 import { pode } from './permissions';
 import type { Meta, Ocorrencia, OrdemServico, Usuario, Veiculo } from './types';
-import { fixarAgora, novoToken, placaValida } from './util';
+import { fixarAgora, lerReais, novoToken, placaValida } from './util';
 
 const veic = (cambio: 'manual' | 'automatico'): Veiculo => ({ id: 'v', placa: 'ABC1D23', placasAnteriores: [], marca: 'X', modelo: 'Y', ano: 2020, motor: '1.0', cambio, combustivel: 'Flex', clienteId: 'c' });
 const os = { id: 'os1' } as OrdemServico;
@@ -221,5 +221,25 @@ describe('link do cliente', () => {
     expect(urlRelatorio('abc', true, loc('127.0.0.1'))).toBe('https://127.0.0.1/#/r/abc');
     expect(enderecoDoCliente('cliente.masteroleo.com.br')).toBe(true);
     expect(enderecoDoCliente('sistema.masteroleo.com.br')).toBe(false);
+  });
+});
+
+describe('valor em reais digitado', () => {
+  it('ponto como centavo (teclado do celular) não multiplica o valor', () => {
+    expect(lerReais('69.90')).toBe(69.9);
+    expect(lerReais('29.9')).toBe(29.9);
+    expect(lerReais('419.00')).toBe(419);
+  });
+  it('vírgula como centavo e ponto como milhar', () => {
+    expect(lerReais('29,90')).toBe(29.9);
+    expect(lerReais('1.500,00')).toBe(1500);
+    expect(lerReais('1.500')).toBe(1500);
+    expect(lerReais('R$ 2.099,90')).toBe(2099.9);
+    expect(lerReais('1.250.50')).toBe(1250.5);
+  });
+  it('vazio ou lixo vira zero', () => {
+    expect(lerReais('')).toBe(0);
+    expect(lerReais(undefined)).toBe(0);
+    expect(lerReais(',')).toBe(0);
   });
 });

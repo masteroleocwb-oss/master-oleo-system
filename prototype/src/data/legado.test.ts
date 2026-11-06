@@ -124,4 +124,11 @@ describe('ponte com o sistema atual', () => {
     expect(veiculos[0]).toMatchObject({ placa: 'ABC1234', kmAtual: 80000, kmPorMes: 1500, cambio: 'manual', ano: 2015 });
     expect(clientes[0].nome).toBe('Cliente Teste');
   });
+  it('trocador de calor vendido no balcão vai e volta do sistema atual', () => {
+    const nomes = new MapaNomes(usuarios);
+    const os = osDeLegado('doc7', { ...legado, trocadorCalor: true }, nomes);
+    expect(os.servicos.some(s => s.key === 'trocadorCalor' && s.origem === 'balcao')).toBe(true);
+    expect(legadoDeOS(os, undefined, undefined, nomes).trocadorCalor).toBe(true);
+    expect(osDeLegado('doc8', legado, nomes).servicos.some(s => s.key === 'trocadorCalor')).toBe(false);
+  });
 });

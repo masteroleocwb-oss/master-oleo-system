@@ -36,6 +36,21 @@ export const fmtMes = (mes: string) => {
 };
 export const fmtKm = (km?: number) => km == null ? '—' : `${km.toLocaleString('pt-BR')} km`;
 export const fmtBRL = (v?: number) => v == null ? '—' : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+/**
+ * Valor em reais digitado à mão: "29,90", "29.90", "1.500", "1.500,00" e "R$ 29,90" viram o número certo.
+ * Com vírgula, o ponto é milhar. Sem vírgula, ponto seguido de 1 ou 2 dígitos no fim é centavo
+ * (teclado do celular que só tem ponto); seguido de 3 dígitos é milhar.
+ */
+export const lerReais = (x?: string | number | null) => {
+  if (typeof x === 'number') return Number.isFinite(x) ? x : 0;
+  const t = String(x ?? '').replace(/[^\d,.]/g, '');
+  if (!t) return 0;
+  const n = t.includes(',') ? t.replace(/\./g, '').replace(',', '.')
+    : /\.\d{1,2}$/.test(t) ? t.replace(/\.(?=.*\.)/g, '')
+    : t.replace(/\./g, '');
+  const v = Number(n);
+  return Number.isFinite(v) ? v : 0;
+};
 export const fmtPct = (v: number | null | undefined, casas = 0) => v == null || Number.isNaN(v) ? '—' : `${v.toLocaleString('pt-BR', { maximumFractionDigits: casas, minimumFractionDigits: casas })}%`;
 export const fmtMin = (min?: number | null) => {
   if (min == null || Number.isNaN(min)) return '—';

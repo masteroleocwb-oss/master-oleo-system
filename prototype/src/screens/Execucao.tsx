@@ -4,7 +4,7 @@ import { finalizarOS, kmAnteriorMaior, pendenciasFinalizacao, type AdicionalInpu
 import { ADICIONAIS, ESTADOS, ORIGEM_LABEL, RECOMENDACAO, RESPOSTA_CLIENTE, SERVICOS, servicoAplicavel, TIPOS_CAMBIO_AUTO } from '../domain/catalogo';
 import { sugerirProxima, textoPrevisto } from '../domain/manutencao';
 import type { ServicoKey, TipoCambioAuto, Usuario } from '../domain/types';
-import { addMeses, agoraISO, fmtBRL, fmtData, fmtKm } from '../domain/util';
+import { addMeses, agoraISO, fmtBRL, fmtData, fmtKm, lerReais } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Empty, Field, Placa, useAcao, useDB } from '../ui/components';
 import { CarroDeLojaBadge, ChecklistBadge } from './common';
 import { AjudaBotao } from './Ajuda';
@@ -95,7 +95,7 @@ export function Execucao({ u, osId }: { u: Usuario; osId: string }) {
   const adicionaisLista = ADICIONAIS.filter(a => servicoAplicavel(a.key, v.cambio) && !naOS.has(a.key))
     .map(a => ({ ...a, motivo: indicacao(a.itemRelacionado) }))
     .sort((x, y) => Number(!!y.motivo) - Number(!!x.motivo));
-  const valorNum = (x?: string) => Number(String(x || '').replace(/\./g, '').replace(',', '.')) || undefined;
+  const valorNum = (x?: string) => lerReais(x) || undefined;
   // Os aditivos (radiador, combustível, câmbio) são um serviço só no sistema atual: vão juntos, com os valores somados.
   const porServico = new Map<ServicoKey, AdicionalInput>();
   for (const a of adicionaisLista) {
@@ -268,6 +268,7 @@ function DadosAdicional({ k, rotulo, o, onChange }: { k: ServicoKey; rotulo: str
       {campos.includes('codigo') && <input aria-label={`Código de ${rotulo}`} className="input" style={{ flex: 1, minWidth: 120 }} placeholder={k === 'cambioAutomatico' ? 'Código do filtro (se tiver)' : 'Código'} value={o.codigo || ''} onChange={e => onChange({ codigo: e.target.value })} />}
       {campos.includes('quantidade') && <input aria-label={`Litros de ${rotulo}`} className="input" style={{ width: 90 }} placeholder="L" inputMode="decimal" value={o.quantidade || ''} onChange={e => onChange({ quantidade: e.target.value })} />}
       <input aria-label={`Valor de ${rotulo}`} className="input" style={{ width: 130 }} placeholder="Valor R$ (se souber)" inputMode="decimal" value={o.valor || ''} onChange={e => onChange({ valor: e.target.value.replace(/[^\d,.]/g, '') })} />
+      {lerReais(o.valor) > 0 && <span className="small muted" style={{ alignSelf: 'center' }}>= {fmtBRL(lerReais(o.valor))}</span>}
     </div>
   );
 }

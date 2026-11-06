@@ -29,6 +29,7 @@ export const CAMPOS_LEGADO: Record<ServicoKey, { marca?: string; quantidade?: st
   militec: {},
   aditivo: { marca: 'aditivoQual' },
   flush: { marca: 'flushDescricao' },
+  trocadorCalor: {},
 };
 
 // ───────────────────────── Datas ─────────────────────────

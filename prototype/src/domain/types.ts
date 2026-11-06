@@ -75,11 +75,11 @@ export interface Veiculo {
 
 export type StatusOS = 'aguardando' | 'andamento' | 'pausada' | 'concluido' | 'cancelada' | 'encerrada';
 
-/** Chaves dos 16 serviços do sistema atual (preservadas). */
+/** Chaves dos serviços do sistema atual (preservadas) + trocador de calor (pedido da direção, 06/11/2026). */
 export type ServicoKey =
   | 'oleoMotor' | 'fluidoFreio' | 'filtroOleo' | 'arMotor' | 'arCondicionado' | 'filtroCombustivel'
   | 'cambioManual' | 'cambioAutomatico' | 'difDianteiro' | 'difTraseiro' | 'caixaTransferencia'
-  | 'higienizacaoAC' | 'palhetas' | 'militec' | 'aditivo' | 'flush';
+  | 'higienizacaoAC' | 'palhetas' | 'militec' | 'aditivo' | 'flush' | 'trocadorCalor';
 
 export type TipoCambioAuto = 'cvt' | 'automatico' | 'dct';
 
