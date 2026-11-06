@@ -1145,6 +1145,7 @@
             if (order.militec) servicos.push('Militec/Nano');
             if (order.aditivo) servicos.push(`Aditivo (${order.aditivoQual || 'N/A'})`);
             if (order.flush) servicos.push('Flush');
+            if (order.trocadorCalor) servicos.push('Trocador de Calor');
 
             return servicos;
         };
@@ -3948,6 +3949,7 @@
                 aditivoQual: '',
                 flush: false,
                 flushDescricao: '',
+                trocadorCalor: false,
 
                 // Flags "Executar sem questionar/fazer testes" (default LIGADO).
                 // O time de vendas pode desligar na abertura, para câmbio e freio.
@@ -3991,7 +3993,7 @@
                                   formData.cambioManual || formData.cambioAutomatico ||
                                   formData.difDianteiro || formData.difTraseiro || formData.caixaTransferencia ||
                                   formData.higienizacaoAC ||
-                                  formData.palhetas || formData.militec || formData.aditivo || formData.flush;
+                                  formData.palhetas || formData.militec || formData.aditivo || formData.flush || formData.trocadorCalor;
                 
                 if (!hasService) {
                     alert('Selecione pelo menos um serviço');
@@ -4710,6 +4712,11 @@
                                             </div>
                                         </div>
                                     )}
+
+                                    <div className="checkbox-group">
+                                        <input type="checkbox" id="trocadorCalor" name="trocadorCalor" checked={formData.trocadorCalor} onChange={handleChange} />
+                                        <label htmlFor="trocadorCalor">Trocador de Calor</label>
+                                    </div>
                                 </div>
                             )}
 
@@ -5242,6 +5249,7 @@
                                         {order.militec && <div className="service-item">✓ Militec/Nano</div>}
                                         {order.aditivo && <div className="service-item">✓ Aditivo ({order.aditivoQual})</div>}
                                         {order.flush && <div className="service-item">✓ Flush</div>}
+                                        {order.trocadorCalor && <div className="service-item">✓ Trocador de Calor</div>}
                                     </div>
 
                                     {/* Instruções "executar sem questionar" definidas pelo vendas na abertura */}
