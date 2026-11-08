@@ -167,6 +167,8 @@ export const TIPOS_CAMBIO_AUTO: Record<TipoCambioAuto, { rotulo: string; km: num
   cvt: { rotulo: 'CVT', km: 40000 },
   automatico: { rotulo: 'Automático convencional', km: 50000 },
   dct: { rotulo: 'DCT (dupla embreagem)', km: 50000 },
+  powershift: { rotulo: 'Powershift', km: 50000 },
+  dualogic: { rotulo: 'Dualogic', km: 50000 },
 };
 
 export const servicoAplicavel = (k: ServicoKey, cambio?: 'manual' | 'automatico') =>

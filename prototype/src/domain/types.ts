@@ -81,7 +81,7 @@ export type ServicoKey =
   | 'cambioManual' | 'cambioAutomatico' | 'difDianteiro' | 'difTraseiro' | 'caixaTransferencia'
   | 'higienizacaoAC' | 'palhetas' | 'militec' | 'aditivo' | 'flush' | 'trocadorCalor';
 
-export type TipoCambioAuto = 'cvt' | 'automatico' | 'dct';
+export type TipoCambioAuto = 'cvt' | 'automatico' | 'dct' | 'powershift' | 'dualogic';
 
 export interface ServicoOS {
   key: ServicoKey;

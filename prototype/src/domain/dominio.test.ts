@@ -103,6 +103,7 @@ describe('próximas manutenções', () => {
     expect(cvt.kmPrevisto).toBe(120000);
     expect(cvt.dataPrevista?.slice(0, 7)).toBe('2029-10');
     expect(sugerirProxima('cambioAutomatico', 'Câmbio', regras, veic('automatico'), '2026-10-26T15:00:00Z', 80000, TIPOS_CAMBIO_AUTO.dct.km).kmPrevisto).toBe(130000);
+    for (const t of ['powershift', 'dualogic'] as const) expect(sugerirProxima('cambioAutomatico', 'Câmbio', regras, veic('automatico'), '2026-10-26T15:00:00Z', 80000, TIPOS_CAMBIO_AUTO[t].km).kmPrevisto).toBe(130000);
     expect(sugerirProxima('cambioAutomatico', 'Câmbio', regras, veic('automatico'), '2026-10-26T15:00:00Z', 80000).kmPrevisto).toBeUndefined();
   });
 

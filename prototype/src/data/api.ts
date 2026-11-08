@@ -715,10 +715,10 @@ export const pendenciasFinalizacao = (d: DB, os: OrdemServico, f: FinalizarInput
   if (oleo && regraOleo && !(oleo.intervaloKm && regraOleo.opcoesKm!.includes(oleo.intervaloKm))) {
     p.push(`Escolher o intervalo do óleo aplicado (${regraOleo.opcoesKm!.map(x => x / 1000).join(', ')} mil km)`);
   }
-  // Câmbio automático: o tipo (CVT, automático, DCT) define o km da próxima troca.
+  // Câmbio automático: o tipo (CVT, automático, DCT, Powershift, Dualogic) define o km da próxima troca.
   const regraCambio = d.regrasIntervalo.find(r => r.ativo && r.servicoKey === 'cambioAutomatico' && r.validada && r.opcoesKm?.length);
   const cambio = f.servicos.find(s => s.key === 'cambioAutomatico' && s.executado) || f.adicionais?.find(a => a.key === 'cambioAutomatico');
-  if (cambio && regraCambio && !cambio.tipoCambio) p.push('Informar o tipo do câmbio automático (CVT, automático ou DCT)');
+  if (cambio && regraCambio && !cambio.tipoCambio) p.push('Informar o tipo do câmbio automático (CVT, automático, DCT, Powershift ou Dualogic)');
   return p;
 };
 
