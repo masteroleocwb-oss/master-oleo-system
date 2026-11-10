@@ -7349,7 +7349,7 @@
             gerir: ['direcao', 'lider'], // painel do chefe, almoço, remover OS em andamento
         };
         const pode = (u, acao) => !!u && (PERMISSOES[acao] || []).includes(u.perfil);
-        const SESSAO_HORAS = 12; // um turno; depois pede login de novo
+        const SESSAO_DIAS = 30; // só pede login de novo em Sair ou depois de 30 dias sem abrir o sistema
         const CHAVE_SESSAO = 'mo:sessaoDesde';
         const SENHA_MIN = 8;
 
@@ -7912,11 +7912,12 @@
                     if (!user) { setEstado({ fase: 'login' }); return; }
                     const desde = parseInt(localStorage.getItem(CHAVE_SESSAO) || '0', 10);
                     if (!desde) { await auth.signOut(); return; } // sessão que não começou pela tela de login
-                    if (Date.now() - desde > SESSAO_HORAS * 3600e3) {
-                        setAviso(`Sua sessão terminou (vale ${SESSAO_HORAS} horas). Entre de novo.`);
+                    if (Date.now() - desde > SESSAO_DIAS * 864e5) {
+                        setAviso(`Sua sessão terminou (${SESSAO_DIAS} dias sem usar). Entre de novo.`);
                         await sairDaConta('sessao_expirada');
                         return;
                     }
+                    localStorage.setItem(CHAVE_SESSAO, String(Date.now()));
                     pararPerfil = db.collection('usuarios').doc(user.uid).onSnapshot(async (snap) => {
                         const p = snap.exists ? snap.data() : null;
                         if (!p || p.ativo !== true) {
@@ -7930,13 +7931,9 @@
                         setEstado({ fase: 'erro' });
                     });
                 });
-                // Sessão de um turno: confere a cada minuto.
+                // Enquanto o sistema está aberto na tela, conta como uso.
                 const iv = setInterval(() => {
-                    const desde = parseInt(localStorage.getItem(CHAVE_SESSAO) || '0', 10);
-                    if (auth.currentUser && desde && Date.now() - desde > SESSAO_HORAS * 3600e3) {
-                        setAviso(`Sua sessão terminou (vale ${SESSAO_HORAS} horas). Entre de novo.`);
-                        sairDaConta('sessao_expirada');
-                    }
+                    if (auth.currentUser && document.visibilityState === 'visible') localStorage.setItem(CHAVE_SESSAO, String(Date.now()));
                 }, 60000);
                 return () => { pararAuth(); if (pararPerfil) pararPerfil(); clearInterval(iv); };
             }, []);
