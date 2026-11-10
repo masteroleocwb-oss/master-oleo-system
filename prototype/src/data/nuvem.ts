@@ -9,7 +9,7 @@ import {
   signInWithEmailAndPassword, signOut, updatePassword, type Auth, type User,
 } from 'firebase/auth';
 import {
-  addDoc, clearIndexedDbPersistence, collection, connectFirestoreEmulator, deleteField, disableNetwork, doc, enableNetwork, FieldPath, getDoc, getDocs, getDocsFromCache, initializeFirestore, limit, onSnapshot, orderBy,
+  addDoc, clearIndexedDbPersistence, collection, connectFirestoreEmulator, deleteField, disableNetwork, doc, enableNetwork, FieldPath, getDoc, getCountFromServer, getDocs, getDocsFromCache, initializeFirestore, limit, onSnapshot, orderBy,
   persistentLocalCache, persistentSingleTabManager, query, runTransaction, serverTimestamp, setDoc, terminate, Timestamp, where, type DocumentData, type Firestore, type Unsubscribe,
 } from 'firebase/firestore';
 import { CATALOGO_INICIAL, REGRAS_INICIAIS } from '../domain/catalogo';
@@ -34,6 +34,8 @@ const emNavegador = typeof window !== 'undefined';
 export const USAR_EMULADOR = emNavegador && ['localhost', '127.0.0.1'].includes(location.hostname) && new URLSearchParams(location.search).has('emulador');
 
 let app: FirebaseApp, auth: Auth, fs: Firestore;
+const CHAVE_LONG_POLLING = 'mo2:longPolling';
+const lerLongPolling = () => { try { return localStorage.getItem(CHAVE_LONG_POLLING) === '1'; } catch { return false; } };
 let iniciado = false;
 export function iniciar() {
   if (iniciado) return;
@@ -46,6 +48,8 @@ export function iniciar() {
     // abas dividindo uma conexão, o Android congela a aba de fundo que a segura e a aba em uso para de
     // receber as OS novas.)
     ...(USAR_EMULADOR ? {} : { localCache: persistentLocalCache({ tabManager: persistentSingleTabManager(undefined) }) }),
+    // Aparelho em que a conexão ao vivo já parou em silêncio (ver conferirOSNova) passa a buscar por requisições curtas.
+    ...(lerLongPolling() ? { experimentalForceLongPolling: true } : {}),
   });
   // Celular voltou depois de um tempo em segundo plano (tela apagada, outro app): reabre a conexão
   // para não ficar mostrando dados parados.
@@ -56,6 +60,7 @@ export function iniciar() {
       if (saiuEm && Date.now() - saiuEm > 20000) void disableNetwork(fs).then(() => enableNetwork(fs)).catch(() => undefined);
       saiuEm = 0;
     });
+    setInterval(() => { void conferirOSNova(); }, CONFERIR_OS_MS);
   }
   if (USAR_EMULADOR) {
     connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
@@ -197,7 +202,8 @@ function montarDB(): DB {
 // ───────────────────────── Login e carga ─────────────────────────
 
 const CHAVE_SESSAO = 'mo2:sessaoDesde';
-export const SESSAO_HORAS = 12;
+/** A sessão só termina em "Sair" ou depois de 30 dias sem abrir o sistema. */
+export const SESSAO_DIAS = 30;
 let assinaturas: Unsubscribe[] = [];
 const desligar = () => { assinaturas.forEach(f => f()); assinaturas = []; };
 
@@ -211,7 +217,7 @@ async function aoMudarLogin(u: User | null) {
   uidAtual = u?.uid ?? null;
   if (!u) { estado = 'desconectado'; db = dbVazio(); notificar(); return; }
   // Login salvo sem a marca do turno (o navegador limpou só uma parte dos dados): conta o turno a partir
-  // de agora em vez de deslogar. O prazo de 12 horas continua valendo.
+  // de agora em vez de deslogar.
   try { if (!Number(localStorage.getItem(CHAVE_SESSAO) || 0)) localStorage.setItem(CHAVE_SESSAO, String(Date.now())); } catch { /* segue */ }
   estado = 'carregando'; erroCarga = '';
   notificar();
@@ -253,6 +259,31 @@ async function aoMudarLogin(u: User | null) {
       agendar();
     }, e => console.warn('Falha ao ler', c, e)));
   }
+}
+
+// Celular do mecânico: a conexão ao vivo pode parar em silêncio (Wi-Fi da oficina, troca de rede) e a OS nova
+// só aparecia recarregando. A cada 15 s, com a tela aberta, pergunta ao servidor por fora dessa conexão (1 leitura)
+// se existe OS mais nova que a última recebida; se existe e não chegou em 3 s, reabre a conexão.
+const CONFERIR_OS_MS = 15_000;
+const INTERVALO_REABRIR_MS = 60_000;
+let conferindo = false;
+let reabriuEm = 0;
+const maiorNumeroOS = () => { let m = 0; raw.orders.forEach(o => { m = Math.max(m, Number(o.numeroOrdem) || 0); }); return m; };
+async function conferirOSNova() {
+  if (conferindo || estado !== 'pronto' || document.visibilityState !== 'visible' || !uidAtual || raw.usuarios.get(uidAtual)?.perfil !== 'mecanico') return;
+  if (Date.now() - reabriuEm < INTERVALO_REABRIR_MS) return;
+  conferindo = true;
+  try {
+    const maior = maiorNumeroOS();
+    const c = await getCountFromServer(query(collection(fs, 'orders'), where('numeroOrdem', '>', maior)));
+    if (!c.data().count) return;
+    await new Promise(r => setTimeout(r, 3000));
+    if (maiorNumeroOS() > maior) return;
+    reabriuEm = Date.now();
+    try { localStorage.setItem(CHAVE_LONG_POLLING, '1'); } catch { /* segue */ }
+    await disableNetwork(fs);
+    await enableNetwork(fs);
+  } catch { /* sem internet: confere de novo na próxima volta */ } finally { conferindo = false; }
 }
 
 const JANELA_DIAS = 90;
@@ -392,8 +423,11 @@ export async function sair(resultado = 'saiu') {
 }
 
 export const sessaoVencida = () => {
-  const desde = Number(localStorage.getItem(CHAVE_SESSAO) || 0);
-  return !!uidAtual && !!desde && Date.now() - desde > SESSAO_HORAS * 3600e3;
+  const ultimoUso = Number(localStorage.getItem(CHAVE_SESSAO) || 0);
+  if (!uidAtual || !ultimoUso) return false;
+  if (Date.now() - ultimoUso > SESSAO_DIAS * 864e5) return true;
+  try { if (document.visibilityState === 'visible') localStorage.setItem(CHAVE_SESSAO, String(Date.now())); } catch { /* segue */ }
+  return false;
 };
 
 export async function esqueciSenha(email: string) {

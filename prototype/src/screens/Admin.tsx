@@ -338,7 +338,7 @@ function Acessos({ u }: { u: Usuario }) {
       </Card>}
       <div className="row" style={{ margin: '12px 0' }}>
         <Badge tom={falhas24 ? 'atencao' : 'muted'}>{falhas24} tentativa(s) com falha nas últimas 24 h</Badge>
-        <span className="small muted">{MODO_REAL ? 'Muitas senhas erradas seguidas bloqueiam o login por alguns minutos (proteção do Firebase). Sessão vale 12 h.' : `Bloqueio automático após ${POLITICA_ACESSO.maxTentativas} senhas erradas seguidas, por ${POLITICA_ACESSO.bloqueioMin} min. Sessão vale ${POLITICA_ACESSO.sessaoHoras} h.`}</span>
+        <span className="small muted">{MODO_REAL ? 'Muitas senhas erradas seguidas bloqueiam o login por alguns minutos (proteção do Firebase). A sessão só termina em Sair ou depois de 30 dias sem usar.' : `Bloqueio automático após ${POLITICA_ACESSO.maxTentativas} senhas erradas seguidas, por ${POLITICA_ACESSO.bloqueioMin} min. Sessão vale ${POLITICA_ACESSO.sessaoHoras} h.`}</span>
       </div>
       <div className="grid k2" style={{ marginBottom: 12 }}>
         <Field rotulo="Pessoa" htmlFor="ac-quem"><select id="ac-quem" className="input" value={quem} onChange={e => setQuem(e.target.value)}><option value="">Todas</option>{db.usuarios.map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></Field>
