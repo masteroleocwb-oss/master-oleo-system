@@ -3,6 +3,7 @@ import { ir } from '../app/nav';
 import { definirAcesso, definirAcessoDemo, desbloquearAcesso, gerarSenhaProvisoria, POLITICA_ACESSO, RESULTADO_ACESSO, ultimoAcesso } from '../data/acesso';
 import { nomeLegadoDe } from '../data/legado';
 import { MODO_REAL } from '../data/modo';
+import { criarConta } from '../data/nuvem';
 import { buscarVeiculosEClientes, estadoLink, nomeDe, ocultarItemPara, revogarLink, salvarItemCatalogo, salvarRegraIntervalo, salvarUsuario, voltarAMostrarItem } from '../data/api';
 import { sugestoesOcultar } from '../domain/checklist';
 import { ESTADOS, ESTADOS_ORDEM, GRUPOS, ORIGEM_LABEL, SERVICO_KEYS, SERVICOS } from '../domain/catalogo';
@@ -422,15 +423,25 @@ function Links({ u }: { u: Usuario }) {
 const PERFIS_REAIS: Role[] = ['direcao', 'lider', 'vendedor', 'mecanico'];
 
 /**
- * Usuários na base real: as contas (e-mail e senha) são criadas no 👥 Usuários do sistema atual.
- * Aqui a direção ajusta perfil, nível e o nome com que a pessoa aparece no sistema atual,
+ * Usuários na base real: a direção cria a conta (e-mail e senha provisória) aqui ou no 👥 Usuários do sistema atual,
+ * e ajusta perfil, nível e o nome com que a pessoa aparece no sistema atual,
  * para que vendedor e lubrificador das OS batam nos dois sistemas (comissão e rodízio).
  */
 function UsuariosReal({ u }: { u: Usuario }) {
   const db = useDB();
   const acao = useAcao();
   const [ed, setEd] = useState<{ id: string; nome: string; role: Role; ativo: boolean; nivel?: string; nomeLegado: string; atendeComoMecanico: boolean } | null>(null);
+  const [nova, setNova] = useState<{ nome: string; email: string; role: Role; nomeLegado: string; nivel: string } | null>(null);
+  const [entregue, setEntregue] = useState<{ nome: string; email: string; senha: string } | null>(null);
   const reais = db.usuarios.filter(x => !x.id.startsWith('legado:'));
+  const criar = async () => {
+    if (!nova) return;
+    const nome = nova.nome.trim(), email = nova.email.trim().toLowerCase();
+    if (!nome || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { acao.executar(async () => { throw new Error(!nome ? 'Informe o nome.' : 'Informe um e-mail válido.'); }); return; }
+    const senha = gerarSenhaProvisoria();
+    const ok = await acao.executar(() => criarConta({ nome, email, perfil: nova.role, senha, nomeLegado: nova.nomeLegado, nivel: nova.nivel }), `Conta de ${nome} criada.`);
+    if (ok !== undefined) { setEntregue({ nome, email, senha }); setNova(null); }
+  };
   const desde = new Date(agora().getTime() - 60 * 864e5).toISOString();
   const semConta = db.usuarios.filter(x => x.id.startsWith('legado:')).map(x => ({
     x, oss: db.os.filter(o => (o.mecanicoId === x.id || o.vendedorId === x.id) && o.abertaEm >= desde).length,
@@ -439,9 +450,25 @@ function UsuariosReal({ u }: { u: Usuario }) {
   return (
     <div>
       <Alerta tipo="info">
-        As contas são criadas no <b>👥 Usuários do sistema atual</b> (e-mail e senha provisória). Aqui você ajusta perfil, nível e o
-        <b> nome no sistema atual</b>: é por ele que as OS dos dois sistemas reconhecem o vendedor e o mecânico (comissão e rodízio).
+        Para incluir alguém da equipe, toque em <b>Adicionar pessoa</b>: a conta sai com uma senha provisória e no primeiro acesso a pessoa cria a dela.
+        O <b>nome no sistema atual</b> é por onde as OS dos dois sistemas reconhecem o vendedor e o mecânico (comissão e rodízio).
       </Alerta>
+      {entregue && (
+        <div style={{ marginTop: 12 }} data-entregue>
+          <Alerta tipo="ok">
+            Passe para <b>{entregue.nome}</b> pessoalmente ou por mensagem privada: site <b>{location.host}</b>, e-mail <b data-entregue-login>{entregue.email}</b> e
+            senha provisória <b data-entregue-senha style={{ fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 15 }}>{entregue.senha}</b>.
+            Ela não aparece de novo; se perder, use “Esqueci minha senha” na tela de entrada.
+            <div className="row" style={{ marginTop: 6, gap: 6 }}>
+              <Btn tamanho="sm" variante="sec" onClick={() => { void navigator.clipboard?.writeText(`${entregue.nome}\nSite: ${location.origin}\nE-mail: ${entregue.email}\nSenha provisória: ${entregue.senha}\nNo primeiro acesso o sistema pede para você criar a sua senha.`); }}>Copiar mensagem</Btn>
+              <Btn tamanho="sm" variante="ghost" onClick={() => setEntregue(null)}>Já passei, ocultar</Btn>
+            </div>
+          </Alerta>
+        </div>
+      )}
+      <div style={{ margin: '12px 0' }}>
+        <Btn data-adicionar-pessoa onClick={() => { setEntregue(null); setNova({ nome: '', email: '', role: 'mecanico', nomeLegado: '', nivel: '' }); }}>Adicionar pessoa</Btn>
+      </div>
       {semConta.length > 0 && (
         <div style={{ marginTop: 12 }}>
           <Alerta tipo="warn">
@@ -476,6 +503,23 @@ function UsuariosReal({ u }: { u: Usuario }) {
             </tr>))}</tbody>
         </table>
       </div>
+      {nova && (
+        <Sheet titulo="Adicionar pessoa" onClose={() => setNova(null)}
+          rodape={<><Btn variante="sec" onClick={() => setNova(null)}>Cancelar</Btn><Btn carregando={acao.ocupado} onClick={criar}>Criar acesso</Btn></>}>
+          <Field rotulo="Nome completo" obrigatorio htmlFor="np-nome"><input id="np-nome" className="input" value={nova.nome} maxLength={60} onChange={e => setNova({ ...nova, nome: e.target.value })} /></Field>
+          <Field rotulo="E-mail (é o login)" obrigatorio htmlFor="np-email"><input id="np-email" className="input" type="email" autoComplete="off" value={nova.email} onChange={e => setNova({ ...nova, email: e.target.value })} /></Field>
+          <div className="grid k2">
+            <Field rotulo="Perfil" htmlFor="np-role"><select id="np-role" className="input" value={nova.role} onChange={e => setNova({ ...nova, role: e.target.value as Role })}>{PERFIS_REAIS.map(r => <option key={r} value={r}>{r === 'mecanico' ? 'Mecânico (lubrificador)' : ROLE_LABEL[r]}</option>)}</select></Field>
+            {nova.role === 'mecanico' && <Field rotulo="Nível" htmlFor="np-niv"><input id="np-niv" className="input" value={nova.nivel} onChange={e => setNova({ ...nova, nivel: e.target.value })} placeholder="Ex.: N1" /></Field>}
+          </div>
+          {(nova.role === 'mecanico' || nova.role === 'vendedor') && (
+            <Field rotulo="Nome no sistema atual" htmlFor="np-legado" dica={`Como vai aparecer como ${nova.role === 'vendedor' ? 'vendedor' : 'lubrificador'} nas OS e na comissão. Em branco = primeiro nome${nova.nome.trim() ? ` (${primeiroNome(nova.nome)})` : ''}.`}>
+              <input id="np-legado" className="input" value={nova.nomeLegado} maxLength={40} onChange={e => setNova({ ...nova, nomeLegado: e.target.value })} />
+            </Field>
+          )}
+          {acao.erro && <Alerta tipo="crit">{acao.erro}</Alerta>}
+        </Sheet>
+      )}
       {ed && (
         <Sheet titulo={`Editar ${ed.nome}`} onClose={() => setEd(null)}
           rodape={<><Btn variante="sec" onClick={() => setEd(null)}>Cancelar</Btn><Btn carregando={acao.ocupado} onClick={async () => { if ((await acao.executar(() => salvarUsuario(u, ed), 'Usuário salvo.')) !== undefined) setEd(null); }}>Salvar</Btn></>}>

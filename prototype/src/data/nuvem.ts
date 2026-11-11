@@ -3,9 +3,9 @@
 // recomendações, histórico…) fica em coleções próprias do sistema novo.
 // A interface continua lendo um "DB" em memória: este módulo o monta a partir dos documentos e,
 // a cada ação, grava só o que mudou, numa transação que confere se ninguém alterou antes.
-import { initializeApp, type FirebaseApp } from 'firebase/app';
+import { getApps, initializeApp, type FirebaseApp } from 'firebase/app';
 import {
-  connectAuthEmulator, EmailAuthProvider, getAuth, onAuthStateChanged, reauthenticateWithCredential, sendPasswordResetEmail,
+  connectAuthEmulator, createUserWithEmailAndPassword, EmailAuthProvider, getAuth, onAuthStateChanged, reauthenticateWithCredential, sendPasswordResetEmail,
   signInWithEmailAndPassword, signOut, updatePassword, type Auth, type User,
 } from 'firebase/auth';
 import {
@@ -373,12 +373,12 @@ export const dispositivoResumo = () => {
 };
 
 /** Mesmo registro de acessos do sistema atual (coleção `acessos`, só acrescenta). */
-export async function registrarAcesso(resultado: string, email?: string) {
+export async function registrarAcesso(resultado: string, email?: string, alvo?: string) {
   const u = auth.currentUser;
   try {
     await addDoc(collection(fs, 'acessos'), {
       resultado, uid: u?.uid ?? null, email: (email || u?.email || '').slice(0, 120),
-      nome: u ? (raw.usuarios.get(u.uid)?.nome ?? null) : null, alvo: null, dispositivo: dispositivoResumo(), em: serverTimestamp(),
+      nome: u ? (raw.usuarios.get(u.uid)?.nome ?? null) : null, alvo: alvo ? alvo.slice(0, 120) : null, dispositivo: dispositivoResumo(), em: serverTimestamp(),
     });
   } catch (e) { console.warn('Não registrou o acesso', e); }
 }
@@ -429,6 +429,34 @@ export const sessaoVencida = () => {
   try { if (document.visibilityState === 'visible') localStorage.setItem(CHAVE_SESSAO, String(Date.now())); } catch { /* segue */ }
   return false;
 };
+
+/**
+ * Conta nova (direção): cria o login no Firebase Auth por uma segunda conexão — assim quem está criando
+ * continua logado — e grava o perfil em `usuarios`, igual ao 👥 Usuários do sistema atual.
+ * A senha provisória é mostrada uma única vez; no primeiro acesso a pessoa cria a dela.
+ */
+export async function criarConta(p: { nome: string; email: string; perfil: Role; senha: string; nomeLegado?: string; nivel?: string }) {
+  const criador = getApps().find(a => a.name === 'criador') || initializeApp(CONFIG, 'criador');
+  const a2 = getAuth(criador);
+  if (USAR_EMULADOR && !a2.emulatorConfig) connectAuthEmulator(a2, 'http://127.0.0.1:9099', { disableWarnings: true });
+  const email = p.email.trim().toLowerCase();
+  let uid: string;
+  try { uid = (await createUserWithEmailAndPassword(a2, email, p.senha)).user.uid; }
+  catch (e) {
+    const c = (e as { code?: string })?.code || '';
+    if (/email-already-in-use/.test(c)) throw new Error('Já existe uma conta com este e-mail. Para religar a pessoa, use "Reativar" na lista.');
+    if (/invalid-email/.test(c)) throw new Error('E-mail inválido.');
+    if (/network/.test(c)) throw new ErroNuvem('Sem conexão. Verifique a internet e tente de novo.');
+    throw new Error(`Não foi possível criar a conta (${c || 'erro desconhecido'}).`);
+  } finally { await signOut(a2).catch(() => undefined); }
+  await setDoc(doc(fs, 'usuarios', uid), {
+    nome: p.nome.trim(), email, perfil: p.perfil, ativo: true, trocarSenha: true,
+    ...(p.nomeLegado?.trim() ? { nomeLegado: p.nomeLegado.trim().slice(0, 40) } : {}), ...(p.nivel?.trim() ? { nivel: p.nivel.trim() } : {}),
+    criadoEm: serverTimestamp(), criadoPor: auth.currentUser?.uid ?? null,
+  });
+  await registrarAcesso('conta_criada', undefined, email);
+  return uid;
+}
 
 export async function esqueciSenha(email: string) {
   iniciar();
