@@ -304,7 +304,7 @@ export function gerarSeed(): DB {
 
   // Visita de setembro do veículo de demonstração já com checklist (recomendação "avaliar depois")
   const set = ciclo(vDemo, 'u_m1', '2026-09-05T12:40:00.000Z', {
-    concluir: true, plano: { incompleto: false, semFoto: false, estados: { filtro_cabine: 'atencao', pastilhas: 'ok', discos: 'ok' } },
+    concluir: true, plano: { incompleto: false, semFoto: false, estados: { filtro_cabine: 'atencao', coxim_cambio: 'ok' } },
   });
   set.os.km = 52300; vDemo.kmAtual = 52300;
   db.manutencoes.filter(m => m.osOrigemId === set.os.id && m.servicoKey).forEach(m => {
@@ -347,9 +347,9 @@ export function gerarSeed(): DB {
   ciclo(db.veiculos[12], 'u_m2', hojeAs(9, 0));
   ciclo(db.veiculos[13], 'u_m5', hojeAs(9, 40));
   const comLink = ciclo(db.veiculos[14], 'u_m1', hojeAs(Math.min(hBase, 12), 10), {
-    concluir: true, plano: { incompleto: false, semFoto: false, estados: { filtro_ar_motor: 'atencao', pastilhas: 'prioritario', oleo_motor: 'ok', filtro_cabine: 'ok' } },
+    concluir: true, plano: { incompleto: false, semFoto: false, estados: { filtro_ar_motor: 'atencao', coxim_cambio: 'prioritario', oleo_motor: 'ok', filtro_cabine: 'ok' } },
   });
-  comLink.os.obsCliente = 'Pastilhas dianteiras com desgaste acentuado. Recomendamos a troca o quanto antes.';
+  comLink.os.obsCliente = 'Coxim do câmbio com rachaduras na borracha. Recomendamos a troca o quanto antes.';
   // Em andamento: André com checklist pela metade; Diego com checklist completo e execução pendente
   const andA = ciclo(db.veiculos[15], 'u_m1', hojeAs(hBase + 1, 0), { concluir: false, plano: { parar: 7 } });
   andA.c.status = 'em_andamento';

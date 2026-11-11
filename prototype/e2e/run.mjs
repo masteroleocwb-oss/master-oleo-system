@@ -174,33 +174,33 @@ await fluxo('Fluxo 2 — Checklist incompleto indica exatamente os itens pendent
 });
 
 await fluxo('Fluxo 3 — Evidência obrigatória bloqueia até anexar a foto', async () => {
-  await marcarItem('pastilhas', 'prioritario');
-  await preencher('#rec-pastilhas', 'Trocar pastilhas dianteiras');
-  await clicar('Salvar item', { escopo: '[data-item="pastilhas"]' });
+  await marcarItem('coxim_cambio', 'prioritario');
+  await preencher('#rec-coxim_cambio', 'Trocar coxim do câmbio');
+  await clicar('Salvar item', { escopo: '[data-item="coxim_cambio"]' });
   await aguardarTexto('Foto obrigatória para "Prioritário"');
   await clicar('Concluir checklist');
-  await page.waitForFunction(() => [...document.querySelectorAll('.alert-box li')].some(l => l.textContent.includes('Pastilhas de freio')));
+  await page.waitForFunction(() => [...document.querySelectorAll('.alert-box li')].some(l => l.textContent.includes('Coxim do câmbio')));
   await foto('f3-sem-foto');
-  if (!(await page.$('[data-item="pastilhas"] .ck-body:not([hidden])'))) await tocar('[data-item="pastilhas"] .ck-head');
-  await page.waitForFunction(() => document.querySelector('[data-item="pastilhas"] [data-estado="prioritario"]').getAttribute('aria-checked') === 'true');
-  await tocar('[data-item="pastilhas"] .foto-add');
+  if (!(await page.$('[data-item="coxim_cambio"] .ck-body:not([hidden])'))) await tocar('[data-item="coxim_cambio"] .ck-head');
+  await page.waitForFunction(() => document.querySelector('[data-item="coxim_cambio"] [data-estado="prioritario"]').getAttribute('aria-checked') === 'true');
+  await tocar('[data-item="coxim_cambio"] .foto-add');
   await clicar('Usar foto demonstrativa', { escopo: '.sheet' });
   await preencher('#legenda-foto', 'Desgaste acentuado (demo)');
   await clicar('Usar esta foto', { escopo: '.sheet' });
   await aguardarTexto('Foto salva no item');
-  await clicar('Salvar item', { escopo: '[data-item="pastilhas"]' });
-  await page.waitForFunction(() => document.querySelector('[data-item="pastilhas"] .ck-head').textContent.includes('Prioritário'));
-  await checklistTudoOk(['pastilhas']);
+  await clicar('Salvar item', { escopo: '[data-item="coxim_cambio"]' });
+  await page.waitForFunction(() => document.querySelector('[data-item="coxim_cambio"] .ck-head').textContent.includes('Prioritário'));
+  await checklistTudoOk(['coxim_cambio']);
   await clicar('Concluir checklist');
   await aguardarTexto('Execução e finalização');
   const d = await db();
   const ev = d.evidencias.find(e => e.osId === ctx.osId);
-  if (!ev || ev.itemDefId !== 'pastilhas') throw new Error('Foto não ficou ligada ao item Pastilhas');
+  if (!ev || ev.itemDefId !== 'coxim_cambio') throw new Error('Foto não ficou ligada ao item Coxim');
 });
 
 await fluxo('Fluxo 5 — Próxima manutenção por regra validada (parte 1: registro)', async () => {
   await preencher('#km', '45000');
-  const travada = await page.evaluate(() => [...document.querySelectorAll('label.check')].find(l => l.innerText.includes('Trocar pastilhas dianteiras'))?.querySelector('input')?.disabled);
+  const travada = await page.evaluate(() => [...document.querySelectorAll('label.check')].find(l => l.innerText.includes('Trocar coxim do câmbio'))?.querySelector('input')?.disabled);
   if (!travada) throw new Error('Recomendação do item prioritário deveria ficar sempre marcada');
   if (await page.$('[data-adicional="flush"]')) throw new Error('Flush de câmbio oferecido para carro manual');
   await clicar('Finalizar OS');
@@ -230,8 +230,8 @@ await fluxo('Fluxo 5 — Próxima manutenção por regra validada (parte 1: regi
   if (!osF.ofertas?.some(o => o.key === 'aditivo' && o.resultado === 'recusado')) throw new Error('Oferta recusada não registrada');
   if (osF.servicos.find(s => s.key === 'oleoMotor')?.intervaloKm !== 10000) throw new Error('Intervalo do óleo não gravado no serviço');
   if (osF.servicos.find(s => s.key === 'cambioManual')?.origem !== 'adicional') throw new Error('Serviço lançado pelo mecânico não registrado');
-  if (d.manutencoes.find(x => x.osOrigemId === ctx.osId && x.itemDefId === 'pastilhas')?.estadoItem !== 'prioritario') throw new Error('Recomendação sem o estado do item');
-  if (!d.manutencoes.some(x => x.osOrigemId === ctx.osId && x.itemDefId === 'pastilhas' && x.origem === 'profissional')) throw new Error('Recomendação do item prioritário não virou acompanhamento');
+  if (d.manutencoes.find(x => x.osOrigemId === ctx.osId && x.itemDefId === 'coxim_cambio')?.estadoItem !== 'prioritario') throw new Error('Recomendação sem o estado do item');
+  if (!d.manutencoes.some(x => x.osOrigemId === ctx.osId && x.itemDefId === 'coxim_cambio' && x.origem === 'profissional')) throw new Error('Recomendação do item prioritário não virou acompanhamento');
 });
 
 await fluxo('Fluxo 6 — Link do cliente: gerar, ver só o permitido, revogar', async () => {
@@ -246,8 +246,8 @@ await fluxo('Fluxo 6 — Link do cliente: gerar, ver só o permitido, revogar', 
   await ir(`/r/${ctx.token}`);
   await aguardarTexto('Nossas recomendações');
   const t = await texto();
-  for (const deve of ['Pastilhas de freio', 'Trocar pastilhas dianteiras', 'Óleo de motor', 'Próximas manutenções', '55.000 km', 'Olá, Cliente', 'Recomendamos fazer o quanto antes']) if (!t.includes(deve)) throw new Error(`Relatório sem "${deve}"`);
-  if (!(await page.$('[data-proxima="prioritario"]'))) throw new Error('Pastilhas não aparecem nas próximas manutenções do relatório');
+  for (const deve of ['Coxim do câmbio', 'Trocar coxim do câmbio', 'Óleo de motor', 'Próximas manutenções', '55.000 km', 'Olá, Cliente', 'Recomendamos fazer o quanto antes']) if (!t.includes(deve)) throw new Error(`Relatório sem "${deve}"`);
+  if (!(await page.$('[data-proxima="prioritario"]'))) throw new Error('Coxim não aparece nas próximas manutenções do relatório');
   await page.$eval('[data-proxima="prioritario"]', e => e.scrollIntoView({ block: 'center' })); await foto('f6-relatorio-proximas');
   for (const nao of ['90000-0001', 'Automatizado', 'R$', 'Interna', 'Score', 'Vendedor']) if (t.includes(nao)) throw new Error(`Relatório expõe "${nao}"`);
   if (!(await page.$('.rel img[src^="data:image"]'))) throw new Error('Foto não aparece no relatório');
@@ -269,7 +269,7 @@ await fluxo('Fluxo 6 — Link do cliente: gerar, ver só o permitido, revogar', 
   await semSheet();
   await ir(`/r/${ctx.token}`);
   await aguardarTexto('Este link não está disponível');
-  await semTexto('Pastilhas');
+  await semTexto('Coxim do câmbio');
   await ir('/r/7001');
   await aguardarTexto('Este link não está disponível');
 });
@@ -281,7 +281,7 @@ await fluxo('Fluxo 4 — Segunda OS do mesmo veículo; histórico mostra as duas
   await clicar('Argo', { seletor: 'button.li' });
   await aguardarTexto('Últimas visitas');
   await aguardarTexto('Recomendado nas visitas anteriores e ainda não feito');
-  await aguardarTexto('Trocar pastilhas dianteiras');
+  await aguardarTexto('Trocar coxim do câmbio');
   await preencher('#valor', '280');
   await preencher('#pedido-olist', '104600'); await preencher('#km-mes', '1500');
   await clicar('Salvar e colocar na fila');
@@ -303,9 +303,9 @@ await fluxo('Fluxo 4 — Segunda OS do mesmo veículo; histórico mostra as duas
   await entrar(mec);
   await ir(`/os/${os2.id}/checklist`);
   await aguardarTexto('Checklist técnico');
-  if (!(await page.$eval('[data-item="pastilhas"] .ck-head', e => e.textContent.includes('Recomendado antes')))) throw new Error('Checklist não avisa a recomendação anterior');
-  await tocar('[data-item="pastilhas"] .ck-head');
-  await page.waitForSelector('[data-item="pastilhas"] [data-rec-anterior]', { visible: true });
+  if (!(await page.$eval('[data-item="coxim_cambio"] .ck-head', e => e.textContent.includes('Recomendado antes')))) throw new Error('Checklist não avisa a recomendação anterior');
+  await tocar('[data-item="coxim_cambio"] .ck-head');
+  await page.waitForSelector('[data-item="coxim_cambio"] [data-rec-anterior]', { visible: true });
   await checklistTudoOk();
   await clicar('Concluir checklist');
   await aguardarTexto('Execução e finalização');
@@ -324,7 +324,7 @@ await fluxo('Fluxo 4 — Segunda OS do mesmo veículo; histórico mostra as duas
   await aguardarTexto('Linha do tempo');
   const t = await texto();
   for (const n of [ctx.numero, os2.numero]) if (!t.includes(`OS #${n}`)) throw new Error(`Linha do tempo sem OS #${n}`);
-  if (await page.$('[data-rec="pastilhas"]')) throw new Error('Pastilhas verificadas OK na 2ª visita deveriam sair das recomendações');
+  if (await page.$('[data-rec="coxim_cambio"]')) throw new Error('Coxim verificado OK na 2ª visita deveria sair das recomendações');
   await foto('f4-historico');
 });
 

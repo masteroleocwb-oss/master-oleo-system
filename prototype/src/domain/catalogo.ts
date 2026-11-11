@@ -68,9 +68,11 @@ export const CATALOGO_INICIAL: ItemInspecaoDef[] = [
 
   item({ id: 'fluido_freio', grupo: 'Freios', nome: 'Fluido de freio', tipo: 'visual_e_teste', fonte: 'playbook_fase1', servicoRelacionado: 'fluidoFreio', regraIntervaloId: 'r_fluido_freio',
     instrucao: 'Confira nível e cor no reservatório. Se a OS tem "NÃO FAZER TESTE — SÓ EXECUTAR", só registre o aspecto.', fotoObrigatoriaEm: ['prioritario'] }),
-  item({ id: 'pastilhas', grupo: 'Freios', nome: 'Pastilhas de freio', tipo: 'visual', fonte: 'playbook_fase1',
+  // A Master parou de fazer pastilha e disco (direção, 11/11/2026): saem dos checklists novos e das recomendações.
+  // OS que já tinham o item seguem como estavam (o checklist guarda os itens do dia em que começou).
+  item({ id: 'pastilhas', grupo: 'Freios', nome: 'Pastilhas de freio', tipo: 'visual', fonte: 'playbook_fase1', ativo: false,
     instrucao: 'Olhe pela roda ou pelo elevador a espessura do material de atrito.', fotoObrigatoriaEm: ['atencao', 'prioritario'] }),
-  item({ id: 'discos', grupo: 'Freios', nome: 'Discos de freio', tipo: 'visual', fonte: 'playbook_fase1',
+  item({ id: 'discos', grupo: 'Freios', nome: 'Discos de freio', tipo: 'visual', fonte: 'playbook_fase1', ativo: false,
     instrucao: 'Verifique sulcos, rebarba na borda e manchas de superaquecimento.', fotoObrigatoriaEm: ['atencao', 'prioritario'] }),
 
   item({ id: 'palhetas', grupo: 'Demais itens', nome: 'Palhetas do limpador', tipo: 'visual', fonte: 'catalogo_atual', servicoRelacionado: 'palhetas',
@@ -78,6 +80,9 @@ export const CATALOGO_INICIAL: ItemInspecaoDef[] = [
   item({ id: 'diferencial', grupo: 'Demais itens', nome: 'Diferencial / caixa de transferência', tipo: 'visual', fonte: 'catalogo_atual', servicoRelacionado: 'difTraseiro',
     instrucao: 'Só em veículos com diferencial ou tração 4x4: procure vazamentos nos retentores.', fotoObrigatoriaEm: ['prioritario'] }),
 ];
+
+/** Itens que a Master não faz mais: não viram recomendação para o vendedor, o mecânico nem o cliente. */
+export const ITENS_DESCONTINUADOS = ['pastilhas', 'discos'];
 
 /**
  * Regras de intervalo de DEMONSTRAÇÃO. Os valores são fictícios e estão marcados como tal:

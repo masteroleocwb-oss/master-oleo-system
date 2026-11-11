@@ -58,7 +58,7 @@ describe('checklist', () => {
   });
 
   it('exige justificativa em "Não se aplica", observação em "Avaliar depois" e foto quando configurado', () => {
-    const def = CATALOGO_INICIAL.find(d => d.id === 'pastilhas')!;
+    const def = CATALOGO_INICIAL.find(d => d.id === 'coxim_cambio')!;
     expect(validarItem(def, 'nao_aplicavel', {}, 0)).toContain('Diga por que não se aplica.');
     expect(validarItem(def, 'pendente_avaliacao', {}, 0)).toContain('Diga o que impediu a avaliação.');
     expect(validarItem(def, 'prioritario', {}, 0).join()).toMatch(/Foto obrigatória/);
@@ -81,10 +81,10 @@ describe('checklist', () => {
     let c = novoChecklist('c', os, veic('manual'), CATALOGO_INICIAL);
     for (const d of c.defs) c = registrarItem(c, d.id, 'ok', {}, 'm', 'x');
     expect(pendenciasParaConcluir(c, [])).toEqual([]);
-    c = registrarItem(c, 'discos', 'prioritario', {}, 'm', 'y');
+    c = registrarItem(c, 'coxim_cambio', 'prioritario', {}, 'm', 'y');
     const p = pendenciasParaConcluir(c, []);
     expect(p).toHaveLength(1);
-    expect(p[0].defId).toBe('discos');
+    expect(p[0].defId).toBe('coxim_cambio');
   });
 });
 

@@ -1,7 +1,7 @@
 // Camada de serviço: toda leitura sensível e toda escrita passam por aqui.
 // Ela aplica as permissões (não basta esconder botões), registra a trilha de
 // auditoria e é o lugar que, no produto final, vira Security Rules + funções de servidor.
-import { SERVICOS, MOTIVO_PAUSA, servicoAplicavel } from '../domain/catalogo';
+import { ITENS_DESCONTINUADOS, SERVICOS, MOTIVO_PAUSA, servicoAplicavel } from '../domain/catalogo';
 import { defsAplicaveis, fotosAtivasDoItem, naoSeAplicaAprendido, novoChecklist, pendenciasParaConcluir, registrarItem, validarItem, type DadosItem, type Pendencia } from '../domain/checklist';
 import { aprovarVersao, descartarRascunho, proporVersao, transicaoOcorrencia, type AcaoOcorrencia } from '../domain/gestao';
 import { atendeOS, exigir, ErroPermissao, pode, podeAtenderCarros } from '../domain/permissions';
@@ -963,9 +963,9 @@ export const situacaoRecomendacao = (d: DB, m: ManutencaoPrevista): SituacaoOpor
 
 export interface RecomendacaoAberta { m: ManutencaoPrevista; estado: EstadoRecomendado; situacao?: SituacaoOportunidade; osNumero?: number }
 
-/** Itens em mau estado / com desgaste / a avaliar que ainda não foram resolvidos no veículo. */
+/** Itens em mau estado / com desgaste / a avaliar que ainda não foram resolvidos no veículo (fora o que a Master não faz mais). */
 export const recomendacoesAbertas = (d: DB, veiculoId: string): RecomendacaoAberta[] =>
-  d.manutencoes.filter(m => m.veiculoId === veiculoId && !m.concluidaPorOsId && m.estadoItem)
+  d.manutencoes.filter(m => m.veiculoId === veiculoId && !m.concluidaPorOsId && m.estadoItem && !ITENS_DESCONTINUADOS.includes(m.itemDefId || ''))
     .sort((a, b) => ordemProxima(a) - ordemProxima(b) || b.registradoEm.localeCompare(a.registradoEm))
     .map(m => ({ m, estado: m.estadoItem!, situacao: situacaoRecomendacao(d, m), osNumero: d.os.find(o => o.id === m.osOrigemId)?.numero }));
 

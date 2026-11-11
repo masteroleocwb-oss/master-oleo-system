@@ -128,10 +128,10 @@ describe('checklist e finalização', () => {
   it('só o executor registra; foto obrigatória é exigida no servidor', async () => {
     const os = emAndamento();
     await expect(registrarItemChecklist(U('u_m3'), os.checklistId!, 'palhetas', 'ok', {})).rejects.toBeInstanceOf(ErroPermissao);
-    await expect(registrarItemChecklist(U('u_m1'), os.checklistId!, 'discos', 'prioritario', {})).rejects.toThrow(/Foto obrigatória/);
-    await adicionarEvidencia(U('u_m1'), os.checklistId!, 'discos', { url: 'data:,', demo: true });
-    await registrarItemChecklist(U('u_m1'), os.checklistId!, 'discos', 'prioritario', { recomendacao: 'Trocar discos' });
-    const op = getDB().oportunidades.find(o => o.osId === os.id && o.itemDefId === 'discos');
+    await expect(registrarItemChecklist(U('u_m1'), os.checklistId!, 'coxim_cambio', 'prioritario', {})).rejects.toThrow(/Foto obrigatória/);
+    await adicionarEvidencia(U('u_m1'), os.checklistId!, 'coxim_cambio', { url: 'data:,', demo: true });
+    await registrarItemChecklist(U('u_m1'), os.checklistId!, 'coxim_cambio', 'prioritario', { recomendacao: 'Trocar coxim' });
+    const op = getDB().oportunidades.find(o => o.osId === os.id && o.itemDefId === 'coxim_cambio');
     expect(op?.situacao).toBe('nova');
   });
 
@@ -498,19 +498,19 @@ describe('recomendações não feitas continuam nas próximas manutenções', ()
   it('item em mau estado recusado pelo cliente fica recomendado (relatório e próxima visita) até ser resolvido', async () => {
     const os = getDB().os.find(o => o.status === 'andamento' && o.mecanicoId === 'u_m1')!;
     const c = getDB().checklists.find(x => x.id === os.checklistId)!;
-    await adicionarEvidencia(U('u_m1'), c.id, 'pastilhas', { url: 'data:,', demo: true });
-    await registrarItemChecklist(U('u_m1'), c.id, 'pastilhas', 'prioritario', { recomendacao: 'Trocar pastilhas dianteiras' });
+    await adicionarEvidencia(U('u_m1'), c.id, 'coxim_cambio', { url: 'data:,', demo: true });
+    await registrarItemChecklist(U('u_m1'), c.id, 'coxim_cambio', 'prioritario', { recomendacao: 'Trocar coxim do câmbio' });
     for (const d of c.defs) if (getDB().checklists.find(x => x.id === c.id)!.itens[d.id].estado === 'nao_verificado') await registrarItemChecklist(U('u_m1'), c.id, d.id, 'ok', {});
     await concluirChecklist(U('u_m1'), c.id);
-    getDB().oportunidades.find(o => o.osId === os.id && o.itemDefId === 'pastilhas')!.situacao = 'recusada';
+    getDB().oportunidades.find(o => o.osId === os.id && o.itemDefId === 'coxim_cambio')!.situacao = 'recusada';
     const v = getDB().veiculos.find(x => x.id === os.veiculoId)!;
     // A tela não mandou a recomendação: o servidor registra mesmo assim.
     await finalizarOS(U('u_m1'), os.id, { km: (v.kmAtual || 0) + 300, servicos: os.servicos.map(s => ({ key: s.key, executado: true, intervaloKm: s.key === 'oleoMotor' ? 10000 : undefined })), proximas: [] });
-    const rec = recomendacoesAbertas(getDB(), v.id).find(r => r.m.itemDefId === 'pastilhas')!;
+    const rec = recomendacoesAbertas(getDB(), v.id).find(r => r.m.itemDefId === 'coxim_cambio')!;
     expect(rec).toMatchObject({ estado: 'prioritario', situacao: 'recusada' });
-    expect(rec.m.descricao).toBe('Trocar pastilhas dianteiras');
+    expect(rec.m.descricao).toBe('Trocar coxim do câmbio');
     const rel = projetarRelatorio(getDB(), getDB().os.find(o => o.id === os.id)!);
-    expect(rel.proximas.find(p => p.descricao === 'Trocar pastilhas dianteiras')).toMatchObject({ estadoItem: 'prioritario', clienteAdiou: true });
+    expect(rel.proximas.find(p => p.descricao === 'Trocar coxim do câmbio')).toMatchObject({ estadoItem: 'prioritario', clienteAdiou: true });
     expect(rel.proximas[0].estadoItem).toBe('prioritario'); // prioritários primeiro
 
     // Próxima visita: o item volta OK (cliente trocou em outro lugar ou aqui) → a recomendação é resolvida.
@@ -520,6 +520,19 @@ describe('recomendações não feitas continuam nas próximas manutenções', ()
     for (const d of c2.defs) await registrarItemChecklist(U('u_m2'), c2.id, d.id, 'ok', {});
     await concluirChecklist(U('u_m2'), c2.id);
     await finalizarOS(U('u_m2'), os2.id, { km: (v.kmAtual || 0) + 300, servicos: [{ key: 'oleoMotor', executado: true, intervaloKm: 5000 }], proximas: [] });
+    expect(recomendacoesAbertas(getDB(), v.id).some(r => r.m.itemDefId === 'coxim_cambio')).toBe(false);
+  });
+});
+
+describe('pastilha e disco saíram (direção, 11/11/2026)', () => {
+  it('checklist novo não tem pastilha nem disco; recomendação antiga de pastilha não aparece mais', async () => {
+    const os = getDB().os.find(o => o.status === 'aguardando')!;
+    await iniciarOS(U('u_lid'), os.id, 'u_m2', 'teste');
+    const c = getDB().checklists.find(x => x.osId === os.id)!;
+    expect(c.defs.some(d => d.id === 'pastilhas' || d.id === 'discos')).toBe(false);
+    const v = getDB().veiculos.find(x => x.id === os.veiculoId)!;
+    getDB().manutencoes.push({ id: 'mp_pastilha_antiga', veiculoId: v.id, osOrigemId: 'x', descricao: 'Trocar pastilhas', itemDefId: 'pastilhas', origem: 'profissional', fonte: 'teste', registradoPor: 'u_m1', registradoEm: '2026-10-01T12:00:00Z', estadoItem: 'prioritario' });
     expect(recomendacoesAbertas(getDB(), v.id).some(r => r.m.itemDefId === 'pastilhas')).toBe(false);
   });
+
 });
