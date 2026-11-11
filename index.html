@@ -3789,6 +3789,14 @@
 
         // Modal Nova Ordem
         function NovaOrdemModal({ onClose, onSuccess, nextOrderNumber }) {
+            // Vendedores com conta (criados em 👥 Usuários ou no sistema novo) entram na lista pelo nome no sistema atual.
+            const [vendedoresConta, setVendedoresConta] = useState([]);
+            useEffect(() => {
+                db.collection('usuarios').where('perfil', '==', 'vendedor').get()
+                    .then(s => setVendedoresConta([...new Set(s.docs.map(d => d.data()).filter(u => u.ativo === true)
+                        .map(u => String(u.nomeLegado || String(u.nome || '').trim().split(/\s+/)[0] || '').trim()).filter(Boolean))].sort()))
+                    .catch(() => {});
+            }, []);
             const [step, setStep] = useState(1);
             
             // NOVO: Estados para busca rápida
@@ -4207,6 +4215,7 @@
                                             <option value="Cadu">Cadu</option>
                                             <option value="Danilo">Danilo</option>
                                             <option value="Junior">Junior</option>
+                                            {vendedoresConta.filter(n => !['Leo', 'Faust', 'Cadu', 'Danilo', 'Junior'].includes(n)).map(n => <option key={n} value={n}>{n}</option>)}
                                         </select>
                                     </div>
 
