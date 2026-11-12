@@ -55,7 +55,10 @@ export function RelatorioPublico({ token }: { token: string }) {
   }
 
   const rel = r.relatorio;
-  const recomendacoes = rel.itens.filter(i => i.estado === 'prioritario' || i.estado === 'atencao').sort((a, b) => ORDEM.indexOf(a.estado) - ORDEM.indexOf(b.estado));
+  // Item apontado na inspeção e resolvido nesta mesma visita: aparece como feito, não como recomendação.
+  const resolvidos = rel.itens.filter(i => i.feitoNestaVisita).sort((a, b) => ORDEM.indexOf(a.estado) - ORDEM.indexOf(b.estado));
+  const recomendacoes = rel.itens.filter(i => (i.estado === 'prioritario' || i.estado === 'atencao') && !i.feitoNestaVisita).sort((a, b) => ORDEM.indexOf(a.estado) - ORDEM.indexOf(b.estado));
+  const resolvidosPor = (servico: string) => resolvidos.filter(i => i.feitoNestaVisita!.split(', ').includes(servico)).map(i => i.nome);
   const pendentes = rel.itens.filter(i => i.estado === 'pendente_avaliacao');
   const ok = rel.itens.filter(i => i.estado === 'ok');
   const fotosDe = (nome: string) => rel.fotos.filter(f => f.item === nome);
@@ -97,13 +100,38 @@ export function RelatorioPublico({ token }: { token: string }) {
           </section>
         )}
 
-        {!rel.retorno && <div className="grid k3" style={{ marginBottom: 16 }}>
+        {!rel.retorno && <div className={`grid ${resolvidos.length ? 'k4' : 'k3'}`} style={{ marginBottom: 16 }}>
           <div className="kpi"><div className="lbl">Itens inspecionados</div><div className="val">{rel.itens.length}</div></div>
+          {resolvidos.length > 0 && <div className="kpi" data-kpi-resolvidos><div className="lbl">Resolvidos nesta visita</div><div className="val" style={{ color: 'var(--ok)' }}>{resolvidos.length}</div></div>}
           <div className="kpi"><div className="lbl">Com recomendação</div><div className="val" style={{ color: recomendacoes.length ? 'var(--warn)' : undefined }}>{recomendacoes.length}</div></div>
           <div className="kpi"><div className="lbl">Em bom estado</div><div className="val" style={{ color: 'var(--ok)' }}>{ok.length}</div></div>
         </div>}
 
         {rel.observacao && !rel.retorno && <section className="card" style={{ marginBottom: 12 }}><h2 style={{ marginBottom: 6 }}>Recado da equipe</h2><p>{rel.observacao}</p></section>}
+
+        {resolvidos.length > 0 && (
+          <section className="card" style={{ marginBottom: 12, borderColor: 'var(--ok)' }} data-secao="resolvidos">
+            <h2 style={{ marginBottom: 2 }}>Resolvido nesta visita</h2>
+            <p className="small muted" style={{ marginBottom: 6 }}>A inspeção encontrou estes itens precisando de cuidado e o serviço já foi feito hoje.</p>
+            {resolvidos.map(i => (
+              <div key={i.nome} className="rel-item" data-resolvido={i.nome}>
+                <span style={{ color: 'var(--ok)', fontWeight: 800 }} aria-hidden>✓</span>
+                <div className="grow">
+                  <div className="row between"><b>{i.nome}</b><Badge tom="ok" icone="✓">Feito nesta visita</Badge></div>
+                  <p className="small" style={{ marginTop: 4 }}>
+                    Na inspeção: <b>{i.estado === 'prioritario' ? 'precisava de ação prioritária' : 'precisava de atenção'}</b>{i.recomendacao && i.recomendacao.trim().toLowerCase() !== i.nome.toLowerCase() ? ` (${i.recomendacao})` : ''}.
+                    {' '}Feito: <b>{i.feitoNestaVisita}</b>.
+                  </p>
+                  {fotosDe(i.nome).length > 0 && (
+                    <div className="gallery" style={{ marginTop: 8 }}>
+                      {fotosDe(i.nome).map((f, k) => <figure key={k}><ImgAmpliavel src={f.url} alt={f.legenda || i.nome} /><figcaption>{['Antes do serviço', f.legenda, f.demo && 'imagem demonstrativa'].filter(Boolean).join(' · ')}</figcaption></figure>)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
 
         {recomendacoes.length > 0 && (
           <section className="card" style={{ marginBottom: 12 }}>
@@ -133,7 +161,8 @@ export function RelatorioPublico({ token }: { token: string }) {
 
         {rel.servicos.length > 0 && !rel.retorno && <section className="card" style={{ marginBottom: 12 }}>
           <h2 style={{ marginBottom: 6 }}>Serviços realizados</h2>
-          {rel.servicos.map(s => <div key={s.nome} className="rel-item"><span style={{ color: 'var(--ok)', fontWeight: 800 }} aria-hidden>✓</span><div><b>{s.nome}</b>{s.detalhe && <div className="small muted">{s.detalhe}</div>}</div></div>)}
+          {rel.servicos.map(s => <div key={s.nome} className="rel-item"><span style={{ color: 'var(--ok)', fontWeight: 800 }} aria-hidden>✓</span><div><b>{s.nome}</b>{s.detalhe && <div className="small muted">{s.detalhe}</div>}
+            {resolvidosPor(s.nome).length > 0 && <div className="small" style={{ color: 'var(--ok)' }}>Resolveu o que a inspeção apontou: {resolvidosPor(s.nome).join(', ')}</div>}</div></div>)}
         </section>}
 
         {ok.length > 0 && (

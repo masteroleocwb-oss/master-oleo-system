@@ -171,6 +171,10 @@ describe('checklist e finalização', () => {
     const op = getDB().oportunidades.find(o => o.osId === os.id && o.itemDefId === 'filtro_ar_motor')!;
     expect(op.situacao).toBe('aceita');
     expect(getDB().manutencoes.some(m => m.osOrigemId === os.id && m.itemDefId === 'filtro_ar_motor')).toBe(false);
+    // Relatório do cliente: o item apontado e trocado aparece como feito nesta visita, não como recomendação.
+    const rel = projetarRelatorio(getDB(), fim);
+    expect(rel.itens.find(i => i.nome === 'Filtro de ar do motor')).toMatchObject({ estado: 'atencao', feitoNestaVisita: 'Filtro de ar do motor' });
+    expect(rel.itens.filter(i => i.estado === 'ok').every(i => !i.feitoNestaVisita)).toBe(true);
   });
 
   it('KM menor que o registrado (registro antigo errado) fecha só com foto do painel, que fica interna', async () => {

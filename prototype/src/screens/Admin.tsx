@@ -3,7 +3,7 @@ import { ir } from '../app/nav';
 import { definirAcesso, definirAcessoDemo, desbloquearAcesso, gerarSenhaProvisoria, POLITICA_ACESSO, RESULTADO_ACESSO, ultimoAcesso } from '../data/acesso';
 import { nomeLegadoDe } from '../data/legado';
 import { MODO_REAL } from '../data/modo';
-import { criarConta } from '../data/nuvem';
+import { criarConta, marcarResolvidosNosRelatorios } from '../data/nuvem';
 import { buscarVeiculosEClientes, estadoLink, nomeDe, ocultarItemPara, revogarLink, salvarItemCatalogo, salvarRegraIntervalo, salvarUsuario, voltarAMostrarItem } from '../data/api';
 import { sugestoesOcultar } from '../domain/checklist';
 import { ESTADOS, ESTADOS_ORDEM, GRUPOS, ORIGEM_LABEL, SERVICO_KEYS, SERVICOS } from '../domain/catalogo';
@@ -398,6 +398,15 @@ function Links({ u }: { u: Usuario }) {
   const acao = useAcao();
   const lista = [...db.compartilhamentos].sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
   return (
+    <div>
+    {MODO_REAL && u.role === 'direcao' && (
+      <div className="row" style={{ margin: '0 0 12px', gap: 8 }}>
+        <Btn variante="sec" carregando={acao.ocupado} data-marcar-resolvidos
+          onClick={() => acao.executar(async () => { const n = await marcarResolvidosNosRelatorios(); return n; }).then(n => { if (n !== undefined) alert(n ? `${n} relatório(s) já enviados agora mostram "Resolvido nesta visita".` : 'Nenhum relatório precisava de ajuste.'); })}>
+          Atualizar relatórios já enviados: mostrar o que foi resolvido na visita
+        </Btn>
+      </div>
+    )}
     <div className="tbl-wrap">
       <table className="tbl">
         <thead><tr><th>OS</th><th>Estado</th><th>Criado</th><th>Expira</th><th className="num">Acessos</th><th /></tr></thead>
@@ -416,6 +425,7 @@ function Links({ u }: { u: Usuario }) {
           );
         })}</tbody>
       </table>
+    </div>
     </div>
   );
 }

@@ -576,6 +576,28 @@ export async function lerFoto(url: string): Promise<string> {
 }
 
 /** O relatório do cliente é lido sem login: leva as fotos dentro dele (até ~800 KB, o resto fica de fora). */
+/**
+ * Relatórios já enviados (links ativos): marca os itens apontados na inspeção e resolvidos na mesma visita
+ * ("Feito nesta visita"). Só acrescenta essa marca em cada item; o resto do relatório fica como foi enviado.
+ */
+export async function marcarResolvidosNosRelatorios() {
+  if (!projetar) throw new ErroNuvem('Recarregue a página e tente de novo.');
+  const { updateDoc } = await import('firebase/firestore');
+  const agoraIso = new Date().toISOString();
+  let atualizados = 0;
+  for (const sh of db.compartilhamentos.filter(s => !s.revogadoEm && (!s.expiraEm || s.expiraEm > agoraIso))) {
+    const ref = doc(fs, 'relatorios', sh.token);
+    const atual = (await getDoc(ref)).data()?.relatorio as { itens?: { nome: string; feitoNestaVisita?: string }[] } | undefined;
+    if (!atual?.itens?.length) continue;
+    const novo = projetar(db, sh.osId) as { itens: { nome: string; feitoNestaVisita?: string }[] };
+    const feito = new Map(novo.itens.filter(i => i.feitoNestaVisita).map(i => [i.nome, i.feitoNestaVisita!]));
+    if (!atual.itens.some(i => feito.has(i.nome) && i.feitoNestaVisita !== feito.get(i.nome))) continue;
+    await updateDoc(ref, { 'relatorio.itens': atual.itens.map(i => feito.has(i.nome) ? { ...i, feitoNestaVisita: feito.get(i.nome) } : i) });
+    atualizados++;
+  }
+  return atualizados;
+}
+
 async function embutirFotos(rel: unknown) {
   const r = rel as { fotos?: { url: string }[]; retorno?: { antes: { url: string }[]; depois: { url: string }[] } } | null;
   if (!r) return rel;

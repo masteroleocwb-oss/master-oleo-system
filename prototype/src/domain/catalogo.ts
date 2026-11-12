@@ -135,6 +135,18 @@ export const ADICIONAIS: { id: string; key: ServicoKey; rotulo: string; itemRela
   { id: 'palhetas', key: 'palhetas', rotulo: 'Palhetas do limpador', itemRelacionado: 'palhetas' },
 ];
 
+/**
+ * Serviços que resolvem um item do checklist (o item estava em Atenção/Prioritário e o serviço foi feito na OS):
+ * o serviço ligado ao item e os adicionais da bancada que trocam a peça/fluido. Militec, flush, higienização
+ * e aditivo do câmbio complementam, mas não trocam o item, então não contam.
+ */
+const NAO_RESOLVEM = ['militec', 'flush', 'higienizacaoAC', 'aditivoCambio'];
+export const servicosQueResolvem = (def: Pick<ItemInspecaoDef, 'id' | 'servicoRelacionado'>): ServicoKey[] => [...new Set([
+  ...(def.servicoRelacionado ? [def.servicoRelacionado] : []),
+  ...(def.id === 'trocador_calor' ? ['trocadorCalor' as ServicoKey] : []),
+  ...ADICIONAIS.filter(a => a.itemRelacionado === def.id && !NAO_RESOLVEM.includes(a.id)).map(a => a.key),
+])];
+
 /** Recomendação do checklist nas próximas manutenções: como a equipe e o cliente leem cada estado. */
 export const RECOMENDACAO: Record<EstadoRecomendado, { interno: string; cliente: string; tom: 'critico' | 'atencao' | 'info' }> = {
   prioritario: { interno: 'Prioritário — mau estado', cliente: 'Recomendamos fazer o quanto antes', tom: 'critico' },

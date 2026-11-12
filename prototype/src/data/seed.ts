@@ -347,8 +347,11 @@ export function gerarSeed(): DB {
   ciclo(db.veiculos[12], 'u_m2', hojeAs(9, 0));
   ciclo(db.veiculos[13], 'u_m5', hojeAs(9, 40));
   const comLink = ciclo(db.veiculos[14], 'u_m1', hojeAs(Math.min(hBase, 12), 10), {
-    concluir: true, plano: { incompleto: false, semFoto: false, estados: { filtro_ar_motor: 'atencao', coxim_cambio: 'prioritario', oleo_motor: 'ok', filtro_cabine: 'ok' } },
+    concluir: true, plano: { incompleto: false, semFoto: false, estados: { filtro_ar_motor: 'atencao', coxim_cambio: 'prioritario', oleo_motor: 'ok', filtro_cabine: 'prioritario' } },
   });
+  // Filtro de cabine apontado como prioritário e trocado na bancada: no relatório aparece em "Resolvido nesta visita".
+  if (!comLink.os.servicos.some(s => s.key === 'arCondicionado')) comLink.os.servicos.push({ key: 'arCondicionado', codigo: 'AKX-2108', origem: 'adicional', executado: true, valor: 89 });
+  db.manutencoes = db.manutencoes.filter(m => !(m.osOrigemId === comLink.os.id && m.itemDefId === 'filtro_cabine'));
   comLink.os.obsCliente = 'Coxim do câmbio com rachaduras na borracha. Recomendamos a troca o quanto antes.';
   // Em andamento: André com checklist pela metade; Diego com checklist completo e execução pendente
   const andA = ciclo(db.veiculos[15], 'u_m1', hojeAs(hBase + 1, 0), { concluir: false, plano: { parar: 7 } });

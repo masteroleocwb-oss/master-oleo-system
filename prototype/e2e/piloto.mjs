@@ -259,6 +259,11 @@ try {
   await atual.waitForSelector('select[name="vendedor"]');
   await atual.waitForFunction(() => [...document.querySelectorAll('select[name="vendedor"] option')].some(o => o.value === 'Beatriz'), { timeout: 15000 });
   ok(true, 'Vendedor novo aparece na lista de vendedores do sistema atual (pelo primeiro nome)');
+  await dir.goto(NOVO + '#/admin'); await dir.waitForSelector('[role=tab]');
+  await dir.evaluate(() => [...document.querySelectorAll('[role=tab]')].find(x => x.textContent.trim().startsWith('Links')).click());
+  const antesRel = JSON.stringify((await lerDoc(`relatorios/${sh.token}`)).relatorio.servicos);
+  await tocar(dir, '[data-marcar-resolvidos]'); await esperar(2500);
+  ok(JSON.stringify((await lerDoc(`relatorios/${sh.token}`)).relatorio.servicos) === antesRel, 'Atualizar relatórios já enviados roda sem mexer no resto do relatório');
 
   console.log('7. Segurança');
   const anon = await nova();

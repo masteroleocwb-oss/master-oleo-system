@@ -1,7 +1,7 @@
 // Camada de serviço: toda leitura sensível e toda escrita passam por aqui.
 // Ela aplica as permissões (não basta esconder botões), registra a trilha de
 // auditoria e é o lugar que, no produto final, vira Security Rules + funções de servidor.
-import { ITENS_DESCONTINUADOS, SERVICOS, MOTIVO_PAUSA, servicoAplicavel } from '../domain/catalogo';
+import { ITENS_DESCONTINUADOS, SERVICOS, MOTIVO_PAUSA, servicoAplicavel, servicosQueResolvem } from '../domain/catalogo';
 import { defsAplicaveis, fotosAtivasDoItem, naoSeAplicaAprendido, novoChecklist, pendenciasParaConcluir, registrarItem, validarItem, type DadosItem, type Pendencia } from '../domain/checklist';
 import { aprovarVersao, descartarRascunho, proporVersao, transicaoOcorrencia, type AcaoOcorrencia } from '../domain/gestao';
 import { atendeOS, exigir, ErroPermissao, pode, podeAtenderCarros } from '../domain/permissions';
@@ -922,7 +922,8 @@ export interface RelatorioPublico {
   clientePrimeiroNome: string;
   tecnico: string;
   servicos: { nome: string; detalhe?: string }[];
-  itens: { grupo: string; nome: string; estado: EstadoItem; recomendacao?: string }[];
+  /** `feitoNestaVisita`: o item estava em Atenção/Prioritário e o serviço que o resolve foi feito nesta OS (nome do serviço). */
+  itens: { grupo: string; nome: string; estado: EstadoItem; recomendacao?: string; feitoNestaVisita?: string }[];
   checklistStatus: Checklist['status'] | 'sem_checklist';
   fotos: { url: string; legenda: string; item: string; demo: boolean }[];
   observacao?: string;
@@ -987,9 +988,20 @@ export function projetarRelatorio(d: DB, os: OrdemServico): RelatorioPublico {
   const c = d.checklists.find(x => x.id === os.checklistId);
   const cli = d.clientes.find(x => x.id === os.clienteId);
   const mec = d.usuarios.find(x => x.id === os.mecanicoId);
-  const itens = c ? c.defs.filter(df => c.itens[df.id].estado !== 'nao_verificado').map(df => ({
-    grupo: df.grupo, nome: df.nome, estado: c.itens[df.id].estado, recomendacao: c.itens[df.id].recomendacao,
-  })) : [];
+  // Item que estava em Atenção/Prioritário e foi resolvido aqui (serviço ligado ao item, adicional da bancada ou
+  // recomendação aceita e executada): o cliente vê "Feito nesta visita", não "Recomendamos ação".
+  const feitoNaVisita = (df: Checklist['defs'][number]) => {
+    const chaves = servicosQueResolvem(df);
+    const feitos = os.servicos.filter(s => s.executado && (chaves.includes(s.key) || (s.oportunidadeId && d.oportunidades.find(o => o.id === s.oportunidadeId)?.itemDefId === df.id)));
+    return feitos.length ? [...new Set(feitos.map(s => SERVICOS[s.key].nome))].join(', ') : undefined;
+  };
+  const itens = c ? c.defs.filter(df => c.itens[df.id].estado !== 'nao_verificado').map(df => {
+    const estado = c.itens[df.id].estado;
+    return {
+      grupo: df.grupo, nome: df.nome, estado, recomendacao: c.itens[df.id].recomendacao,
+      feitoNestaVisita: estado === 'atencao' || estado === 'prioritario' ? feitoNaVisita(df) : undefined,
+    };
+  }) : [];
   const visiveis = d.evidencias.filter(e => e.osId === os.id && !e.removida && e.visivelCliente);
   const fotos = visiveis.filter(e => e.itemDefId !== 'retorno')
     .map(e => ({ url: e.url, legenda: e.legenda || '', item: c?.defs.find(x => x.id === e.itemDefId)?.nome || '', demo: e.demo }));
