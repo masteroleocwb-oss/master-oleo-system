@@ -1,7 +1,7 @@
 import { ESTADOS, MOTIVO_PAUSA, SERVICOS, semTeste } from '../domain/catalogo';
 import { progresso, STATUS_CHECKLIST_LABEL } from '../domain/checklist';
 import type { Checklist, DB, EstadoItem, OrdemServico, StatusOS } from '../domain/types';
-import { diffMin, fmtHora, fmtMin, agoraISO, primeiroNome } from '../domain/util';
+import { diffMin, fmtHora, fmtMin, agoraISO, minutosTrabalhados, primeiroNome } from '../domain/util';
 import { Badge, Placa, Progress, type Tom } from '../ui/components';
 
 export const STATUS_OS: Record<StatusOS, { r: string; tom: Tom }> = {
@@ -75,6 +75,7 @@ export function OSCard({ db, os, mostrarMecanico = true, previsto, euId }: {
         {os.pedidoOlist && <span className="small muted">Pedido Olist {os.pedidoOlist}</span>}
         {os.status === 'andamento' && <span className="small muted">Início {fmtHora(os.iniciadaEm)}</span>}
         {os.status === 'concluido' && <span className="small muted">Concluída {fmtHora(os.concluidaEm)}</span>}
+        {os.status === 'concluido' && minutosTrabalhados(os) != null && <span className="small strong" data-tempo-servico title="Do início ao fim do serviço, sem contar pausas">Tempo de serviço {fmtMin(minutosTrabalhados(os))}</span>}
       </div>
       {p && os.status === 'andamento' && (
         <div style={{ marginTop: 8 }}>

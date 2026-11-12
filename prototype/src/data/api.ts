@@ -1,7 +1,7 @@
 // Camada de serviço: toda leitura sensível e toda escrita passam por aqui.
 // Ela aplica as permissões (não basta esconder botões), registra a trilha de
 // auditoria e é o lugar que, no produto final, vira Security Rules + funções de servidor.
-import { ITENS_DESCONTINUADOS, SERVICOS, MOTIVO_PAUSA, servicoAplicavel, servicosQueResolvem } from '../domain/catalogo';
+import { ITENS_DESCONTINUADOS, SERVICOS, MOTIVO_PAUSA, servicoAplicavel, servicoResolveItem } from '../domain/catalogo';
 import { defsAplicaveis, fotosAtivasDoItem, naoSeAplicaAprendido, novoChecklist, pendenciasParaConcluir, registrarItem, validarItem, type DadosItem, type Pendencia } from '../domain/checklist';
 import { aprovarVersao, descartarRascunho, proporVersao, transicaoOcorrencia, type AcaoOcorrencia } from '../domain/gestao';
 import { atendeOS, exigir, ErroPermissao, pode, podeAtenderCarros } from '../domain/permissions';
@@ -991,8 +991,7 @@ export function projetarRelatorio(d: DB, os: OrdemServico): RelatorioPublico {
   // Item que estava em Atenção/Prioritário e foi resolvido aqui (serviço ligado ao item, adicional da bancada ou
   // recomendação aceita e executada): o cliente vê "Feito nesta visita", não "Recomendamos ação".
   const feitoNaVisita = (df: Checklist['defs'][number]) => {
-    const chaves = servicosQueResolvem(df);
-    const feitos = os.servicos.filter(s => s.executado && (chaves.includes(s.key) || (s.oportunidadeId && d.oportunidades.find(o => o.id === s.oportunidadeId)?.itemDefId === df.id)));
+    const feitos = os.servicos.filter(s => s.executado && servicoResolveItem(s, df));
     return feitos.length ? [...new Set(feitos.map(s => SERVICOS[s.key].nome))].join(', ') : undefined;
   };
   const itens = c ? c.defs.filter(df => c.itens[df.id].estado !== 'nao_verificado').map(df => {

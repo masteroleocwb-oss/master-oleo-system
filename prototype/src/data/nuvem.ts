@@ -591,8 +591,9 @@ export async function marcarResolvidosNosRelatorios() {
     if (!atual?.itens?.length) continue;
     const novo = projetar(db, sh.osId) as { itens: { nome: string; feitoNestaVisita?: string }[] };
     const feito = new Map(novo.itens.filter(i => i.feitoNestaVisita).map(i => [i.nome, i.feitoNestaVisita!]));
-    if (!atual.itens.some(i => feito.has(i.nome) && i.feitoNestaVisita !== feito.get(i.nome))) continue;
-    await updateDoc(ref, { 'relatorio.itens': atual.itens.map(i => feito.has(i.nome) ? { ...i, feitoNestaVisita: feito.get(i.nome) } : i) });
+    // Acerta a marca nos dois sentidos: acrescenta onde falta e tira onde não vale mais.
+    if (!atual.itens.some(i => (i.feitoNestaVisita || undefined) !== feito.get(i.nome))) continue;
+    await updateDoc(ref, { 'relatorio.itens': atual.itens.map(({ feitoNestaVisita: _f, ...i }) => feito.has(i.nome) ? { ...i, feitoNestaVisita: feito.get(i.nome) } : i) });
     atualizados++;
   }
   return atualizados;

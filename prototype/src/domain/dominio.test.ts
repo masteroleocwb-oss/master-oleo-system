@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { CATALOGO_INICIAL, REGRAS_INICIAIS, TIPOS_CAMBIO_AUTO } from './catalogo';
+import { CATALOGO_INICIAL, REGRAS_INICIAIS, servicoResolveItem, TIPOS_CAMBIO_AUTO } from './catalogo';
 import { aprendidoPeloSistema, naoSeAplicaAprendido, novoChecklist, pendenciasParaConcluir, registrarItem, validarItem } from './checklist';
 import { aprovarVersao, calcularProposta, calcularVigente, descontoChecklist, proporVersao, scoreExecucao, transicaoOcorrencia, versaoEm } from './gestao';
 import { statusManutencao, sugerirProxima } from './manutencao';
@@ -242,5 +242,17 @@ describe('valor em reais digitado', () => {
     expect(lerReais('')).toBe(0);
     expect(lerReais(undefined)).toBe(0);
     expect(lerReais(',')).toBe(0);
+  });
+});
+
+describe('item resolvido na visita', () => {
+  it('aditivo só resolve o líquido de arrefecimento quando é o de radiador', () => {
+    const arref = CATALOGO_INICIAL.find(d => d.id === 'arrefecimento')!;
+    expect(servicoResolveItem({ key: 'aditivo', marca: 'Radiador · Paraflu' }, arref)).toBe(true);
+    expect(servicoResolveItem({ key: 'aditivo', marca: 'Câmbio · Nano' }, arref)).toBe(false);
+    expect(servicoResolveItem({ key: 'aditivo' }, arref)).toBe(false);
+    expect(servicoResolveItem({ key: 'cambioAutomatico' }, CATALOGO_INICIAL.find(d => d.id === 'fluido_cambio')!)).toBe(true);
+    expect(servicoResolveItem({ key: 'trocadorCalor' }, CATALOGO_INICIAL.find(d => d.id === 'trocador_calor')!)).toBe(true);
+    expect(servicoResolveItem({ key: 'militec' }, CATALOGO_INICIAL.find(d => d.id === 'oleo_motor')!)).toBe(false);
   });
 });

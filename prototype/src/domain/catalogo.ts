@@ -141,6 +141,15 @@ export const ADICIONAIS: { id: string; key: ServicoKey; rotulo: string; itemRela
  * e aditivo do câmbio complementam, mas não trocam o item, então não contam.
  */
 const NAO_RESOLVEM = ['militec', 'flush', 'higienizacaoAC', 'aditivoCambio'];
+/** Serviço com variações pela marca (aditivo de radiador × combustível × câmbio): só resolve o item da variação certa. */
+export const servicoResolveItem = (s: { key: ServicoKey; marca?: string }, def: Pick<ItemInspecaoDef, 'id' | 'servicoRelacionado'>) => {
+  if (!servicosQueResolvem(def).includes(s.key)) return false;
+  const variantes = ADICIONAIS.filter(a => a.key === s.key && a.marcaPadrao);
+  if (!variantes.length) return true;
+  const marca = (s.marca || '').trim().toLowerCase();
+  return variantes.some(a => a.itemRelacionado === def.id && marca.startsWith(a.marcaPadrao!.toLowerCase()));
+};
+
 export const servicosQueResolvem = (def: Pick<ItemInspecaoDef, 'id' | 'servicoRelacionado'>): ServicoKey[] => [...new Set([
   ...(def.servicoRelacionado ? [def.servicoRelacionado] : []),
   ...(def.id === 'trocador_calor' ? ['trocadorCalor' as ServicoKey] : []),
