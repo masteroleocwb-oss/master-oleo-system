@@ -12,9 +12,11 @@ import type { Ocorrencia, Usuario } from '../domain/types';
 import { addDias, agoraISO, fmtBRL, fmtData, fmtDataHora, fmtMes, fmtMin, fmtPct, hojeKey, mesKey, primeiroNome } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Empty, Field, Kpi, Placa, Segmented, Sheet, Tabs, useAcao, useDB, type Tom } from '../ui/components';
 import { EstadoBadge } from './common';
+import { faixaTempo, mediana, minutosDeServico, provavelEsquecida, registroForaDoTempoReal, rotuloPadrao, TEMPO_PADRAO, tempoPadraoMin } from '../domain/tempo';
+import { minutosTrabalhados } from '../domain/util';
 import { FotoImg } from '../ui/FotoImg';
 
-type Aba = 'visao' | 'mecanicos' | 'assistencia' | 'auditoria' | 'excecoes' | 'ocorrencias' | 'retornos' | 'planos' | 'gestao';
+type Aba = 'visao' | 'mecanicos' | 'tempo' | 'assistencia' | 'auditoria' | 'excecoes' | 'ocorrencias' | 'retornos' | 'planos' | 'gestao';
 
 export function Lideranca({ u, aba: abaRota }: { u: Usuario; aba?: string }) {
   const db = useDB();
@@ -26,12 +28,13 @@ export function Lideranca({ u, aba: abaRota }: { u: Usuario; aba?: string }) {
     <div>
       <div className="page-head"><div><h1>Painel da liderança</h1><div className="sub">{fmtMes(mesKey(hojeKey() + 'T15:00:00Z'))}{MODO_REAL ? '' : ' · dados fictícios'}</div></div></div>
       <Tabs valor={aba} onChange={setAba} abas={[
-        { v: 'visao', r: 'Visão geral' }, { v: 'mecanicos', r: 'Por mecânico' }, { v: 'assistencia', r: 'Assistência' }, { v: 'auditoria', r: 'Auditoria', n: p.correcoesPendentes.length },
+        { v: 'visao', r: 'Visão geral' }, { v: 'mecanicos', r: 'Por mecânico' }, { v: 'tempo', r: 'Tempo de serviço' }, { v: 'assistencia', r: 'Assistência' }, { v: 'auditoria', r: 'Auditoria', n: p.correcoesPendentes.length },
         { v: 'excecoes', r: 'Exceções', n: p.excecoesPendentes.length }, { v: 'ocorrencias', r: 'Ocorrências', n: decisaoOcorr },
         { v: 'retornos', r: 'Retornos' }, { v: 'planos', r: 'Conversas' }, { v: 'gestao', r: 'Indicadores da liderança' },
       ]} />
       {aba === 'visao' && <Visao u={u} />}
       {aba === 'mecanicos' && <PorMecanico />}
+      {aba === 'tempo' && <TempoServico />}
       {aba === 'assistencia' && <Assistencia />}
       {aba === 'auditoria' && <Auditoria u={u} />}
       {aba === 'excecoes' && <Excecoes u={u} />}
@@ -173,6 +176,90 @@ function PorMecanico() {
       </div>
       <p className="tiny muted" style={{ marginTop: 6 }}>* Score de execução é proposta em teste do Playbook; não altera pagamento. Toque numa linha para ver o detalhe.</p>
       {sel && <DetalheMecanico id={sel} onClose={() => setSel(null)} />}
+    </div>
+  );
+}
+
+type PeriodoTempo = '7d' | 'mes';
+
+/** Tempo de serviço por mecânico contra o padrão provisório; registros fora do tempo real ficam fora da conta e listados à parte. */
+function TempoServico() {
+  const db = useDB();
+  const [per, setPer] = useState<PeriodoTempo>('mes');
+  const agora = agoraISO();
+  const hoje = hojeKey();
+  const de = per === '7d' ? addDias(hoje + 'T15:00:00Z', -6).slice(0, 10) : hoje.slice(0, 8) + '01';
+  const concluidas = db.os.filter(o => o.status === 'concluido' && o.iniciadaEm && o.concluidaEm && !o.retornoDeOsId && o.concluidaEm.slice(0, 10) >= de);
+  const tipos = [{ k: 'oleo', r: `Troca de óleo (padrão ${TEMPO_PADRAO.oleo} min)` }, { k: 'cambio', r: `Com câmbio automático (padrão ${fmtMin(TEMPO_PADRAO.cambioAutomatico)})` }] as const;
+  const tipoDe = (o: (typeof concluidas)[number]) => tempoPadraoMin(o) === TEMPO_PADRAO.cambioAutomatico ? 'cambio' : 'oleo';
+  const fora = concluidas.filter(o => registroForaDoTempoReal(o)).sort((a, b) => b.concluidaEm!.localeCompare(a.concluidaEm!));
+  const validas = concluidas.filter(o => !registroForaDoTempoReal(o));
+  const esquecidas = db.os.filter(o => provavelEsquecida(o, agora));
+  const linhasDe = (tipo: 'oleo' | 'cambio') => {
+    const porMec = new Map<string, number[]>();
+    validas.filter(o => tipoDe(o) === tipo).forEach(o => {
+      const m = minutosTrabalhados(o);
+      if (m != null) porMec.set(o.mecanicoId || '—', [...(porMec.get(o.mecanicoId || '—') || []), m]);
+    });
+    const padrao = tipo === 'cambio' ? TEMPO_PADRAO.cambioAutomatico : TEMPO_PADRAO.oleo;
+    return [...porMec.entries()].map(([id, xs]) => ({
+      id, nome: nomeDe(db, id), n: xs.length, med: mediana(xs)!, acima: xs.filter(x => x > padrao).length,
+      foraN: fora.filter(o => o.mecanicoId === id && tipoDe(o) === tipo).length, padrao,
+    })).sort((a, b) => b.med - a.med);
+  };
+  const corDe = (min: number, padrao: number) => ({ ok: 'var(--ok)', perto: '#d48806', acima: 'var(--crit)' })[faixaTempo(min, padrao)];
+  return (
+    <div className="stack">
+      <Alerta tipo="info">Padrão provisório: troca de óleo {TEMPO_PADRAO.oleo} min, com câmbio automático {fmtMin(TEMPO_PADRAO.cambioAutomatico)}. O tempo vai do "Assumir" ao "Finalizar", sem as pausas. Registros fora do tempo real (finalizada em menos de 10 min, ou fora do expediente) não entram na mediana. Retornos ficam fora. É informação para conversa; não gera consequência automática.</Alerta>
+      {esquecidas.length > 0 && (
+        <Card titulo="Em andamento muito além do padrão (o carro já saiu?)">
+          <div className="list">
+            {esquecidas.map(o => (
+              <a className="li" key={o.id} href={`#/os/${o.id}`} data-esquecida-lideranca>
+                <div className="grow"><div className="ttl">OS #{o.numero} · {primeiroNome(nomeDe(db, o.mecanicoId))}</div><div className="meta">{fmtMin(minutosDeServico(o, agora))} · padrão {fmtMin(tempoPadraoMin(o))} ({rotuloPadrao(o)})</div></div>
+                <Badge tom="critico">Acima</Badge>
+              </a>
+            ))}
+          </div>
+        </Card>
+      )}
+      {tipos.map((t, i) => {
+        const linhas = linhasDe(t.k);
+        return (
+          <Card key={t.k} titulo={t.r} acao={i === 0 ? <Segmented rotulo="Período" valor={per} onChange={setPer} opcoes={[{ v: '7d', r: '7 dias' }, { v: 'mes', r: 'Mês' }]} /> : undefined}>
+            {linhas.length === 0 ? <Empty titulo="Nenhuma OS com registro em tempo real no período." /> : (
+              <div className="tbl-wrap">
+                <table className="tbl" data-tempo-tabela={t.k}>
+                  <thead><tr><th>Mecânico</th><th className="num">OS medidas</th><th className="num">Mediana</th><th className="num">Acima do padrão</th><th className="num">Fora do tempo real</th></tr></thead>
+                  <tbody>
+                    {linhas.map(l => (
+                      <tr key={l.id}>
+                        <td>{l.nome}</td>
+                        <td className="num">{l.n}</td>
+                        <td className="num" style={{ color: corDe(l.med, l.padrao), fontWeight: 700 }}>{fmtMin(Math.round(l.med))}</td>
+                        <td className="num">{l.acima} ({Math.round((l.acima / l.n) * 100)}%)</td>
+                        <td className="num">{l.foraN || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        );
+      })}
+      <Card titulo={`Registros fora do tempo real (${fora.length})`}>
+        {fora.length === 0 ? <Empty titulo="Nenhum no período." /> : (
+          <div className="list">
+            {fora.slice(0, 40).map(o => (
+              <a className="li" key={o.id} href={`#/os/${o.id}`}>
+                <div className="grow"><div className="ttl">OS #{o.numero} · {primeiroNome(nomeDe(db, o.mecanicoId))}</div><div className="meta">{fmtDataHora(o.concluidaEm)} · {registroForaDoTempoReal(o)}</div></div>
+              </a>
+            ))}
+          </div>
+        )}
+        <p className="tiny muted" style={{ marginTop: 8 }}>Para a medição valer, o mecânico aperta "Assumir" quando pega o carro e "Finalizar" quando entrega. Estes registros indicam botões apertados depois.</p>
+      </Card>
     </div>
   );
 }

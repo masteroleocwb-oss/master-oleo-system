@@ -9,7 +9,7 @@ import { ORIGEM_LABEL, RECOMENDACAO, RESPOSTA_CLIENTE } from '../domain/catalogo
 import { textoPrevisto } from '../domain/manutencao';
 import { Alerta, Badge, Btn, Empty, Field, Placa, Progress, SaveIndicator, Segmented, Sheet, useAcao, useDB, type SaveState } from '../ui/components';
 import { PhotoCapture } from '../ui/PhotoCapture';
-import { CarroDeLojaBadge, EstadoBadge } from './common';
+import { CarroDeLojaBadge, Cronometro, EstadoBadge } from './common';
 import { AjudaBotao } from './Ajuda';
 import { PausarBotao, RetomarBotao, DevolverBotao } from './Pausa';
 import { FotoImg } from '../ui/FotoImg';
@@ -72,7 +72,7 @@ export function Checklist({ u, osId, foco }: { u: Usuario; osId: string; foco: s
       <div className="page-head">
         <div>
           <h1>Checklist técnico</h1>
-          <div className="row" style={{ marginTop: 6 }}><Placa placa={v.placa} /><span className="strong">{v.marca} {v.modelo} {v.ano}</span><span className="small muted">câmbio {v.cambio}</span><CarroDeLojaBadge os={os} /></div>
+          <div className="row" style={{ marginTop: 6 }}><Placa placa={v.placa} /><span className="strong">{v.marca} {v.modelo} {v.ano}</span><span className="small muted">câmbio {v.cambio}</span><CarroDeLojaBadge os={os} /><Cronometro os={os} grande /></div>
         </div>
         <div className="row">
           <Segmented rotulo="Modo de visualização" valor={modo} onChange={setModo} opcoes={[{ v: 'lista', r: 'Lista' }, { v: 'compacto', r: 'Compacto' }]} />

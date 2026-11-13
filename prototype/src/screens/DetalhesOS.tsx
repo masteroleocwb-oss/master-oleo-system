@@ -9,7 +9,8 @@ import { pode } from '../domain/permissions';
 import type { Compartilhamento, OrdemServico, Usuario } from '../domain/types';
 import { fmtBRL, fmtData, fmtDataHora, fmtKm, fmtMin, diffMin, diaKey, hojeKey, primeiroNome } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Empty, Field, Placa, Sheet, Tabs, useAcao, useDB, useToast } from '../ui/components';
-import { CarroDeLojaBadge, ChecklistBadge, EstadoBadge, STATUS_OS } from './common';
+import { CarroDeLojaBadge, ChecklistBadge, Cronometro, EstadoBadge, RegistroForaBadge, STATUS_OS } from './common';
+import { etapasDaOS } from '../domain/tempo';
 import { AuditoriaSheet } from './Lideranca';
 import { rotaTrabalho } from './Operacao';
 import { AjudaBotao } from './Ajuda';
@@ -120,6 +121,14 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
                 <dt className="muted">Aberta</dt><dd style={{ margin: 0 }}>{fmtDataHora(os.abertaEm)}</dd>
                 {os.iniciadaEm && <><dt className="muted">Início</dt><dd style={{ margin: 0 }}>{fmtDataHora(os.iniciadaEm)}</dd></>}
                 {os.concluidaEm && <><dt className="muted">Conclusão</dt><dd style={{ margin: 0 }}>{fmtDataHora(os.concluidaEm)} ({fmtMin(diffMin(os.iniciadaEm!, os.concluidaEm))})</dd></>}
+                {os.iniciadaEm && (() => {
+                  const e = etapasDaOS(os, c);
+                  const partes = [['Fila', e.fila], ['Checklist', e.checklist], ['Depois do checklist', e.execucao], ['Pausas', e.pausas]].filter(([, v]) => v != null) as [string, number][];
+                  return <><dt className="muted">Tempo</dt><dd style={{ margin: 0 }} data-etapas>
+                    <div className="row" style={{ gap: 6 }}><Cronometro os={os} /><RegistroForaBadge os={os} /></div>
+                    {partes.length > 0 && <div className="tiny muted" style={{ marginTop: 4 }}>{partes.map(([r, v]) => `${r} ${fmtMin(v)}`).join(' · ')}</div>}
+                  </dd></>;
+                })()}
                 <dt className="muted">KM</dt><dd style={{ margin: 0 }}>{fmtKm(os.km)}</dd>
                 <dt className="muted">Checklist</dt><dd style={{ margin: 0 }}><ChecklistBadge c={c} />{pr && ` ${pr.verificados}/${pr.total}`}</dd>
               </dl>

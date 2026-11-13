@@ -6,6 +6,13 @@ import { ErroPermissao } from '../domain/permissions';
 // ───────────────────────── Dados ─────────────────────────
 
 export const useDB = () => useSyncExternalStore(assinar, getDB);
+
+/** Hora atual que se atualiza sozinha (cronômetros). */
+export function useAgoraISO(intervaloMs = 30000) {
+  const [t, setT] = useState(() => new Date().toISOString());
+  useEffect(() => { const id = setInterval(() => setT(new Date().toISOString()), intervaloMs); return () => clearInterval(id); }, [intervaloMs]);
+  return t;
+}
 export const useControle = () => useSyncExternalStore(assinar, getControle);
 
 // ───────────────────────── Toasts ─────────────────────────

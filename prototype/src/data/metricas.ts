@@ -6,6 +6,7 @@ import { descontoChecklist, scoreExecucao, versaoEm } from '../domain/gestao';
 import type { DB, OrdemServico } from '../domain/types';
 import { diaKey, diasUteis, diffMin, hojeKey, media, minutosTrabalhados, mesKey, pct, soma, ultimoDiaDoMes } from '../domain/util';
 import { servicoNaOS, valoresOS } from './api';
+import { registroForaDoTempoReal } from '../domain/tempo';
 
 export const DEFINICOES: Record<string, { nome: string; formula: string; porque: string }> = {
   carros: { nome: 'Carros atendidos', formula: 'OS concluídas por você no mês (retornos ficam fora: não são um carro novo).', porque: 'Volume sozinho não diz qualidade; por isso aparece ao lado do checklist.' },
@@ -98,7 +99,8 @@ export function indicadoresMecanico(d: DB, mecanicoId: string, mes = mesKey(hoje
     ofertasAdicionais: soma(os.map(o => (o.ofertas || []).length)),
     foraDaOrdem: d.os.filter(o => o.mecanicoId === mecanicoId && o.foraDaOrdem && o.iniciadaEm && mesKey(o.iniciadaEm) === mes).length,
     retornos,
-    tempoMedioMin: media(os.map(minutosTrabalhados).filter((x): x is number => x != null)),
+    // Registro fora do tempo real (assumida e finalizada em minutos, ou fora do expediente) não entra no tempo médio.
+    tempoMedioMin: media(os.filter(o => !registroForaDoTempoReal(o)).map(minutosTrabalhados).filter((x): x is number => x != null)),
     tempoChecklistMin: media(comChecklist.filter(c => c!.iniciadoEm && c!.concluidoEm).map(c => diffMin(c!.iniciadoEm!, c!.concluidoEm!))),
     score: scoreExecucao(aplicadas, desc),
     descontoChecklist: desc,

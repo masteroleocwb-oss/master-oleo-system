@@ -1,8 +1,44 @@
 import { ESTADOS, MOTIVO_PAUSA, SERVICOS, semTeste } from '../domain/catalogo';
 import { progresso, STATUS_CHECKLIST_LABEL } from '../domain/checklist';
 import type { Checklist, DB, EstadoItem, OrdemServico, StatusOS } from '../domain/types';
-import { diffMin, fmtHora, fmtMin, agoraISO, minutosTrabalhados, primeiroNome } from '../domain/util';
-import { Badge, Placa, Progress, type Tom } from '../ui/components';
+import { diffMin, fmtHora, fmtMin, agoraISO, primeiroNome } from '../domain/util';
+import { Badge, Placa, Progress, useAgoraISO, type Tom } from '../ui/components';
+import { faixaTempo, minutosDeServico, provavelEsquecida, registroForaDoTempoReal, rotuloPadrao, tempoPadraoMin } from '../domain/tempo';
+
+const TOM_FAIXA = { ok: 'ok', perto: 'atencao', acima: 'critico' } as const;
+
+/** Cronômetro da OS: verde até 80% do padrão, amarelo até o padrão, vermelho acima. Em andamento, atualiza sozinho. */
+export function Cronometro({ os, grande = false }: { os: OrdemServico; grande?: boolean }) {
+  const agora = useAgoraISO();
+  if (!os.iniciadaEm || (os.status !== 'andamento' && os.status !== 'pausada' && os.status !== 'concluido')) return null;
+  if (os.status === 'concluido' && registroForaDoTempoReal(os)) return null;
+  const min = minutosDeServico(os, agora);
+  if (min == null) return null;
+  const padrao = tempoPadraoMin(os);
+  const faixa = faixaTempo(min, padrao);
+  const texto = os.status === 'concluido' ? `Tempo de serviço ${fmtMin(min)}` : `⏱ ${fmtMin(min)}${os.status === 'pausada' ? ' (pausada)' : ''}`;
+  const extra = faixa === 'acima' ? ` · ${fmtMin(min - padrao)} acima do padrão` : ` / padrão ${fmtMin(padrao)}`;
+  return (
+    <span className={`badge ${TOM_FAIXA[faixa]}`} data-cronometro={faixa} title={`Padrão provisório (${rotuloPadrao(os)}): ${fmtMin(padrao)}. Não conta as pausas.`}
+      style={grande ? { fontSize: 15, padding: '6px 12px', fontWeight: 800 } : { fontWeight: 700 }}>
+      {texto}{extra}
+    </span>
+  );
+}
+
+/** Aviso para OS concluída cujo registro não foi feito na hora (fica fora das métricas de tempo). */
+export const RegistroForaBadge = ({ os }: { os: OrdemServico }) => {
+  const motivo = registroForaDoTempoReal(os);
+  return motivo ? <Badge tom="atencao" icone="!">Registro fora do tempo real · {motivo.toLowerCase()}</Badge> : null;
+};
+
+/** OS em andamento muito além do padrão: provavelmente esqueceram de finalizar. */
+export const EsquecidaAviso = ({ os }: { os: OrdemServico }) => {
+  const agora = useAgoraISO();
+  return provavelEsquecida(os, agora)
+    ? <div className="small" data-esquecida style={{ marginTop: 6, color: 'var(--crit)', fontWeight: 700 }}>Ainda está nesta OS? Se o carro já saiu, finalize agora: o tempo continua contando.</div>
+    : null;
+};
 
 export const STATUS_OS: Record<StatusOS, { r: string; tom: Tom }> = {
   aguardando: { r: 'Aguardando', tom: 'atencao' },
@@ -75,8 +111,10 @@ export function OSCard({ db, os, mostrarMecanico = true, previsto, euId }: {
         {os.pedidoOlist && <span className="small muted">Pedido Olist {os.pedidoOlist}</span>}
         {os.status === 'andamento' && <span className="small muted">Início {fmtHora(os.iniciadaEm)}</span>}
         {os.status === 'concluido' && <span className="small muted">Concluída {fmtHora(os.concluidaEm)}</span>}
-        {os.status === 'concluido' && minutosTrabalhados(os) != null && <span className="small strong" data-tempo-servico title="Do início ao fim do serviço, sem contar pausas">Tempo de serviço {fmtMin(minutosTrabalhados(os))}</span>}
+        <span data-tempo-servico><Cronometro os={os} /></span>
+        <RegistroForaBadge os={os} />
       </div>
+      <EsquecidaAviso os={os} />
       {p && os.status === 'andamento' && (
         <div style={{ marginTop: 8 }}>
           <Progress valor={p.pct} tom={p.pct === 100 ? 'ok' : undefined} rotulo="Progresso do checklist" />

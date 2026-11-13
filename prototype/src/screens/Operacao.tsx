@@ -9,7 +9,7 @@ import { atendeOS, pode } from '../domain/permissions';
 import type { OrdemServico, Usuario } from '../domain/types';
 import { agora, fmtBRL, fmtHora, primeiroNome } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Empty, Field, Kpi, Placa, Sheet, useAcao, useDB } from '../ui/components';
-import { nomeServicos, OSCard } from './common';
+import { Cronometro, EsquecidaAviso, nomeServicos, OSCard } from './common';
 
 const ROD_LABEL = { disponivel: 'Disponível', almoco: 'Almoço', ausente: 'Ausente' } as const;
 
@@ -90,7 +90,8 @@ export function Operacao({ u }: { u: Usuario }) {
                 const ckOk = !!c && (c.status === 'concluido' || c.status === 'excecao_autorizada');
                 return (
                   <div className="stack">
-                    <div className="row"><Placa placa={v.placa} /><b>{v.marca} {v.modelo}</b><span className="muted small">OS #{minha.numero} · início {fmtHora(minha.iniciadaEm)}</span></div>
+                    <div className="row"><Placa placa={v.placa} /><b>{v.marca} {v.modelo}</b><span className="muted small">OS #{minha.numero} · início {fmtHora(minha.iniciadaEm)}</span><Cronometro os={minha} grande /></div>
+                    <EsquecidaAviso os={minha} />
                     {minha.retorno ? <Alerta tipo="warn"><b>Retorno.</b> Problema relatado: {minha.retorno.problemaRelatado}</Alerta> : <div className="small muted">{nomeServicos(minha)}</div>}
                     {minha.carroDeLoja && <Alerta tipo="info"><b>Carro de loja.</b> Checklist opcional: pode ir direto para a execução.</Alerta>}
                     {pr && <div className="small"><b>{pr.verificados}</b> de {pr.total} itens verificados</div>}
