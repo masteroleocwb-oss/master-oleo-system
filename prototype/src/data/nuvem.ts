@@ -17,7 +17,7 @@ import { podeAtenderCarros } from '../domain/permissions';
 import { TIPOS_CAMBIO_AUTO } from '../domain/catalogo';
 import type { DB, RegistroAcesso, ResultadoAcesso, Role, Usuario } from '../domain/types';
 import { ErroSalvamento as ErroNuvem } from './erros';
-import { camposAlterados, derivarCadastros, legadoDeOS, MapaNomes, osDeLegado, PADRAO_CRIACAO, type DocLegado } from './legado';
+import { camposAlterados, derivarCadastros, idVeiculo, legadoDeOS, MapaNomes, osDeLegado, PADRAO_CRIACAO, type DocLegado } from './legado';
 
 /** Configuração pública do app web (a mesma do sistema atual; não é segredo — o acesso é controlado pelas regras). */
 const CONFIG = {
@@ -226,15 +226,16 @@ async function aoMudarLogin(u: User | null) {
     erroCarga = code === 'permission-denied' ? 'Seu login não tem permissão para ver os dados. Fale com a direção.' : 'Não foi possível carregar os dados. Verifique a conexão.';
     estado = 'erro'; notificar();
   };
-  // OS ao vivo: 90 dias (mesma janela do sistema atual); mecânico só do mês anterior para cá (operação
-  // e "Meu mês"), o que deixa o celular bem mais leve. O histórico antigo vem depois, conforme o perfil
-  // (ver carregarAntigas): o mecânico recebe só o das placas que estão na oficina.
+  // OS ao vivo: 90 dias (mesma janela do sistema atual); mecânico só os últimos 30 dias, ou desde o dia 1º
+  // se o mês já passou disso ("Meu mês" sempre completo), o que deixa o celular bem mais leve. O histórico
+  // antigo vem depois, conforme o perfil (ver carregarAntigas): o mecânico recebe só o das placas na oficina.
   let perfil: unknown;
   try { perfil = (await getDoc(doc(fs, 'usuarios', u.uid))).data()?.perfil; } catch { /* segue com a janela padrão */ }
   if (uidAtual !== u.uid) return;
   const hoje = new Date();
-  const desdeISO = perfil === 'mecanico'
-    ? new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - 1, 1, 3)).toISOString()
+  const mecanico = perfil === 'mecanico';
+  const desdeISO = mecanico
+    ? new Date(Math.min(Date.now() - JANELA_MECANICO_DIAS * 864e5, Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), 1, 3))).toISOString()
     : new Date(Date.now() - JANELA_DIAS * 864e5).toISOString();
   assinaturas.push(onSnapshot(query(collection(fs, 'orders'), where('dataHora', '>=', desdeISO)), s => {
     s.docChanges().forEach(ch => { if (ch.type === 'removed') raw.orders.delete(ch.doc.id); else raw.orders.set(ch.doc.id, ch.doc.data()); });
@@ -253,11 +254,26 @@ async function aoMudarLogin(u: User | null) {
   }, falha));
   assinaturas.push(onSnapshot(doc(fs, 'config', 'global'), s => { raw.global = s.data() || {}; carregou.global = true; agendar(); }, falha));
   for (const c of CHAVES) {
-    const q = c === 'eventos' ? query(collection(fs, COLECOES[c]), orderBy('em', 'desc'), limit(600)) : collection(fs, COLECOES[c]);
-    assinaturas.push(onSnapshot(q, s => {
-      s.docChanges().forEach(ch => { if (ch.type === 'removed') raw.col[c].delete(ch.doc.id); else raw.col[c].set(ch.doc.id, ch.doc.data()); });
-      agendar();
-    }, e => console.warn('Falha ao ler', c, e)));
+    // Mecânico: checklists da mesma janela das OS (por início ou conclusão) e os ainda abertos; os antigos das
+    // placas na oficina vêm em buscarPlacasAbertas. Checklist nunca é apagado, então sair de uma das
+    // consultas (ex.: concluído) não tira da base.
+    const consultas = c === 'eventos' ? [query(collection(fs, COLECOES[c]), orderBy('em', 'desc'), limit(600))]
+      : c === 'checklists' && mecanico ? [
+        query(collection(fs, 'checklists'), where('iniciadoEm', '>=', desdeISO)),
+        // Exceção autorizada sem inspeção iniciada só tem a data de conclusão.
+        query(collection(fs, 'checklists'), where('concluidoEm', '>=', desdeISO)),
+        query(collection(fs, 'checklists'), where('status', 'in', ['nao_iniciado', 'em_andamento'])),
+      ]
+      : [collection(fs, COLECOES[c])];
+    for (const q of consultas) {
+      assinaturas.push(onSnapshot(q, s => {
+        s.docChanges().forEach(ch => {
+          if (ch.type !== 'removed') raw.col[c].set(ch.doc.id, ch.doc.data());
+          else if (consultas.length === 1) raw.col[c].delete(ch.doc.id);
+        });
+        agendar();
+      }, e => console.warn('Falha ao ler', c, e)));
+    }
   }
 }
 
@@ -287,6 +303,7 @@ async function conferirOSNova() {
 }
 
 const JANELA_DIAS = 90;
+const JANELA_MECANICO_DIAS = 30;
 const CHAVE_HISTORICO = 'mo2:historicoEm';
 const HISTORICO_VALE_DIAS = 45;
 /** Quem busca cliente antigo por nome/telefone ou vê indicadores precisa do histórico inteiro. */
@@ -352,6 +369,15 @@ async function buscarPlacasAbertas() {
       s.forEach(d => { if (!raw.orders.has(d.id)) raw.orders.set(d.id, d.data()); });
       agendar();
     } catch (e) { console.warn('Histórico da placa indisponível', e); }
+  }
+  // Inspeções anteriores dos mesmos carros (o mecânico só recebe as da janela ao vivo).
+  const veiculos = [...novas].map(idVeiculo);
+  for (let i = 0; i < veiculos.length; i += 30) {
+    try {
+      const s = await getDocs(query(collection(fs, 'checklists'), where('veiculoId', 'in', veiculos.slice(i, i + 30))));
+      s.forEach(d => { if (!raw.col.checklists.has(d.id)) raw.col.checklists.set(d.id, d.data()); });
+      agendar();
+    } catch (e) { console.warn('Inspeções anteriores da placa indisponíveis', e); }
   }
 }
 

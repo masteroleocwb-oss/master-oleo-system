@@ -23,10 +23,10 @@ export type FaixaTempo = 'ok' | 'perto' | 'acima';
 /** Verde até 80% do padrão, amarelo até o padrão, vermelho acima. */
 export const faixaTempo = (min: number, padrao: number): FaixaTempo => min > padrao ? 'acima' : min >= padrao * 0.8 ? 'perto' : 'ok';
 
+const FMT_HORA_DIA = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', weekday: 'short', hourCycle: 'h23' });
 const horaBR = (iso: string) => {
   const p: Record<string, string> = {};
-  new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', weekday: 'short', hourCycle: 'h23' })
-    .formatToParts(new Date(iso)).forEach(x => { p[x.type] = x.value; });
+  FMT_HORA_DIA.formatToParts(new Date(iso)).forEach(x => { p[x.type] = x.value; });
   return { h: Number(p.hour) + Number(p.minute) / 60, dia: p.weekday };
 };
 

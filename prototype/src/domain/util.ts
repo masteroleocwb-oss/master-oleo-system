@@ -8,13 +8,25 @@ export const fixarAgora = (d: Date | null) => { agoraFixo = d; };
 export const agora = () => (agoraFixo ? new Date(agoraFixo) : new Date());
 export const agoraISO = () => agora().toISOString();
 
+// Criar um Intl.DateTimeFormat é caro (milissegundos no celular): os formatadores são criados uma vez e
+// o dia de cada data já vista fica guardado. A tela de Operação pergunta o dia de cada OS a cada atualização.
+const FMT_DIA = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+const formatarDia = (dt: Date) => {
+  const p: Record<string, string> = {};
+  FMT_DIA.formatToParts(dt).forEach(x => { p[x.type] = x.value; });
+  return `${p.year}-${p.month}-${p.day}`;
+};
+const diasVistos = new Map<string, string>();
 /** 'AAAA-MM-DD' no fuso de Brasília. */
 export const diaKey = (d: Date | string) => {
-  const dt = typeof d === 'string' ? new Date(d) : d;
-  const p: Record<string, string> = {};
-  new Intl.DateTimeFormat('en-GB', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' })
-    .formatToParts(dt).forEach(x => { p[x.type] = x.value; });
-  return `${p.year}-${p.month}-${p.day}`;
+  if (typeof d !== 'string') return formatarDia(d);
+  let r = diasVistos.get(d);
+  if (r === undefined) {
+    if (diasVistos.size > 50000) diasVistos.clear();
+    r = formatarDia(new Date(d));
+    diasVistos.set(d, r);
+  }
+  return r;
 };
 export const mesKey = (d: Date | string) => diaKey(d).slice(0, 7);
 export const hojeKey = () => diaKey(agora());
@@ -27,8 +39,10 @@ export const addMeses = (iso: string, meses: number) => {
 };
 export const diffMin = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60000);
 
-export const fmtData = (iso?: string) => iso ? new Date(iso).toLocaleDateString('pt-BR', { timeZone: TZ }) : '—';
-export const fmtHora = (iso?: string) => iso ? new Date(iso).toLocaleTimeString('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }) : '—';
+const FMT_DATA = new Intl.DateTimeFormat('pt-BR', { timeZone: TZ });
+const FMT_HORA = new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+export const fmtData = (iso?: string) => iso ? FMT_DATA.format(new Date(iso)) : '—';
+export const fmtHora = (iso?: string) => iso ? FMT_HORA.format(new Date(iso)) : '—';
 export const fmtDataHora = (iso?: string) => iso ? `${fmtData(iso)} ${fmtHora(iso)}` : '—';
 export const fmtMes = (mes: string) => {
   const [a, m] = mes.split('-').map(Number);
