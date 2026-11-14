@@ -20,7 +20,7 @@ export function Cronometro({ os, grande = false }: { os: OrdemServico; grande?: 
   const extra = faixa === 'acima' ? ` · ${fmtMin(min - padrao)} acima do padrão` : ` / padrão ${fmtMin(padrao)}`;
   return (
     <span className={`badge ${TOM_FAIXA[faixa]}`} data-cronometro={faixa} title={`Padrão provisório (${rotuloPadrao(os)}): ${fmtMin(padrao)}. Não conta as pausas.`}
-      style={grande ? { fontSize: 15, padding: '6px 12px', fontWeight: 800 } : { fontWeight: 700 }}>
+      style={{ whiteSpace: 'normal', borderRadius: 12, ...(grande ? { fontSize: 15, padding: '6px 12px', fontWeight: 800 } : { fontWeight: 700 }) }}>
       {texto}{extra}
     </span>
   );

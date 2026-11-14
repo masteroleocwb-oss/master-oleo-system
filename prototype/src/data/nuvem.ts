@@ -548,7 +548,7 @@ export const definirProjetor = (f: (d: DB, osId: string) => unknown) => { projet
 const CONFLITO = 'Outra pessoa alterou estes dados agora há pouco. A tela já foi atualizada; confira e tente de novo.';
 
 /** Aplica uma ação: monta o rascunho, grava o que mudou numa transação e devolve o resultado. */
-export async function transacao<T>(mutar: (rascunho: DB) => T): Promise<T> {
+export async function transacao<T>(mutar: (rascunho: DB) => T, cadastroDe: string[] = []): Promise<T> {
   if (estado !== 'pronto') throw new ErroNuvem('Ainda carregando os dados. Aguarde um instante.');
   // Uma ação por vez neste aparelho: a seguinte já parte do resultado da anterior (toques rápidos
   // no checklist não brigam entre si). Conflito com outro aparelho: tenta de novo uma vez, com a tela atualizada.
@@ -557,7 +557,7 @@ export async function transacao<T>(mutar: (rascunho: DB) => T): Promise<T> {
       const antes = db;
       const depois = structuredClone(db);
       const r = mutar(depois);
-      try { await gravar(antes, depois); return r; }
+      try { await gravar(antes, depois, cadastroDe); return r; }
       catch (e) {
         if (tentativa > 0 || !(e instanceof ErroNuvem) || e.message !== CONFLITO) throw e;
         await new Promise(ok => setTimeout(ok, 700));
@@ -646,7 +646,7 @@ async function embutirFotos(rel: unknown) {
   return r;
 }
 
-async function gravar(antes: DB, depois: DB) {
+async function gravar(antes: DB, depois: DB, cadastroDe: string[] = []) {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new ErroNuvem('Sua sessão terminou. Entre de novo.');
   try { await enviarFotos(antes, depois); }
@@ -662,10 +662,12 @@ async function gravar(antes: DB, depois: DB) {
   const alteradas: { id: string; campos: string[]; antes: DocLegado; depois: DocLegado }[] = [];
   for (const o of depois.os) {
     const a = antes.os.find(x => x.id === o.id);
-    if (!a || estavel(a) === estavel(o)) continue;
+    // Cliente e carro vêm do conjunto das OS da placa: só vão para o documento na OS que está sendo corrigida.
+    const corrige = cadastroDe.includes(o.id);
+    if (!a || (!corrige && estavel(a) === estavel(o))) continue;
     const pa = legadoDeOS(a, veic(antes, a.veiculoId), cli(antes, a.clienteId), nomesA);
     const pd = legadoDeOS(o, veic(depois, o.veiculoId), cli(depois, o.clienteId), nomesD);
-    const campos = camposAlterados(pa, pd).filter(k => !CAMPOS_CADASTRO.has(k));
+    const campos = camposAlterados(pa, pd).filter(k => corrige || !CAMPOS_CADASTRO.has(k));
     if (campos.length) alteradas.push({ id: o.id, campos, antes: pa, depois: pd });
   }
   if (depois.os.length < antes.os.length) throw new ErroNuvem('OS não são apagadas no sistema novo; use Cancelar.');
@@ -722,7 +724,8 @@ async function gravar(antes: DB, depois: DB) {
         const s = docsOS[i];
         if (!s.exists()) throw new ErroNuvem('Esta OS não existe mais.');
         const noServidor = legadoDeOS(osDeLegado(m.id, s.data(), nomesA), undefined, undefined, nomesA);
-        if (m.campos.some(k => estavel(noServidor[k]) !== estavel(m.antes[k]) && estavel(noServidor[k]) !== estavel(m.depois[k]))) throw new ErroNuvem(CONFLITO);
+        // Cadastro (cliente/carro) não entra na conferência: o servidor não tem como reconstruí-lo a partir de uma OS só.
+        if (m.campos.some(k => !CAMPOS_CADASTRO.has(k) && estavel(noServidor[k]) !== estavel(m.antes[k]) && estavel(noServidor[k]) !== estavel(m.depois[k]))) throw new ErroNuvem(CONFLITO);
       });
       const gravarCol: unknown[] = muds.map((m, i) => {
         const s = docsCol[i];

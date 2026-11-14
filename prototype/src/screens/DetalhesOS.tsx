@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { MODO_REAL } from '../data/modo';
 import { urlRelatorio } from '../domain/contato';
 import { ir, useRota } from '../app/nav';
-import { cancelarOS, decidirExcecao, DIAS_LINK_AUTOMATICO, encerrarOSEsquecida, definirPedidoOlist, definirVisibilidadeFoto, estadoLink, gerarLink, marcarNaoOferecer, nomeDe, projetarRelatorio, registrarCompartilhamento, revogarLink, valoresOS } from '../data/api';
+import { cancelarOS, decidirExcecao, DIAS_LINK_AUTOMATICO, encerrarOSEsquecida, definirPedidoOlist, podeEditarOS, definirVisibilidadeFoto, estadoLink, gerarLink, marcarNaoOferecer, nomeDe, projetarRelatorio, registrarCompartilhamento, revogarLink, valoresOS } from '../data/api';
 import { ESTADOS, GRUPOS, MOTIVO_PAUSA, SERVICOS, semTeste, TIPOS_CAMBIO_AUTO } from '../domain/catalogo';
 import { fotosAtivasDoItem, progresso } from '../domain/checklist';
 import { pode } from '../domain/permissions';
@@ -12,6 +12,7 @@ import { Alerta, Badge, Btn, Card, Empty, Field, Placa, Sheet, Tabs, useAcao, us
 import { CarroDeLojaBadge, ChecklistBadge, Cronometro, EstadoBadge, RegistroForaBadge, STATUS_OS } from './common';
 import { etapasDaOS } from '../domain/tempo';
 import { AuditoriaSheet } from './Lideranca';
+import { EditarOSSheet } from './EditarOS';
 import { rotaTrabalho } from './Operacao';
 import { AjudaBotao } from './Ajuda';
 import { PausarBotao, RetomarBotao, DevolverBotao } from './Pausa';
@@ -27,6 +28,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
   const [cancelar, setCancelar] = useState<false | 'cancelar' | 'encerrar'>(false);
   const [naoOf, setNaoOf] = useState(false);
   const [auditar, setAuditar] = useState(false);
+  const [editar, setEditar] = useState(false);
   const fotoAcao = useAcao();
   if (!os) return <div className="card"><Empty titulo="OS não encontrada." /></div>;
 
@@ -58,6 +60,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
             const ckOk = c?.status === 'concluido' || c?.status === 'excecao_autorizada';
             return <Btn onClick={() => ir(rotaTrabalho(os, ckOk))}>{os.retornoDeOsId ? 'Atendimento do retorno' : ckOk || os.carroDeLoja ? 'Executar e finalizar' : 'Abrir checklist'}</Btn>;
           })()}
+          {podeEditarOS(u, os) && <Btn variante="sec" onClick={() => setEditar(true)} data-editar-os>Editar OS</Btn>}
           <RetomarBotao u={u} os={os} /><AjudaBotao u={u} os={os} /><PausarBotao u={u} os={os} /><DevolverBotao u={u} os={os} />
           {pode(u, 'checklist.auditar') && c && (c.status === 'concluido' || c.status === 'excecao_autorizada') && os.mecanicoId !== u.id && <Btn variante="sec" onClick={() => setAuditar(true)}>Auditar checklist</Btn>}
           {pode(u, 'excecao.declarar') && !os.naoOferecer && os.status !== 'concluido' && cli?.tipo === 'frota' && <Btn variante="sec" onClick={() => setNaoOf(true)}>Marcar “não oferecer”</Btn>}
@@ -77,9 +80,9 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
 
       {aba === 'resumo' && (
         <div className="grid cols2">
-          <div>
+          <div style={{ minWidth: 0 }}>
             <Card titulo="Serviços">
-              <table className="tbl">
+              <div style={{ overflowX: 'auto' }}><table className="tbl">
                 <thead><tr><th>Serviço</th><th>Origem</th><th>Status</th>{pode(u, 'os.ver_valores') && <th className="num">Valor</th>}</tr></thead>
                 <tbody>
                   {os.servicos.map((s, i) => (
@@ -91,7 +94,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
               {pode(u, 'os.ver_valores') && (
                 <div className="row between" style={{ marginTop: 10 }}>
                   <span className="small muted">Venda inicial {fmtBRL(val.inicial)} + itens do checklist {fmtBRL(val.upsell)}</span>
@@ -112,7 +115,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
           </div>
           <div>
             <Card titulo="Dados da OS">
-              <dl className="small" style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 12px' }}>
+              <dl className="small" style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', gap: '6px 12px' }}>
                 <dt className="muted">Cliente</dt><dd style={{ margin: 0 }}>{cli?.nome}{cli?.tipo === 'frota' && ' (frota)'}{pode(u, 'cliente.ver_contato') && cli?.telefone ? ` · ${cli.telefone}` : ''}</dd>
                 {pode(u, 'cliente.ver_contato') && (cli?.cidade || cli?.comoConheceu) && <><dt className="muted">Endereço</dt><dd style={{ margin: 0 }}>{[cli.bairro, cli.cidade].filter(Boolean).join(', ') || '—'}{cli.comoConheceu ? ` · conheceu por: ${cli.comoConheceu === 'Outro' ? cli.comoConheceuDetalhe : cli.comoConheceu}` : ''}</dd></>}
                 <dt className="muted">Pedido Olist</dt><dd style={{ margin: 0 }}><PedidoOlist u={u} os={os} /></dd>
@@ -211,6 +214,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
         </Card>
       )}
 
+      {editar && <EditarOSSheet u={u} os={os} onClose={() => setEditar(false)} />}
       {cancelar && <CancelarSheet u={u} os={os} modo={cancelar} onClose={() => setCancelar(false)} />}
       {naoOf && <NaoOferecerSheet u={u} os={os} onClose={() => setNaoOf(false)} />}
       {auditar && c && <AuditoriaSheet u={u} checklistId={c.id} onClose={() => setAuditar(false)} />}

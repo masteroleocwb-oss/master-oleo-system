@@ -9,7 +9,7 @@ import type {
   AtendimentoRetorno, Cambio, Checklist, Cliente, DB, EstadoItem, EstadoRecomendado, Evento, ItemInspecaoDef, ManutencaoPrevista, Meta, Ocorrencia, Oportunidade, OrdemServico, OrigemIntervalo,
   Pausa, Role, ServicoKey, ServicoOS, SituacaoOportunidade, Usuario, Veiculo, TipoCambioAuto,
 } from '../domain/types';
-import { addDias, agoraISO, diaKey, fmtPlaca, hojeKey, novoId, novoToken, normalizarPlaca, placaValida, primeiroNome, telefoneValido } from '../domain/util';
+import { addDias, agoraISO, diaKey, diffMin, fmtPlaca, lerReais, hojeKey, novoId, novoToken, normalizarPlaca, placaValida, primeiroNome, telefoneValido } from '../domain/util';
 import { idCliente, idVeiculo } from './legado';
 import { MODO_REAL } from './modo';
 import { definirProjetor } from './nuvem';
@@ -969,6 +969,109 @@ export const recomendacoesAbertas = (d: DB, veiculoId: string): RecomendacaoAber
   d.manutencoes.filter(m => m.veiculoId === veiculoId && !m.concluidaPorOsId && m.estadoItem && !ITENS_DESCONTINUADOS.includes(m.itemDefId || ''))
     .sort((a, b) => ordemProxima(a) - ordemProxima(b) || b.registradoEm.localeCompare(a.registradoEm))
     .map(m => ({ m, estado: m.estadoItem!, situacao: situacaoRecomendacao(d, m), osNumero: d.os.find(o => o.id === m.osOrigemId)?.numero }));
+
+/** O que a edição da OS pode mudar. Campo ausente = não mexe. */
+export interface EdicaoOS {
+  cliente?: { nome: string; telefone: string };
+  veiculo?: { placa: string; marca: string; modelo: string; motor: string; ano: string; cambio: Cambio };
+  km?: string;
+  valorInicial?: string;
+  obsInterna?: string;
+  servicos?: Partial<Record<ServicoKey, Pick<ServicoOS, 'marca' | 'quantidade' | 'carter' | 'codigo'>>>;
+  /** Só liderança/direção, na OS concluída. */
+  mecanicoId?: string;
+  iniciadaEm?: string;
+  concluidaEm?: string;
+}
+
+const OS_ABERTA = ['aguardando', 'andamento', 'pausada'];
+/** Vendedor edita a OS aberta; a liderança e a direção editam também a concluída (como o ADM no sistema atual). */
+export const podeEditarOS = (u: Usuario, os: OrdemServico) =>
+  pode(u, 'os.editar') && (OS_ABERTA.includes(os.status) || (os.status === 'concluido' && pode(u, 'os.editar_concluida')));
+
+/**
+ * Corrige a OS (o mesmo que o "Editar OS" do sistema atual). Cliente e carro mudam só nesta OS:
+ * placa digitada errada leva a OS para o carro certo, sem mexer no histórico das outras.
+ */
+export async function editarOS(u: Usuario, osId: string, e: EdicaoOS) {
+  exigir(u, 'os.editar');
+  const t = (x?: string) => (x ?? '').trim();
+  if (e.cliente && !t(e.cliente.nome)) throw new ErroValidacao('Informe o nome do cliente.');
+  if (e.cliente && t(e.cliente.telefone) && !telefoneValido(e.cliente.telefone)) throw new ErroValidacao('Telefone inválido: use DDD + número.');
+  if (e.veiculo && !placaValida(e.veiculo.placa)) throw new ErroValidacao('Placa inválida.');
+  if (e.veiculo && t(e.veiculo.ano) && !/^(19|20)\d{2}$/.test(t(e.veiculo.ano))) throw new ErroValidacao('Ano inválido (ex.: 2018).');
+  const km = e.km === undefined ? undefined : t(e.km) ? Number(t(e.km).replace(/\D/g, '')) : null;
+  if (km != null && (!Number.isFinite(km) || km > 2_000_000)) throw new ErroValidacao('Quilometragem inválida.');
+  const valor = e.valorInicial === undefined ? undefined : lerReais(e.valorInicial);
+  if (valor !== undefined && (valor == null || valor < 0)) throw new ErroValidacao('Valor inicial inválido.');
+  return transacao(d => {
+    const os = osPorId(d, osId);
+    if (!podeEditarOS(u, os)) throw new ErroValidacao(os.status === 'concluido' ? 'OS concluída só a liderança e a direção editam.' : 'Esta OS não pode ser editada.');
+    const mudou: string[] = [];
+    const antes: Record<string, unknown> = {}, depois: Record<string, unknown> = {};
+    const anotar = (rotulo: string, chave: string, a: unknown, b: unknown) => {
+      if ((a ?? '') === (b ?? '')) return false;
+      mudou.push(rotulo); antes[chave] = a; depois[chave] = b; return true;
+    };
+
+    if (e.cliente) {
+      let cli = d.clientes.find(c => c.id === os.clienteId);
+      if (!cli) { cli = { id: idCliente(d.veiculos.find(v => v.id === os.veiculoId)?.placa || os.id), nome: '', tipo: 'particular' }; d.clientes.push(cli); os.clienteId = cli.id; }
+      if (anotar('cliente', 'cliente', cli.nome, t(e.cliente.nome))) cli.nome = t(e.cliente.nome);
+      if (anotar('telefone', 'telefone', cli.telefone, t(e.cliente.telefone) || undefined)) cli.telefone = t(e.cliente.telefone) || undefined;
+    }
+    if (e.veiculo) {
+      const atual = veicPorId(d, os.veiculoId);
+      const placa = normalizarPlaca(e.veiculo.placa);
+      let v = atual;
+      if (anotar('placa', 'placa', normalizarPlaca(atual.placa), placa)) {
+        // A OS passa para o carro da placa certa (o que já existe ou um novo); as outras OS do carro antigo ficam como estão.
+        v = d.veiculos.find(x => x.id !== atual.id && normalizarPlaca(x.placa) === placa)
+          ?? (() => { const n: Veiculo = { ...structuredClone(atual), id: idVeiculo(placa), placa, placasAnteriores: [] }; d.veiculos.push(n); return n; })();
+        os.veiculoId = v.id;
+      }
+      const ano = t(e.veiculo.ano) ? Number(t(e.veiculo.ano)) : 0;
+      if (anotar('marca', 'marca', v.marca, t(e.veiculo.marca))) v.marca = t(e.veiculo.marca);
+      if (anotar('modelo', 'modelo', v.modelo, t(e.veiculo.modelo))) v.modelo = t(e.veiculo.modelo);
+      if (anotar('motor', 'motor', v.motor, t(e.veiculo.motor))) v.motor = t(e.veiculo.motor);
+      if (anotar('ano', 'ano', v.ano || 0, ano)) v.ano = ano;
+      if (anotar('câmbio', 'cambio', v.cambio, e.veiculo.cambio)) v.cambio = e.veiculo.cambio;
+    }
+    if (km !== undefined && anotar('km', 'km', os.km ?? null, km)) os.km = km ?? undefined;
+    if (valor != null && anotar('valor inicial', 'valorInicial', os.valorInicial, valor)) os.valorInicial = valor;
+    if (e.obsInterna !== undefined && anotar('observação', 'obsInterna', os.obsInterna, t(e.obsInterna) || undefined)) os.obsInterna = t(e.obsInterna) || undefined;
+    for (const [key, campos] of Object.entries(e.servicos || {}) as [ServicoKey, Pick<ServicoOS, 'marca' | 'quantidade' | 'carter' | 'codigo'>][]) {
+      const s = os.servicos.find(x => x.key === key && x.origem === 'balcao');
+      if (!s) continue;
+      for (const c of ['marca', 'quantidade', 'carter', 'codigo'] as const) {
+        if (campos[c] === undefined) continue;
+        if (anotar(`${SERVICOS[key].nome.toLowerCase()} (${c === 'carter' ? 'no câmbio' : c})`, `${key}.${c}`, s[c], t(campos[c]) || undefined)) s[c] = t(campos[c]) || undefined;
+      }
+    }
+
+    const execucao = e.mecanicoId !== undefined || e.iniciadaEm !== undefined || e.concluidaEm !== undefined;
+    if (execucao) {
+      if (os.status !== 'concluido' || !pode(u, 'os.editar_concluida')) throw new ErroValidacao('Lubrificador e horários só a liderança corrige, na OS concluída.');
+      if (e.mecanicoId !== undefined && e.mecanicoId !== os.mecanicoId) {
+        const m = d.usuarios.find(x => x.id === e.mecanicoId);
+        if (!m || !(m.role === 'mecanico' || podeAtenderCarros(m.role))) throw new ErroValidacao('Escolha um lubrificador.');
+        anotar('lubrificador', 'mecanicoId', nomeDe(d, os.mecanicoId), m.nome);
+        os.mecanicoId = m.id;
+      }
+      const ini = e.iniciadaEm ?? os.iniciadaEm, fim = e.concluidaEm ?? os.concluidaEm;
+      if (ini && fim && (e.iniciadaEm !== undefined || e.concluidaEm !== undefined)) {
+        if (fim <= ini) throw new ErroValidacao('O fim precisa ser depois do início.');
+        if (fim > agoraISO()) throw new ErroValidacao('O fim não pode ser no futuro.');
+        if (ini < os.abertaEm.slice(0, 10)) throw new ErroValidacao('O início não pode ser antes do dia em que a OS foi aberta.');
+        if (diffMin(ini, fim) > 12 * 60) throw new ErroValidacao('Mais de 12 horas de serviço: confira as datas.');
+        if (anotar('início', 'iniciadaEm', os.iniciadaEm, ini)) os.iniciadaEm = ini;
+        if (anotar('fim', 'concluidaEm', os.concluidaEm, fim)) os.concluidaEm = fim;
+      }
+    }
+    if (!mudou.length) throw new ErroValidacao('Nada foi alterado.');
+    evento(d, u.id, 'os.editada', 'os', os.id, `OS #${os.numero} editada: ${mudou.join(', ')}`, { antes, depois });
+  }, { cadastroDe: [osId] });
+}
 
 export async function definirPedidoOlist(u: Usuario, osId: string, pedido: string) {
   exigir(u, 'os.abrir');

@@ -9,6 +9,8 @@ export type Capacidade =
   | 'os.iniciar'
   | 'os.executar'          // checklist + execução (só o executor)
   | 'os.cancelar'
+  | 'os.editar'            // corrigir cliente, carro, serviços e valor da OS aberta
+  | 'os.editar_concluida'  // idem na OS concluída, mais lubrificador e horários
   | 'os.ver_valores'
   | 'cliente.ver_contato'
   | 'checklist.autorizar_excecao'
@@ -43,20 +45,20 @@ const MATRIZ: Record<Role, Capacidade[]> = {
     'operacao.ver', 'os.iniciar', 'os.executar', 'performance.propria', 'rodizio.almoco_proprio', 'veiculo.ver', 'oportunidade.ver',
   ],
   vendedor: [
-    'operacao.ver', 'os.abrir', 'cliente.ver_contato', 'relatorio.gerar_link', 'oportunidade.ver', 'oportunidade.tratar', 'veiculo.ver', 'os.ver_valores',
+    'operacao.ver', 'os.abrir', 'os.editar', 'cliente.ver_contato', 'relatorio.gerar_link', 'oportunidade.ver', 'oportunidade.tratar', 'veiculo.ver', 'os.ver_valores',
   ],
   comercial: [
     'operacao.ver', 'cliente.ver_contato', 'relatorio.gerar_link', 'oportunidade.ver', 'oportunidade.tratar', 'veiculo.ver', 'os.ver_valores',
   ],
   lider: [
-    'operacao.ver', 'os.abrir', 'os.iniciar', 'os.cancelar', 'os.ver_valores', 'cliente.ver_contato',
+    'operacao.ver', 'os.abrir', 'os.iniciar', 'os.cancelar', 'os.editar', 'os.editar_concluida', 'os.ver_valores', 'cliente.ver_contato',
     'checklist.autorizar_excecao', 'checklist.auditar', 'excecao.declarar',
     'relatorio.gerar_link', 'relatorio.revogar', 'oportunidade.ver', 'oportunidade.tratar',
     'performance.time', 'metas.ver', 'metas.propor', 'politicas.simular',
     'ocorrencia.registrar', 'plano_acao.registrar', 'rodizio.gerenciar', 'veiculo.ver',
   ],
   direcao: [
-    'operacao.ver', 'os.abrir', 'os.cancelar', 'os.ver_valores', 'cliente.ver_contato',
+    'operacao.ver', 'os.abrir', 'os.cancelar', 'os.editar', 'os.editar_concluida', 'os.ver_valores', 'cliente.ver_contato',
     'checklist.autorizar_excecao', 'checklist.auditar', 'excecao.declarar',
     'relatorio.gerar_link', 'relatorio.revogar', 'oportunidade.ver', 'oportunidade.tratar',
     'performance.time', 'metas.ver', 'metas.propor', 'metas.aprovar', 'politicas.simular', 'politicas.aprovar',

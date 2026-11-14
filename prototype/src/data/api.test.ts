@@ -6,7 +6,7 @@ import { sugestoesOcultar } from '../domain/checklist';
 import {
   abrirOS, acaoOcorrencia, adicionarEvidencia, adicionarFotoRetorno, auditarChecklist, buscarVeiculosEClientes, concluirChecklist, corrigirPlaca, ErroValidacao,
   filaRodizio, finalizarOS, finalizarRetorno, garantirChecklist, gerarLink, iniciarOS, obterRelatorioPublico, ocultarItemPara, pausarOS, previsaoFila, projetarRelatorio, proximoDaFila,
-  recomendacoesAbertas, definirPedidoOlist, devolverOS, registrarItemChecklist, retomarOS, revogarLink, salvarRetorno, setStatusRodizio, valoresOS,
+  recomendacoesAbertas, definirPedidoOlist, editarOS, devolverOS, registrarItemChecklist, retomarOS, revogarLink, salvarRetorno, setStatusRodizio, valoresOS,
 } from './api';
 import { indicadoresMecanico } from './metricas';
 import { gerarSeed } from './seed';
@@ -539,4 +539,44 @@ describe('pastilha e disco saíram (direção, 11/11/2026)', () => {
     expect(recomendacoesAbertas(getDB(), v.id).some(r => r.m.itemDefId === 'pastilhas')).toBe(false);
   });
 
+});
+
+describe('editar OS', () => {
+  it('vendedor corrige a OS aberta: cliente, placa (a OS vai para o carro certo), serviço e valor; fica no histórico', async () => {
+    const os = await novaOS();
+    const outra = getDB().os.find(o => o.veiculoId === 'v5' && o.id !== os.id);
+    await editarOS(U('u_ven'), os.id, {
+      cliente: { nome: 'Nome Corrigido', telefone: '(41) 98888-7777' },
+      veiculo: { placa: 'QQQ1A11', marca: 'VW', modelo: 'Gol', motor: '1.0', ano: '2015', cambio: 'manual' },
+      valorInicial: '320,50', servicos: { oleoMotor: { marca: 'Mobil 5W30', quantidade: '4' } },
+    });
+    const d = getDB();
+    const e = d.os.find(o => o.id === os.id)!;
+    expect(d.veiculos.find(v => v.id === e.veiculoId)!.placa).toBe('QQQ1A11');
+    expect(e.valorInicial).toBe(320.5);
+    expect(e.servicos[0]).toMatchObject({ marca: 'Mobil 5W30', quantidade: '4' });
+    expect(d.clientes.find(c => c.id === e.clienteId)!.nome).toBe('Nome Corrigido');
+    if (outra) expect(d.os.find(o => o.id === outra.id)!.veiculoId).toBe('v5');
+    expect(d.eventos.at(-1)).toMatchObject({ tipo: 'os.editada' });
+    expect(d.eventos.at(-1)!.resumo).toMatch(/placa.*valor inicial/);
+  });
+
+  it('nada alterado não grava; mecânico não edita; vendedor não edita OS concluída nem corrige lubrificador', async () => {
+    const os = await novaOS();
+    await expect(editarOS(U('u_ven'), os.id, { obsInterna: '' })).rejects.toBeInstanceOf(ErroValidacao);
+    await expect(editarOS(U('u_m1'), os.id, { obsInterna: 'x' })).rejects.toBeInstanceOf(ErroPermissao);
+    const conc = getDB().os.find(o => o.status === 'concluido')!;
+    await expect(editarOS(U('u_ven'), conc.id, { obsInterna: 'x' })).rejects.toBeInstanceOf(ErroValidacao);
+    await expect(editarOS(U('u_ven'), os.id, { mecanicoId: 'u_m2' })).rejects.toBeInstanceOf(ErroValidacao);
+  });
+
+  it('liderança corrige lubrificador e horários da OS concluída, com conferência das datas', async () => {
+    const conc = getDB().os.find(o => o.status === 'concluido' && o.iniciadaEm && o.mecanicoId !== 'u_m2')!;
+    const ini = new Date(Date.parse(conc.iniciadaEm!) + 5 * 60e3).toISOString();
+    await expect(editarOS(U('u_lid'), conc.id, { iniciadaEm: conc.concluidaEm, concluidaEm: conc.iniciadaEm })).rejects.toThrow(/depois do início/);
+    await editarOS(U('u_lid'), conc.id, { mecanicoId: 'u_m2', iniciadaEm: ini });
+    const e = getDB().os.find(o => o.id === conc.id)!;
+    expect(e.mecanicoId).toBe('u_m2');
+    expect(e.iniciadaEm).toBe(ini);
+  });
 });

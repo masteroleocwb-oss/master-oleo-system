@@ -265,6 +265,34 @@ try {
   await tocar(dir, '[data-marcar-resolvidos]'); await esperar(2500);
   ok(JSON.stringify((await lerDoc(`relatorios/${sh.token}`)).relatorio.servicos) === antesRel, 'Atualizar relatórios já enviados roda sem mexer no resto do relatório');
 
+  console.log('6c. Editar OS: vendedor corrige a OS aberta; direção corrige lubrificador e horário da concluída');
+  const statusAntes = (await lerDoc('orders/legado2')).status;
+  await vend.goto(NOVO + '#/os/legado2'); await tocar(vend, '[data-editar-os]');
+  await preencher(vend, '#eo-nome', 'Outro Cliente Corrigido'); await preencher(vend, '#eo-telefone', '(41) 98888-2222');
+  await preencher(vend, '#eo-placa', 'XYZ9A89'); await preencher(vend, '#eo-oleoMotor-marca', 'Shell 5W30');
+  await tocar(vend, '[data-salvar-edicao]'); await ate(vend, 'atualizada');
+  const ed = await lerDoc('orders/legado2');
+  ok(ed.cliente === 'Outro Cliente Corrigido' && ed.tel === '(41) 98888-2222' && ed.placa === 'XYZ9A89' && ed.oleoMarca === 'Shell 5W30', 'Correção gravada na OS no formato do sistema atual (cliente, telefone, placa, marca do óleo)');
+  ok(ed.status === statusAntes && ed.numeroOrdem === 7005 && ed.vendedor === 'Faust' && ed.valorInicial === '250.00', 'O resto da OS não muda');
+  const l1 = await lerDoc('orders/legado1');
+  ok(l1.placa === 'ABC-1234' && l1.cliente === 'Cliente Legado', 'Outras OS não mudam');
+  ok((await listar('eventos')).some(e => e.tipo === 'os.editada' && /cliente.*placa/.test(e.resumo)), 'Edição fica no histórico');
+  await atual.reload(); await ate(atual, 'Outro Cliente Corrigido');
+  ok(true, 'Sistema atual mostra a correção');
+  await vend.goto(NOVO + `#/os/${doc.id}`); await ate(vend, 'OS #7006');
+  ok(!(await vend.$('[data-editar-os]')), 'Vendedor não edita OS concluída');
+  await dir.goto(NOVO + `#/os/${doc.id}`); await tocar(dir, '[data-editar-os]');
+  const joiId = (await listar('usuarios')).find(x => x.email === 'joi@teste.dev').id;
+  await preencher(dir, '#eo-mecanicoId', joiId);
+  const iniAntes = (await lerDoc(`orders/${doc.id}`)).plataforma.iniciadaEm;
+  const novoIni = new Date(Date.parse(iniAntes) - 10 * 60e3);
+  const campoIni = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(novoIni).replace(' ', 'T');
+  await preencher(dir, '#eo-inicio', campoIni);
+  await tocar(dir, '[data-salvar-edicao]'); await ate(dir, 'atualizada');
+  const conc = await lerDoc(`orders/${doc.id}`);
+  ok(conc.lubrificador === 'Joilson' && conc.plataforma.mecanicoId === joiId, 'Lubrificador corrigido (nome no sistema atual + conta)');
+  ok(conc.inicio.includes(campoIni.slice(11) + ':00') && conc.plataforma.iniciadaEm === novoIni.toISOString().slice(0, 16) + ':00.000Z' && conc.status === 'concluido', 'Horário de início corrigido (sistema atual e sistema novo)');
+
   console.log('7. Segurança');
   const anon = await nova();
   await anon.goto(NOVO + '#/login'); await anon.waitForSelector('#login-email');

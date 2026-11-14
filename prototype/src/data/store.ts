@@ -74,8 +74,9 @@ const esperar = (ms: number) => new Promise(r => setTimeout(r, ms));
  * Aplica uma alteração de forma atômica (tudo ou nada), como uma transação.
  * Simula latência e falhas de rede para a interface mostrar "Salvando / Salvo / Falha".
  */
-export async function transacao<T>(mutar: (rascunho: DB) => T, opts: { latencia?: boolean } = {}): Promise<T> {
-  if (MODO_REAL) return nuvem.transacao(mutar);
+/** `cadastroDe`: OS cujo cliente/carro esta ação corrige (na base real, gravados só nelas). */
+export async function transacao<T>(mutar: (rascunho: DB) => T, opts: { latencia?: boolean; cadastroDe?: string[] } = {}): Promise<T> {
+  if (MODO_REAL) return nuvem.transacao(mutar, opts.cadastroDe);
   if (opts.latencia !== false && controle.latenciaMs) await esperar(controle.latenciaMs);
   if (controle.offline || controle.falharProximo) {
     if (controle.falharProximo) setControle({ falharProximo: false });
