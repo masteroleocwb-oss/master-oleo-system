@@ -63,6 +63,24 @@ export const ChecklistBadge = ({ c }: { c?: Checklist }) => c
   ? <Badge tom={TOM_CHECKLIST[c.status]}>Checklist: {STATUS_CHECKLIST_LABEL[c.status]}</Badge>
   : <Badge tom="muted">Sem checklist (registro anterior)</Badge>;
 
+/** Litros de óleo que vão no cárter do motor, como o vendedor informou na abertura ("3.5" vira "3,5 L"). */
+export const litrosOleoMotor = (os: OrdemServico) => {
+  const q = os.servicos.find(s => s.key === 'oleoMotor' && s.origem === 'balcao')?.quantidade?.trim();
+  return q ? `${q.replace('.', ',').replace(/\s*l$/i, '')} L` : null;
+};
+
+/** Para o mecânico: quanto óleo vai no motor, em destaque. */
+export function OleoCarter({ os, grande = false }: { os: OrdemServico; grande?: boolean }) {
+  const s = os.servicos.find(x => x.key === 'oleoMotor' && x.origem === 'balcao');
+  if (!s || os.retornoDeOsId) return null;
+  const l = litrosOleoMotor(os);
+  return (
+    <span className={`badge ${l ? 'info' : 'atencao'}`} data-oleo-carter style={{ whiteSpace: 'normal', borderRadius: 12, ...(grande ? { fontSize: 15, padding: '6px 12px', fontWeight: 800 } : {}) }}>
+      🛢 {l ? <>Cárter do motor: {l}{s.marca ? ` · ${s.marca}` : ''}</> : 'Litros do óleo não informados: confirme com o vendedor'}
+    </span>
+  );
+}
+
 export const nomeServicos = (os: OrdemServico, soExecutados = false) =>
   os.servicos.filter(s => !soExecutados || s.executado).map(s => SERVICOS[s.key].nome).join(' · ');
 
@@ -104,6 +122,7 @@ export function OSCard({ db, os, mostrarMecanico = true, previsto, euId }: {
         {os.retornoDeOsId && <Badge tom="critico" icone="↺">Retorno</Badge>}
         {os.naoOferecer && <Badge tom="muted">Frota · não oferecer</Badge>}
         <CarroDeLojaBadge os={os} />
+        {os.status !== 'concluido' && <OleoCarter os={os} />}
         {semTeste(os).length > 0 && <Badge tom="atencao">Não fazer teste{semTeste(os).length > 1 ? '' : ` (${semTeste(os)[0].toLowerCase()})`}</Badge>}
         {os.status !== 'aguardando' && !os.retornoDeOsId && !(os.carroDeLoja && (!c || c.status === 'nao_iniciado')) && <ChecklistBadge c={c} />}
         {mostrarMecanico && mec && os.status === 'concluido' && <span className="small muted">{primeiroNome(mec.nome)}</span>}

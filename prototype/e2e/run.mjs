@@ -115,6 +115,12 @@ await page.reload();
 const ctx = { placa: 'QAT1E23', osId: null, numero: null, token: null };
 
 console.log('Fluxos obrigatórios');
+// Abertura: litros no cárter do motor são obrigatórios quando há troca de óleo.
+async function salvarOS() {
+  if (await page.$('[data-campo="oleoMotor-quantidade"]') && !(await page.$eval('[data-campo="oleoMotor-quantidade"]', e => e.value))) await preencher('[data-campo="oleoMotor-quantidade"]', '4');
+  await clicar('Salvar e colocar na fila');
+}
+
 await fluxo('Fluxo 1 — OS completa (abrir → checklist → evidência → finalizar → histórico → relatório)', async () => {
   await entrar('u_ven');
   await ir('/os/nova');
@@ -122,14 +128,14 @@ await fluxo('Fluxo 1 — OS completa (abrir → checklist → evidência → fin
   await preencher('#placa', ctx.placa); await preencher('#ano', '2021'); await preencher('#marca', 'Fiat');
   await page.waitForSelector('#modelo option[value="Argo"]'); await preencher('#modelo', 'Argo');
   await preencher('#motor', '1.3'); await preencher('#cli-nome', 'Cliente Teste Automatizado'); await preencher('#valor', '350');
-  await clicar('Salvar e colocar na fila');
+  await salvarOS();
   await aguardarTexto('Informe o telefone com DDD');
   for (const t of ['Informe como o cliente conheceu a Master Óleo.', 'Informe a cidade do cliente.', 'Informe o bairro do cliente.']) await aguardarTexto(t);
   await preencher('#cli-como', 'Instagram'); await preencher('#cli-cidade', 'Curitiba'); await preencher('#cli-bairro', 'Água Verde');
   await preencher('#pedido-olist', '104523'); await preencher('#km-mes', '1500');
   await preencher('#cli-tel', '41900000001');
   if ((await page.$eval('#cli-tel', e => e.value)) !== '(41) 90000-0001') throw new Error('Máscara do telefone não aplicada');
-  await clicar('Salvar e colocar na fila');
+  await salvarOS();
   await aguardarTexto('criada e colocada na fila');
   const d = await db();
   const os = d.os.find(o => d.veiculos.find(v => v.id === o.veiculoId)?.placa === ctx.placa);
@@ -284,7 +290,7 @@ await fluxo('Fluxo 4 — Segunda OS do mesmo veículo; histórico mostra as duas
   await aguardarTexto('Trocar coxim do câmbio');
   await preencher('#valor', '280');
   await preencher('#pedido-olist', '104600'); await preencher('#km-mes', '1500');
-  await clicar('Salvar e colocar na fila');
+  await salvarOS();
   await aguardarTexto('criada e colocada na fila');
   const d1 = await db();
   const os2 = d1.os.filter(o => d1.veiculos.find(v => v.id === o.veiculoId)?.placa === ctx.placa).find(o => o.status === 'aguardando');
@@ -433,7 +439,7 @@ await fluxo('Erro de salvamento: mostra falha e permite tentar de novo', async (
 await fluxo('Formulário incompleto e dados ausentes', async () => {
   await entrar('u_ven');
   await ir('/os/nova');
-  await clicar('Salvar e colocar na fila');
+  await salvarOS();
   await aguardarTexto('Falta preencher');
   await aguardarTexto('Escolha um veículo ou cadastre um novo.');
   await aguardarTexto('Informe o número do pedido do Olist.');
@@ -450,13 +456,13 @@ await fluxo('Cliente antigo sem cadastro completo: Nova OS pede como conheceu, c
   await page.waitForSelector('[data-completar-cadastro]');
   await preencher('#valor', '199');
   await preencher('#pedido-olist', '104601'); await preencher('#km-mes', '1500');
-  await clicar('Salvar e colocar na fila');
+  await salvarOS();
   await aguardarTexto('Informe como o cliente conheceu a Master Óleo.');
   await foto('nova-os-completar-cadastro');
   await preencher('#cli-como', 'Outro');
   await page.waitForSelector('#cli-como-outro');
   await preencher('#cli-como-outro', 'Rádio (teste)'); await preencher('#cli-cidade', 'Colombo'); await preencher('#cli-bairro', 'Centro');
-  await clicar('Salvar e colocar na fila');
+  await salvarOS();
   await aguardarTexto('criada e colocada na fila');
   const c = (await db()).clientes.find(x => x.id === 'c_legado');
   if (c.comoConheceuDetalhe !== 'Rádio (teste)' || c.cidade !== 'Colombo') throw new Error('Cadastro do cliente antigo não completado');

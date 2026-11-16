@@ -125,6 +125,12 @@ export const validarNovaOS = (i: NovaOSInput, clienteAtual?: Partial<Cliente>): 
   else if (i.kmPorMes! > 20000) e.push('Km por mês fora do normal: confira o número.');
   if (retorno && !i.problemaRelatado?.trim()) e.push('Descreva o problema que o cliente relatou.');
   if (!retorno && !i.servicos.length) e.push('Selecione pelo menos um serviço.');
+  const oleo = i.servicos.find(s => s.key === 'oleoMotor');
+  if (oleo) {
+    const l = lerReais(oleo.quantidade);
+    if (!oleo.quantidade?.trim()) e.push('Informe quantos litros de óleo vão no cárter do motor.');
+    else if (l == null || l < 1 || l > 15) e.push('Litros no cárter do motor fora do normal: confira o número.');
+  }
   if (!retorno && !(i.valorInicial > 0)) e.push('Informe o valor da venda inicial.');
   return e;
 };

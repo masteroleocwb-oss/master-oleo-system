@@ -98,12 +98,14 @@ try {
   await preencher(vend, '#cli-como', 'Google'); await preencher(vend, '#cli-cidade', 'Curitiba'); await preencher(vend, '#cli-bairro', 'Batel');
   await preencher(vend, '#valor', '300'); await preencher(vend, '#pedido-olist', '555123');
   await foto(vend, '01-nova-os');
+  await preencher(vend, '[data-campo="oleoMotor-quantidade"]', '4');
   await clicar(vend, 'Salvar e colocar na fila');
   await ate(vend, 'OS #7006');
   const doc = (await listar('orders')).find(o => o.numeroOrdem === 7006);
   ok(!!doc, 'OS gravada em `orders` com o número seguinte (7006)');
   ok(doc.status === 'aguardando' && doc.vendedor === 'Faust' && doc.placa === 'ABC1234' && doc.oleoMotor === true && doc.valorInicial === '300.00', 'Formato do sistema atual (status, vendedor, placa, serviços, valor)');
   ok(doc.kmPorMes === 2000 && doc.pedidoOlist === '555123' && doc.cidade === 'Curitiba', 'Km por mês, pedido Olist e cadastro ficam na OS');
+  ok(doc.oleoQuantidade === '4', 'Litros no cárter do motor gravados no campo do sistema atual (oleoQuantidade)');
   ok((await lerDoc('config/contadores')).numeroOrdem === 7006, 'Contador do sistema atual avançou');
 
   console.log('2. O sistema atual enxerga a OS aberta no novo');

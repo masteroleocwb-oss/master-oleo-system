@@ -308,10 +308,11 @@ export function NovaOS({ u }: { u: Usuario }) {
         {Object.keys(f.servicos).some(k => SERVICOS[k as ServicoKey].campos.length) && <div className="divider" />}
         {(Object.keys(f.servicos) as ServicoKey[]).filter(k => SERVICOS[k].campos.length && servicoAplicavel(k, cambioAtual)).map(k => (
           <div key={k} style={{ marginBottom: 10 }}>
-            <div className="small strong" style={{ marginBottom: 4 }}>{SERVICOS[k].nome}</div>
+            <div className="small strong" style={{ marginBottom: 4 }}>{SERVICOS[k].nome}{k === 'oleoMotor' && <span className="muted" style={{ fontWeight: 400 }}> · marca e litros que vão no cárter do motor (aparece para o mecânico)</span>}</div>
             <div className={SERVICOS[k].campos.length > 2 ? 'row' : 'row nowrap'}>
               {SERVICOS[k].campos.map(c => (
-                <input key={c} aria-label={`${SERVICOS[k].nome}: ${c}`} className="input" placeholder={k === 'cambioAutomatico' ? { marca: 'Marca do fluido', quantidade: 'Total de litros', carter: 'Litros dentro do câmbio', codigo: 'Código do filtro (se tiver)' }[c] : { marca: 'Marca/produto', quantidade: 'Litros', carter: 'Litros', codigo: 'Código' }[c]}
+                <input key={c} aria-label={`${SERVICOS[k].nome}: ${c}`} className="input" placeholder={k === 'cambioAutomatico' ? { marca: 'Marca do fluido', quantidade: 'Total de litros', carter: 'Litros dentro do câmbio', codigo: 'Código do filtro (se tiver)' }[c] : k === 'oleoMotor' && c === 'quantidade' ? 'Litros no cárter *' : { marca: 'Marca/produto', quantidade: 'Litros', carter: 'Litros', codigo: 'Código' }[c]}
+                  inputMode={c === 'quantidade' || c === 'carter' ? 'decimal' : undefined} data-campo={`${k}-${c}`}
                   value={f.servicos[k]?.[c] || ''} onChange={e => set({ servicos: { ...f.servicos, [k]: { ...f.servicos[k], [c]: e.target.value } } })} />
               ))}
             </div>

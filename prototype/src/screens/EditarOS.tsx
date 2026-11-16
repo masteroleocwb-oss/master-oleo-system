@@ -91,7 +91,7 @@ export function EditarOSSheet({ u, os, onClose }: { u: Usuario; os: OrdemServico
           <div className="small strong" style={{ marginBottom: 4 }}>{SERVICOS[s.key].nome}</div>
           <div className="grid k2">
             {SERVICOS[s.key].campos.map(c => (
-              <Field key={c} rotulo={ROTULO_CAMPO[c]} htmlFor={`eo-${s.key}-${c}`}>
+              <Field key={c} rotulo={s.key === 'oleoMotor' && c === 'quantidade' ? 'Litros no cárter' : ROTULO_CAMPO[c]} htmlFor={`eo-${s.key}-${c}`}>
                 <input id={`eo-${s.key}-${c}`} className="input" value={serv[s.key]?.[c] ?? ''} onChange={e => setServ({ ...serv, [s.key]: { ...serv[s.key], [c]: e.target.value } })} />
               </Field>
             ))}
