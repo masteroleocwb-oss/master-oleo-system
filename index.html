@@ -4007,6 +4007,13 @@
                     alert('Selecione pelo menos um serviço');
                     return false;
                 }
+
+                // Litros no cárter do motor: aparecem para o mecânico (aqui e no sistema novo).
+                if (formData.oleoMotor) {
+                    const litros = parseFloat(String(formData.oleoQuantidade || '').replace(',', '.'));
+                    if (!litros) { alert('Informe quantos litros de óleo vão no cárter do motor'); return false; }
+                    if (litros < 1 || litros > 15) { alert('Litros no cárter do motor fora do normal: confira o número'); return false; }
+                }
                 
                 return true;
             };
@@ -4474,7 +4481,7 @@
                                                 <input type="text" name="oleoMarca" value={formData.oleoMarca} onChange={handleChange} className="form-input" placeholder="Ex: Mobil" />
                                             </div>
                                             <div className="form-group">
-                                                <label className="form-label">Quantidade (L)</label>
+                                                <label className="form-label">Litros no cárter do motor *</label>
                                                 <input type="number" step="0.01" name="oleoQuantidade" value={formData.oleoQuantidade} onChange={handleChange} className="form-input" placeholder="Ex: 4.5" />
                                             </div>
                                         </div>
