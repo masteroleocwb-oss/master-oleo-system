@@ -125,7 +125,7 @@ export const validarNovaOS = (i: NovaOSInput, clienteAtual?: Partial<Cliente>): 
   else if (i.kmPorMes! > 20000) e.push('Km por mês fora do normal: confira o número.');
   if (retorno && !i.problemaRelatado?.trim()) e.push('Descreva o problema que o cliente relatou.');
   if (!retorno && !i.servicos.length) e.push('Selecione pelo menos um serviço.');
-  const oleo = i.servicos.find(s => s.key === 'oleoMotor');
+  const oleo = retorno ? undefined : i.servicos.find(s => s.key === 'oleoMotor');
   if (oleo) {
     const l = lerReais(oleo.quantidade);
     if (!oleo.quantidade?.trim()) e.push('Informe quantos litros de óleo vão no cárter do motor.');
@@ -192,7 +192,7 @@ export async function abrirOS(u: Usuario, i: NovaOSInput) {
     d.contadorOS = numero;
     const os: OrdemServico = {
       id: novoId('os'), numero, status: 'aguardando', veiculoId: veiculo.id, clienteId: veiculo.clienteId, vendedorId: i.vendedorId, pedidoOlist: preenchido(i.pedidoOlist),
-      abertaEm: i.abertaEm || agoraISO(), servicos: i.servicos.map(s => ({ ...s, origem: 'balcao', executado: false })), valorInicial: i.valorInicial,
+      abertaEm: i.abertaEm || agoraISO(), servicos: (i.retornoDeOsId ? [] : i.servicos).map(s => ({ ...s, origem: 'balcao' as const, executado: false })), valorInicial: i.valorInicial,
       naoFazerTesteFreio: i.naoFazerTesteFreio, naoFazerTesteCambio: i.naoFazerTesteCambio, carroDeLoja: i.carroDeLoja || undefined, criadaPor: u.id,
       ...(origem ? { retornoDeOsId: origem.id, retorno: { problemaRelatado: i.problemaRelatado!.trim() } } : {}),
     };

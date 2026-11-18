@@ -308,6 +308,15 @@ describe('abertura: telefone obrigatório', () => {
     const os = await abrirOS(U('u_ven'), { ...base, problemaRelatado: 'Luz do óleo acendeu' });
     expect(os.retorno?.problemaRelatado).toBe('Luz do óleo acendeu');
   });
+
+  it('retorno não pede litros do óleo nem pedido do Olist, e não leva serviços de balcão', async () => {
+    const orig = getDB().os.find(o => o.status === 'concluido' && o.checklistId)!;
+    getDB().clientes.find(c => c.id === orig.clienteId)!.telefone ||= '(41) 90000-0000';
+    const os = await abrirOS(U('u_ven'), { veiculoId: orig.veiculoId, vendedorId: 'u_ven', kmPorMes: 1200, valorInicial: 0, retornoDeOsId: orig.id, problemaRelatado: 'Vazamento',
+      servicos: [{ key: 'oleoMotor', origem: 'balcao', executado: false }] });
+    expect(os.servicos).toEqual([]);
+    expect(os.pedidoOlist).toBeUndefined();
+  });
 });
 
 describe('histórico e gestão', () => {

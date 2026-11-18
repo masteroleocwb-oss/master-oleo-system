@@ -118,7 +118,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
               <dl className="small" style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', gap: '6px 12px' }}>
                 <dt className="muted">Cliente</dt><dd style={{ margin: 0 }}>{cli?.nome}{cli?.tipo === 'frota' && ' (frota)'}{pode(u, 'cliente.ver_contato') && cli?.telefone ? ` · ${cli.telefone}` : ''}</dd>
                 {pode(u, 'cliente.ver_contato') && (cli?.cidade || cli?.comoConheceu) && <><dt className="muted">Endereço</dt><dd style={{ margin: 0 }}>{[cli.bairro, cli.cidade].filter(Boolean).join(', ') || '—'}{cli.comoConheceu ? ` · conheceu por: ${cli.comoConheceu === 'Outro' ? cli.comoConheceuDetalhe : cli.comoConheceu}` : ''}</dd></>}
-                <dt className="muted">Pedido Olist</dt><dd style={{ margin: 0 }}><PedidoOlist u={u} os={os} /></dd>
+                {(!os.retornoDeOsId || os.pedidoOlist) && <><dt className="muted">Pedido Olist</dt><dd style={{ margin: 0 }}><PedidoOlist u={u} os={os} /></dd></>}
                 <dt className="muted">Vendedor</dt><dd style={{ margin: 0 }}>{nomeDe(db, os.vendedorId)}</dd>
                 <dt className="muted">Mecânico</dt><dd style={{ margin: 0 }}>{os.mecanicoId ? nomeDe(db, os.mecanicoId) : 'Aguardando rodízio'}</dd>
                 <dt className="muted">Aberta</dt><dd style={{ margin: 0 }}>{fmtDataHora(os.abertaEm)}</dd>

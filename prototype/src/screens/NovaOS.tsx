@@ -84,17 +84,18 @@ export function NovaOS({ u }: { u: Usuario }) {
     novoVeiculo: f.novo ? { placa: f.placa, marca: marcaFinal, modelo: modeloFinal, ano: Number(f.ano) || 0, motor: f.motor.trim(), cambio: f.cambio, combustivel: 'Flex' } : undefined,
     novoCliente: f.novo ? { nome: f.clienteNome, telefone: f.clienteTel, ...dadosDigitados } as NovaOSInput['novoCliente'] : undefined,
     completarCliente: veiculo ? { ...(clienteSemTel ? { telefone: f.telExistente } : {}), ...dadosDigitados } : undefined,
-    pedidoOlist: f.pedidoOlist,
+    // Retorno (garantia): sem serviços, litros nem pedido do Olist; o mecânico registra o que fez.
+    pedidoOlist: retorno ? undefined : f.pedidoOlist,
     kmPorMes: f.carroDeLoja ? undefined : kmPorMes,
     carroDeLoja: f.carroDeLoja || undefined,
     retornoDeOsId: retorno ? f.retornoDeOsId : undefined,
     problemaRelatado: retorno ? f.problema : undefined,
     vendedorId: f.vendedorId,
-    servicos: Object.entries(f.servicos).filter(([key]) => servicoAplicavel(key as ServicoKey, cambioAtual))
+    servicos: retorno ? [] : Object.entries(f.servicos).filter(([key]) => servicoAplicavel(key as ServicoKey, cambioAtual))
       .map(([key, d]) => ({ key: key as ServicoKey, ...d, origem: 'balcao', executado: false }) as ServicoOS),
     valorInicial: retorno ? 0 : lerReais(f.valor),
-    naoFazerTesteFreio: (f.naoTesteFreio && temFreio) || undefined,
-    naoFazerTesteCambio: (f.naoTesteCambio && temCambio) || undefined,
+    naoFazerTesteFreio: (!retorno && f.naoTesteFreio && temFreio) || undefined,
+    naoFazerTesteCambio: (!retorno && f.naoTesteCambio && temCambio) || undefined,
   };
   const erros = [
     ...validarNovaOS(entrada, cliente),
@@ -333,10 +334,12 @@ export function NovaOS({ u }: { u: Usuario }) {
               <input id="valor" className="input" inputMode="decimal" value={f.valor} onChange={e => set({ valor: e.target.value.replace(/[^\d,.]/g, '') })} placeholder="0,00" />
             </Field>
           )}
-          <Field rotulo="Nº do pedido no Olist" obrigatorio={!retorno} htmlFor="pedido-olist" dica={retorno ? 'Opcional no retorno (garantia).' : 'O número do pedido que o vendedor lançou no Olist.'}
-            erro={tentou && !retorno && !f.pedidoOlist?.trim() ? 'Informe o número do pedido' : null}>
-            <input id="pedido-olist" className="input" inputMode="numeric" value={f.pedidoOlist || ''} onChange={e => set({ pedidoOlist: e.target.value.replace(/[^\w.\-/]/g, '').slice(0, 30) })} placeholder="Ex.: 104523" />
-          </Field>
+          {!retorno && (
+            <Field rotulo="Nº do pedido no Olist" obrigatorio htmlFor="pedido-olist" dica="O número do pedido que o vendedor lançou no Olist."
+              erro={tentou && !f.pedidoOlist?.trim() ? 'Informe o número do pedido' : null}>
+              <input id="pedido-olist" className="input" inputMode="numeric" value={f.pedidoOlist || ''} onChange={e => set({ pedidoOlist: e.target.value.replace(/[^\w.\-/]/g, '').slice(0, 30) })} placeholder="Ex.: 104523" />
+            </Field>
+          )}
           <Field rotulo="Vendedor" obrigatorio htmlFor="vendedor">
             <select id="vendedor" className="input" value={f.vendedorId} onChange={e => set({ vendedorId: e.target.value })}>
               <option value="">Selecione</option>
