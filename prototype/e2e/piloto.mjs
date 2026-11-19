@@ -311,6 +311,10 @@ try {
   ok(!(await lid.$('[data-zerar-upsell]')) && !(await lid.$('[data-editar-upsell]')), 'Liderança não edita nem zera upsell');
   await dir.goto(NOVO + '#/lideranca'); await clicar(dir, 'Volumetria'); await esperar(300); await clicar(dir, 'Hoje', '[data-volumetria]'); await esperar(300);
   ok(/R\$\s50,00/.test(await dir.$eval('[data-volumetria]', e => e.innerText)), 'Direção vê o upsell real (R$ 50,00)');
+  ok(/Com fator \(\+100%\): R\$\s100,00/.test(await dir.$eval('[data-volumetria]', e => e.innerText)), 'Direção vê também o valor com fator (R$ 100,00)');
+  await preencher(dir, '[data-vol-fator]', 'fator'); await esperar(300);
+  ok(/R\$\s100,00/.test(await dir.$eval('[data-vol-tabela]', e => e.innerText)), 'Direção troca para "com fator" e vê o mesmo número da liderança');
+  await preencher(dir, '[data-vol-fator]', 'real'); await esperar(300);
   await dir.$eval('[data-vol-tabela] tbody tr', e => e.click()); await tocar(dir, '[data-zerar-upsell]'); await tocar(dir, '[data-confirmar-zerar]'); await ate(dir, 'zerado');
   up = await lerDoc(`orders/${doc.id}`);
   ok(up.valorUpsell === 0 && up.fezUpsell === false && up.valorTotal === vendaAntes, 'Zerar grava fezUpsell=false e valorUpsell=0, como o sistema atual');

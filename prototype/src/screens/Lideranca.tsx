@@ -126,7 +126,7 @@ function Visao({ u }: { u: Usuario }) {
         <Kpi rotulo="Itens identificados → realizados" valor={`${eq.identificados} → ${eq.realizados}`} dica={`Aceite ${fmtPct(eq.identificados ? (eq.realizados / eq.identificados) * 100 : null)}`} explicacao={DEFINICOES.conversao} />
         <Kpi rotulo="Retornos no mês" valor={eq.retornos} explicacao={DEFINICOES.retornos} alerta={eq.retornos > 0} />
         <Kpi rotulo="Carros atendidos (mês)" valor={eq.carros} />
-        {pode(u, 'os.ver_valores') && <Kpi rotulo="Faturamento (mês)" valor={fmtBRL(eq.faturamento)} dica={`Itens do checklist: ${fmtBRL(eq.upsell * fatorUpsellPara(u, db))}`} />}
+        {pode(u, 'os.ver_valores') && <Kpi rotulo="Faturamento (mês)" valor={fmtBRL(eq.faturamento)} dica={`Itens do checklist: ${fmtBRL(eq.upsell * fatorUpsellPara(u, db))}${pode(u, 'upsell.ver_real') && db.fatorUpsell ? ` · com fator ${fmtBRL(eq.upsell * (1 + db.fatorUpsell / 100))}` : ''}`} />}
         <Kpi rotulo="Hoje: aguardando / em andamento" valor={`${p.aguardando.length} / ${p.andamento.length}`} />
         <Kpi rotulo="Hoje: concluídas" valor={p.concluidasHoje.length} />
       </div>
@@ -189,8 +189,13 @@ type PeriodoVol = 'hoje' | '7d' | 'mes' | 'mesAnterior' | 'livre';
 function Volumetria({ u }: { u: Usuario }) {
   const db = useDB();
   // Direção vê o upsell real; a liderança vê com o fator de ajuste do sistema atual, sem aviso (como no sistema atual).
-  const f = fatorUpsellPara(u, db);
   const real = pode(u, 'upsell.ver_real');
+  // A direção escolhe ver o real ou o mesmo número que a liderança vê (com o fator).
+  const fatorLid = 1 + (db.fatorUpsell || 0) / 100;
+  const temFator = real && !!db.fatorUpsell;
+  const [comFator, setComFator] = useState(false);
+  const f = real ? (comFator && temFator ? fatorLid : 1) : fatorUpsellPara(u, db);
+  const pctFator = `${db.fatorUpsell > 0 ? '+' : ''}${String(db.fatorUpsell).replace('.', ',')}%`;
   const ajusta = pode(u, 'upsell.ajustar');
   const [ajuste, setAjuste] = useState<{ osId: string; zerar: boolean } | null>(null);
   const hoje = hojeKey();
@@ -215,6 +220,14 @@ function Volumetria({ u }: { u: Usuario }) {
             <Field rotulo="De" htmlFor="vol-de"><input id="vol-de" type="date" className="input" value={livre.de} max={livre.ate} onChange={e => e.target.value && setLivre({ ...livre, de: e.target.value })} /></Field>
             <Field rotulo="Até" htmlFor="vol-ate"><input id="vol-ate" type="date" className="input" value={livre.ate} min={livre.de} max={hoje} onChange={e => e.target.value && setLivre({ ...livre, ate: e.target.value })} /></Field>
           </>}
+          {temFator && (
+            <Field rotulo="Upsell" htmlFor="vol-fator">
+              <select id="vol-fator" className="input" value={comFator ? 'fator' : 'real'} onChange={e => setComFator(e.target.value === 'fator')} data-vol-fator>
+                <option value="real">Real</option>
+                <option value="fator">Com fator ({pctFator}), como a liderança vê</option>
+              </select>
+            </Field>
+          )}
           <Field rotulo="Lubrificador" htmlFor="vol-mec">
             <select id="vol-mec" className="input" value={mec} onChange={e => setMec(e.target.value)}>
               <option value="">Todos</option>
@@ -228,7 +241,7 @@ function Volumetria({ u }: { u: Usuario }) {
         <Kpi rotulo="OS concluídas" valor={t.ordens} />
         <Kpi rotulo="Faturamento" valor={fmtBRL(t.faturamento)} dica={`Ticket médio ${t.ticketMedio == null ? '—' : fmtBRL(t.ticketMedio)}`} explicacao={{ formula: 'Soma do valor total das OS concluídas no período (venda inicial + adicionais). Ticket médio = faturamento ÷ OS.' }} />
         <Kpi rotulo="Taxa de upsell" valor={t.taxaUpsell == null ? '—' : `${t.taxaUpsell.toFixed(1).replace('.', ',')}%`} dica={`${t.comUpsell} OS com venda adicional`} explicacao={{ formula: 'OS com pelo menos um item vendido além do balcão (checklist ou bancada) ÷ OS concluídas.' }} />
-        <Kpi rotulo="Total em upsell" valor={fmtBRL(t.valorUpsell * f)} dica={`Ticket médio do upsell ${t.ticketUpsell == null ? '—' : fmtBRL(t.ticketUpsell * f)}`} explicacao={{ formula: 'Soma do que foi vendido além do balcão. Ticket médio do upsell = total ÷ OS com upsell.' }} />
+        <Kpi rotulo="Total em upsell" valor={fmtBRL(t.valorUpsell * f)} dica={<>Ticket médio do upsell {t.ticketUpsell == null ? '—' : fmtBRL(t.ticketUpsell * f)}{temFator && <><br />{comFator ? `Real: ${fmtBRL(t.valorUpsell)}` : `Com fator (${pctFator}): ${fmtBRL(t.valorUpsell * fatorLid)}`}</>}</>} explicacao={{ formula: 'Soma do que foi vendido além do balcão. Ticket médio do upsell = total ÷ OS com upsell.' }} />
       </div>
       <Card titulo="Por lubrificador">
         {v.linhas.length === 0 ? <Empty titulo="Nenhuma OS concluída no período." /> : (
@@ -253,7 +266,7 @@ function Volumetria({ u }: { u: Usuario }) {
           </div>
         )}
         <p className="tiny muted" style={{ marginTop: 8 }}>Toque num lubrificador para ver as OS com upsell. Só a liderança e a direção veem esta aba.
-          {real && db.fatorUpsell ? <> <b>Só você vê:</b> aqui o upsell é o real; a liderança vê o upsell com o fator de {String(db.fatorUpsell).replace('.', ',')}% da configuração do sistema atual, sem aviso.</> : null}</p>
+          {temFator ? <> <b>Só você vê:</b> {comFator ? `upsell com o fator de ${pctFator}, o mesmo número que a liderança vê.` : `upsell real; a liderança vê com o fator de ${pctFator} da configuração do sistema atual, sem aviso.`}</> : null}</p>
       </Card>
       {aberto != null && (() => {
         const l = v.linhas.find(x => x.mecanicoId === aberto);
@@ -271,7 +284,7 @@ function Volumetria({ u }: { u: Usuario }) {
                       {vei && <Placa placa={vei.placa} />}
                       <div className="grow" style={{ minWidth: 0 }}><div className="ttl">OS #{o.numero} · {cli?.nome || '—'}</div><div className="meta">{fmtData(o.concluidaEm)} · {o.servicos.filter(s => s.origem !== 'balcao' && s.executado).map(s => SERVICOS[s.key].nome).join(', ') || 'adicional'}</div></div>
                       {/* Valor por OS só para a direção: para a liderança a soma já vem com o fator. */}
-                      {real && <b>{fmtBRL(up)}</b>}
+                      {real && <b>{fmtBRL(up * f)}</b>}
                     </a>
                     {ajusta && (
                       <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
