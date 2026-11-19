@@ -200,3 +200,45 @@ export function serieMecanico(d: DB, mecanicoId: string) {
   const atual = indicadoresMecanico(d, mecanicoId, mesAtual);
   return [...fechados, { mes: mesAtual, carros: atual.carros, checklistPct: atual.checklistPct, itens: atual.realizados, faturamento: atual.faturamento, retornos: atual.retornos, fechado: false }];
 }
+
+// ───────────────────────── Volumetria (liderança) ─────────────────────────
+
+export interface LinhaVolumetria {
+  mecanicoId: string;
+  ordens: number;
+  faturamento: number;
+  /** OS com pelo menos um item vendido além do balcão (checklist ou bancada). */
+  comUpsell: number;
+  valorUpsell: number;
+  osComUpsell: OrdemServico[];
+}
+
+/**
+ * Produção e vendas por lubrificador, pelas OS concluídas no período (data da conclusão, Brasília).
+ * Mesma conta da Volumetria do sistema atual (valores gravados na OS), com valores reais (sem fator de ajuste) e sem comissão.
+ */
+export function volumetria(d: DB, de: string, ate: string, mecanicoId?: string) {
+  const os = d.os.filter(o => o.status === 'concluido' && o.concluidaEm && (!mecanicoId || o.mecanicoId === mecanicoId)
+    && diaKey(o.concluidaEm) >= de && diaKey(o.concluidaEm) <= ate);
+  const porMec = new Map<string, LinhaVolumetria>();
+  for (const o of os) {
+    const id = o.mecanicoId || '';
+    const l = porMec.get(id) ?? { mecanicoId: id, ordens: 0, faturamento: 0, comUpsell: 0, valorUpsell: 0, osComUpsell: [] };
+    const r = o.totaisRegistrados;
+    const v = r ? { total: r.total, upsell: r.upsell, fez: r.fezUpsell } : (({ total, upsell }) => ({ total, upsell, fez: upsell > 0 }))(valoresOS(o));
+    l.ordens++;
+    l.faturamento += v.total;
+    if (v.fez) { l.comUpsell++; l.valorUpsell += v.upsell; l.osComUpsell.push(o); }
+    porMec.set(id, l);
+  }
+  const linhas = [...porMec.values()].sort((a, b) => b.valorUpsell - a.valorUpsell || b.ordens - a.ordens);
+  linhas.forEach(l => l.osComUpsell.sort((a, b) => b.concluidaEm!.localeCompare(a.concluidaEm!)));
+  const t = {
+    ordens: soma(linhas.map(l => l.ordens)), faturamento: soma(linhas.map(l => l.faturamento)),
+    comUpsell: soma(linhas.map(l => l.comUpsell)), valorUpsell: soma(linhas.map(l => l.valorUpsell)),
+  };
+  return {
+    linhas,
+    totais: { ...t, ticketMedio: t.ordens ? t.faturamento / t.ordens : null, taxaUpsell: t.ordens ? (t.comUpsell / t.ordens) * 100 : null, ticketUpsell: t.comUpsell ? t.valorUpsell / t.comUpsell : null },
+  };
+}

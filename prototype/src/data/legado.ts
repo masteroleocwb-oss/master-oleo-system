@@ -248,6 +248,8 @@ export function osDeLegado(id: string, o: DocLegado, nomes: MapaNomes): OrdemSer
     iniciadaEm: exato(p.iniciadaEm, o.inicio),
     concluidaEm,
     km: num(o.km),
+    totaisRegistrados: statusBase === 'concluido' && o.valorTotal != null && o.valorTotal !== ''
+      ? { total: valor(o.valorTotal), upsell: o.fezUpsell ? valor(o.valorUpsell) : 0, fezUpsell: o.fezUpsell === true } : undefined,
     obsInterna: txt(o.obsCarro) || undefined,
     obsCliente: p.obsCliente,
     pausas: p.pausas,

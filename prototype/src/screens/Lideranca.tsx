@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { ir } from '../app/nav';
-import { acaoOcorrencia, auditarChecklist, concluirPlanoAcao, declararDiaExcecao, decidirExcecao, nomeDe, registrarOcorrencia, registrarPlanoAcao } from '../data/api';
+import { acaoOcorrencia, auditarChecklist, concluirPlanoAcao, declararDiaExcecao, decidirExcecao, nomeDe, registrarOcorrencia, registrarPlanoAcao, valoresOS } from '../data/api';
 import { MODO_REAL } from '../data/modo';
 import { carregarEventosRodizio } from '../data/nuvem';
 import { indicadoresAssistencia, MIN_LIVRE_PARA_AJUDA } from '../domain/assistencia';
-import { DEFINICOES, indicadoresEquipe, indicadoresLideranca, indicadoresMecanico, painelHoje, serieMecanico } from '../data/metricas';
+import { DEFINICOES, volumetria, indicadoresEquipe, indicadoresLideranca, indicadoresMecanico, painelHoje, serieMecanico } from '../data/metricas';
+import { SERVICOS } from '../domain/catalogo';
 import { fotosAtivasDoItem, pendenciasParaConcluir } from '../domain/checklist';
 import { CATEGORIAS_OCORRENCIA, STATUS_OCORRENCIA_LABEL, type AcaoOcorrencia } from '../domain/gestao';
 import { pode } from '../domain/permissions';
@@ -16,7 +17,7 @@ import { faixaTempo, mediana, minutosDeServico, provavelEsquecida, registroForaD
 import { minutosTrabalhados } from '../domain/util';
 import { FotoImg } from '../ui/FotoImg';
 
-type Aba = 'visao' | 'mecanicos' | 'tempo' | 'assistencia' | 'auditoria' | 'excecoes' | 'ocorrencias' | 'retornos' | 'planos' | 'gestao';
+type Aba = 'visao' | 'volumetria' | 'mecanicos' | 'tempo' | 'assistencia' | 'auditoria' | 'excecoes' | 'ocorrencias' | 'retornos' | 'planos' | 'gestao';
 
 export function Lideranca({ u, aba: abaRota }: { u: Usuario; aba?: string }) {
   const db = useDB();
@@ -28,11 +29,12 @@ export function Lideranca({ u, aba: abaRota }: { u: Usuario; aba?: string }) {
     <div>
       <div className="page-head"><div><h1>Painel da liderança</h1><div className="sub">{fmtMes(mesKey(hojeKey() + 'T15:00:00Z'))}{MODO_REAL ? '' : ' · dados fictícios'}</div></div></div>
       <Tabs valor={aba} onChange={setAba} abas={[
-        { v: 'visao', r: 'Visão geral' }, { v: 'mecanicos', r: 'Por mecânico' }, { v: 'tempo', r: 'Tempo de serviço' }, { v: 'assistencia', r: 'Assistência' }, { v: 'auditoria', r: 'Auditoria', n: p.correcoesPendentes.length },
+        { v: 'visao', r: 'Visão geral' }, ...(pode(u, 'os.ver_valores') ? [{ v: 'volumetria' as const, r: 'Volumetria' }] : []), { v: 'mecanicos', r: 'Por mecânico' }, { v: 'tempo', r: 'Tempo de serviço' }, { v: 'assistencia', r: 'Assistência' }, { v: 'auditoria', r: 'Auditoria', n: p.correcoesPendentes.length },
         { v: 'excecoes', r: 'Exceções', n: p.excecoesPendentes.length }, { v: 'ocorrencias', r: 'Ocorrências', n: decisaoOcorr },
         { v: 'retornos', r: 'Retornos' }, { v: 'planos', r: 'Conversas' }, { v: 'gestao', r: 'Indicadores da liderança' },
       ]} />
       {aba === 'visao' && <Visao u={u} />}
+      {aba === 'volumetria' && pode(u, 'os.ver_valores') && <Volumetria />}
       {aba === 'mecanicos' && <PorMecanico />}
       {aba === 'tempo' && <TempoServico />}
       {aba === 'assistencia' && <Assistencia />}
@@ -176,6 +178,98 @@ function PorMecanico() {
       </div>
       <p className="tiny muted" style={{ marginTop: 6 }}>* Score de execução é proposta em teste do Playbook; não altera pagamento. Toque numa linha para ver o detalhe.</p>
       {sel && <DetalheMecanico id={sel} onClose={() => setSel(null)} />}
+    </div>
+  );
+}
+
+type PeriodoVol = 'hoje' | '7d' | 'mes' | 'mesAnterior' | 'livre';
+
+/** Produção e vendas por lubrificador no período (a "Volumetria" do sistema atual, sem comissão e sem fator de ajuste). */
+function Volumetria() {
+  const db = useDB();
+  const hoje = hojeKey();
+  const iniMes = hoje.slice(0, 8) + '01';
+  const fimMesAnt = addDias(iniMes + 'T15:00:00Z', -1).slice(0, 10);
+  const [per, setPer] = useState<PeriodoVol>('mes');
+  const [livre, setLivre] = useState({ de: iniMes, ate: hoje });
+  const [mec, setMec] = useState('');
+  const [aberto, setAberto] = useState<string | null>(null);
+  const [de, ate] = per === 'hoje' ? [hoje, hoje] : per === '7d' ? [addDias(hoje + 'T15:00:00Z', -6).slice(0, 10), hoje]
+    : per === 'mes' ? [iniMes, hoje] : per === 'mesAnterior' ? [fimMesAnt.slice(0, 8) + '01', fimMesAnt] : [livre.de, livre.ate];
+  const v = volumetria(db, de, ate, mec || undefined);
+  const todos = volumetria(db, de, ate).linhas.map(l => l.mecanicoId);
+  const nome = (id: string) => (id ? nomeDe(db, id) : 'Sem lubrificador');
+  const t = v.totais;
+  const pctTxt = (a: number, b: number) => (b ? `${((a / b) * 100).toFixed(1).replace('.', ',')}%` : '—');
+  return (
+    <div className="stack" data-volumetria>
+      <Card titulo="Período" acao={<Segmented rotulo="Período" valor={per} onChange={setPer} opcoes={[{ v: 'hoje', r: 'Hoje' }, { v: '7d', r: '7 dias' }, { v: 'mes', r: 'Este mês' }, { v: 'mesAnterior', r: 'Mês passado' }, { v: 'livre', r: 'Datas' }]} />}>
+        <div className="grid k3">
+          {per === 'livre' && <>
+            <Field rotulo="De" htmlFor="vol-de"><input id="vol-de" type="date" className="input" value={livre.de} max={livre.ate} onChange={e => e.target.value && setLivre({ ...livre, de: e.target.value })} /></Field>
+            <Field rotulo="Até" htmlFor="vol-ate"><input id="vol-ate" type="date" className="input" value={livre.ate} min={livre.de} max={hoje} onChange={e => e.target.value && setLivre({ ...livre, ate: e.target.value })} /></Field>
+          </>}
+          <Field rotulo="Lubrificador" htmlFor="vol-mec">
+            <select id="vol-mec" className="input" value={mec} onChange={e => setMec(e.target.value)}>
+              <option value="">Todos</option>
+              {[...new Set([...todos, ...(mec ? [mec] : [])])].map(id => <option key={id} value={id}>{nome(id)}</option>)}
+            </select>
+          </Field>
+        </div>
+        <p className="tiny muted" style={{ marginTop: 6 }}>{fmtData(de + 'T15:00:00Z')} a {fmtData(ate + 'T15:00:00Z')} · OS concluídas no período (data da conclusão).</p>
+      </Card>
+      <div className="grid k4">
+        <Kpi rotulo="OS concluídas" valor={t.ordens} />
+        <Kpi rotulo="Faturamento" valor={fmtBRL(t.faturamento)} dica={`Ticket médio ${t.ticketMedio == null ? '—' : fmtBRL(t.ticketMedio)}`} explicacao={{ formula: 'Soma do valor total das OS concluídas no período (venda inicial + adicionais). Ticket médio = faturamento ÷ OS.' }} />
+        <Kpi rotulo="Taxa de upsell" valor={t.taxaUpsell == null ? '—' : `${t.taxaUpsell.toFixed(1).replace('.', ',')}%`} dica={`${t.comUpsell} OS com venda adicional`} explicacao={{ formula: 'OS com pelo menos um item vendido além do balcão (checklist ou bancada) ÷ OS concluídas.' }} />
+        <Kpi rotulo="Total em upsell" valor={fmtBRL(t.valorUpsell)} dica={`Ticket médio do upsell ${t.ticketUpsell == null ? '—' : fmtBRL(t.ticketUpsell)}`} explicacao={{ formula: 'Soma do que foi vendido além do balcão. Ticket médio do upsell = total ÷ OS com upsell. Valor real, sem fator de ajuste.' }} />
+      </div>
+      <Card titulo="Por lubrificador">
+        {v.linhas.length === 0 ? <Empty titulo="Nenhuma OS concluída no período." /> : (
+          <div className="tbl-wrap">
+            <table className="tbl" data-vol-tabela>
+              <thead><tr><th>Lubrificador</th><th className="num">OS</th><th className="num">Com upsell</th><th className="num">Taxa</th><th className="num">Upsell</th><th className="num">Ticket upsell</th><th className="num">Faturamento</th><th className="num">Ticket médio</th></tr></thead>
+              <tbody>
+                {v.linhas.map(l => (
+                  <tr key={l.mecanicoId} style={{ cursor: l.comUpsell ? 'pointer' : undefined }} onClick={() => l.comUpsell && setAberto(l.mecanicoId)}>
+                    <td style={{ minWidth: 110 }}><b>{nome(l.mecanicoId)}</b>{l.comUpsell > 0 && <span className="tiny muted">&nbsp;›</span>}</td>
+                    <td className="num">{l.ordens}</td>
+                    <td className="num">{l.comUpsell}</td>
+                    <td className="num">{pctTxt(l.comUpsell, l.ordens)}</td>
+                    <td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtBRL(l.valorUpsell)}</td>
+                    <td className="num" style={{ whiteSpace: 'nowrap' }}>{l.comUpsell ? fmtBRL(l.valorUpsell / l.comUpsell) : '—'}</td>
+                    <td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtBRL(l.faturamento)}</td>
+                    <td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtBRL(l.faturamento / l.ordens)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="tiny muted" style={{ marginTop: 8 }}>Toque num lubrificador para ver as OS com upsell. Só a liderança e a direção veem esta aba. Valores reais, sem o fator de ajuste do sistema atual.</p>
+      </Card>
+      {aberto != null && (() => {
+        const l = v.linhas.find(x => x.mecanicoId === aberto);
+        if (!l) return null;
+        return (
+          <Sheet titulo={`${nome(aberto)} · OS com upsell`} sub={`${l.comUpsell} OS · ${fmtBRL(l.valorUpsell)} · ${fmtData(de + 'T15:00:00Z')} a ${fmtData(ate + 'T15:00:00Z')}`} onClose={() => setAberto(null)}>
+            <div className="list">
+              {l.osComUpsell.map(o => {
+                const vei = db.veiculos.find(x => x.id === o.veiculoId);
+                const cli = db.clientes.find(x => x.id === o.clienteId);
+                const up = o.totaisRegistrados?.upsell ?? valoresOS(o).upsell;
+                return (
+                  <a key={o.id} className="li" href={`#/os/${o.id}`} onClick={() => setAberto(null)}>
+                    {vei && <Placa placa={vei.placa} />}
+                    <div className="grow"><div className="ttl">OS #{o.numero} · {cli?.nome || '—'}</div><div className="meta">{fmtData(o.concluidaEm)} · {o.servicos.filter(s => s.origem !== 'balcao' && s.executado).map(s => SERVICOS[s.key].nome).join(', ') || 'adicional'}</div></div>
+                    <b>{fmtBRL(up)}</b>
+                  </a>
+                );
+              })}
+            </div>
+          </Sheet>
+        );
+      })()}
     </div>
   );
 }

@@ -177,6 +177,11 @@ export interface OrdemServico {
   foraDaOrdem?: { previsto?: string; motivo: string };
   checklistId?: string;
   canceladaMotivo?: string;
+  /**
+   * Valores gravados na OS concluída (valorTotal, valorUpsell, fezUpsell do sistema atual). Valem mais que a
+   * conta pelos serviços: incluem ajustes feitos à mão pelo ADM e upsell de item que também era de balcão.
+   */
+  totaisRegistrados?: { total: number; upsell: number; fezUpsell: boolean };
   criadaPor: string;
 }
 

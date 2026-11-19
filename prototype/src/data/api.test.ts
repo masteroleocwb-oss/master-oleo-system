@@ -8,7 +8,7 @@ import {
   filaRodizio, finalizarOS, finalizarRetorno, garantirChecklist, gerarLink, iniciarOS, obterRelatorioPublico, ocultarItemPara, pausarOS, previsaoFila, projetarRelatorio, proximoDaFila,
   recomendacoesAbertas, definirPedidoOlist, editarOS, devolverOS, registrarItemChecklist, retomarOS, revogarLink, salvarRetorno, setStatusRodizio, valoresOS,
 } from './api';
-import { indicadoresMecanico } from './metricas';
+import { indicadoresMecanico, volumetria } from './metricas';
 import { gerarSeed } from './seed';
 import { dataPrevistaPor } from '../domain/manutencao';
 import { _definirDB, ErroSalvamento, getDB, setControle } from './store';
@@ -597,5 +597,32 @@ describe('óleo de motor na abertura', () => {
     await expect(abrirOS(U('u_ven'), { ...base, servicos: [{ key: 'oleoMotor', quantidade: '40', origem: 'balcao', executado: false }] })).rejects.toThrow(/fora do normal/);
     const os = await abrirOS(U('u_ven'), { ...base, servicos: [{ key: 'oleoMotor', quantidade: '3,5', origem: 'balcao', executado: false }] });
     expect(os.servicos[0].quantidade).toBe('3,5');
+  });
+});
+
+describe('Volumetria', () => {
+  it('soma por lubrificador, usa o total gravado quando existe e só conta OS concluídas no período', () => {
+    const d = getDB();
+    const conc = d.os.filter(o => o.status === 'concluido' && o.concluidaEm);
+    expect(conc.length).toBeGreaterThan(2);
+    const dia = conc[0].concluidaEm!.slice(0, 10);
+    const de = '2000-01-01', ate = '2100-01-01';
+    const v = volumetria(d, de, ate);
+    expect(v.totais.ordens).toBe(conc.length);
+    expect(v.linhas.reduce((s, l) => s + l.ordens, 0)).toBe(conc.length);
+    expect(v.totais.comUpsell).toBe(v.linhas.reduce((s, l) => s + l.osComUpsell.length, 0));
+    // Total gravado pelo sistema atual tem prioridade sobre o recalculado.
+    const alvo = conc[0];
+    const comGravado = { ...d, os: d.os.map(o => o.id === alvo.id ? { ...o, totaisRegistrados: { total: 1000, upsell: 250, fezUpsell: true } } : o) };
+    const sem = volumetria({ ...d, os: d.os.filter(o => o.id !== alvo.id) }, de, ate);
+    const com = volumetria(comGravado, de, ate);
+    expect(com.totais.faturamento - sem.totais.faturamento).toBeCloseTo(1000);
+    expect(com.totais.valorUpsell - sem.totais.valorUpsell).toBeCloseTo(250);
+    expect(com.totais.comUpsell - sem.totais.comUpsell).toBe(1);
+    // Filtro de lubrificador e período.
+    const mec = alvo.mecanicoId!;
+    expect(volumetria(d, de, ate, mec).linhas.every(l => l.mecanicoId === mec)).toBe(true);
+    expect(volumetria(d, '2000-01-01', '2000-01-02').totais.ordens).toBe(0);
+    expect(volumetria(d, de, ate).totais.ordens).toBeGreaterThanOrEqual(volumetria(d, dia, dia).totais.ordens);
   });
 });
