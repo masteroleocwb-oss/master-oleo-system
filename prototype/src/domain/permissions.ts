@@ -12,6 +12,8 @@ export type Capacidade =
   | 'os.editar'            // corrigir cliente, carro, serviços e valor da OS aberta
   | 'os.editar_concluida'  // idem na OS concluída, mais lubrificador e horários
   | 'os.ver_valores'
+  | 'upsell.ver_real'      // valor de upsell sem o fator de ajuste (só o dono)
+  | 'upsell.ajustar'       // editar ou zerar o upsell de uma OS concluída
   | 'cliente.ver_contato'
   | 'checklist.autorizar_excecao'
   | 'checklist.auditar'
@@ -64,6 +66,7 @@ const MATRIZ: Record<Role, Capacidade[]> = {
     'performance.time', 'metas.ver', 'metas.propor', 'metas.aprovar', 'politicas.simular', 'politicas.aprovar',
     'ocorrencia.registrar', 'ocorrencia.decidir', 'ocorrencia.aplicar', 'plano_acao.registrar', 'rodizio.gerenciar',
     'admin.usuarios', 'admin.catalogo', 'admin.historico', 'admin.compartilhamentos', 'veiculo.ver', 'veiculo.corrigir_cadastro',
+    'upsell.ver_real', 'upsell.ajustar',
   ],
 };
 

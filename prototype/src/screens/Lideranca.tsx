@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ir } from '../app/nav';
-import { acaoOcorrencia, auditarChecklist, concluirPlanoAcao, declararDiaExcecao, decidirExcecao, nomeDe, registrarOcorrencia, registrarPlanoAcao, valoresOS } from '../data/api';
+import { acaoOcorrencia, auditarChecklist, concluirPlanoAcao, declararDiaExcecao, decidirExcecao, nomeDe, registrarOcorrencia, registrarPlanoAcao, fatorUpsellPara, valoresOS } from '../data/api';
+import { AjustarUpsellSheet } from './AjustarUpsell';
 import { MODO_REAL } from '../data/modo';
 import { carregarEventosRodizio } from '../data/nuvem';
 import { indicadoresAssistencia, MIN_LIVRE_PARA_AJUDA } from '../domain/assistencia';
@@ -34,7 +35,7 @@ export function Lideranca({ u, aba: abaRota }: { u: Usuario; aba?: string }) {
         { v: 'retornos', r: 'Retornos' }, { v: 'planos', r: 'Conversas' }, { v: 'gestao', r: 'Indicadores da liderança' },
       ]} />
       {aba === 'visao' && <Visao u={u} />}
-      {aba === 'volumetria' && pode(u, 'os.ver_valores') && <Volumetria />}
+      {aba === 'volumetria' && pode(u, 'os.ver_valores') && <Volumetria u={u} />}
       {aba === 'mecanicos' && <PorMecanico />}
       {aba === 'tempo' && <TempoServico />}
       {aba === 'assistencia' && <Assistencia />}
@@ -125,7 +126,7 @@ function Visao({ u }: { u: Usuario }) {
         <Kpi rotulo="Itens identificados → realizados" valor={`${eq.identificados} → ${eq.realizados}`} dica={`Aceite ${fmtPct(eq.identificados ? (eq.realizados / eq.identificados) * 100 : null)}`} explicacao={DEFINICOES.conversao} />
         <Kpi rotulo="Retornos no mês" valor={eq.retornos} explicacao={DEFINICOES.retornos} alerta={eq.retornos > 0} />
         <Kpi rotulo="Carros atendidos (mês)" valor={eq.carros} />
-        {pode(u, 'os.ver_valores') && <Kpi rotulo="Faturamento (mês)" valor={fmtBRL(eq.faturamento)} dica={`Itens do checklist: ${fmtBRL(eq.upsell)}`} />}
+        {pode(u, 'os.ver_valores') && <Kpi rotulo="Faturamento (mês)" valor={fmtBRL(eq.faturamento)} dica={`Itens do checklist: ${fmtBRL(eq.upsell * fatorUpsellPara(u, db))}`} />}
         <Kpi rotulo="Hoje: aguardando / em andamento" valor={`${p.aguardando.length} / ${p.andamento.length}`} />
         <Kpi rotulo="Hoje: concluídas" valor={p.concluidasHoje.length} />
       </div>
@@ -185,8 +186,13 @@ function PorMecanico() {
 type PeriodoVol = 'hoje' | '7d' | 'mes' | 'mesAnterior' | 'livre';
 
 /** Produção e vendas por lubrificador no período (a "Volumetria" do sistema atual, sem comissão e sem fator de ajuste). */
-function Volumetria() {
+function Volumetria({ u }: { u: Usuario }) {
   const db = useDB();
+  // Direção vê o upsell real; a liderança vê com o fator de ajuste do sistema atual, sem aviso (como no sistema atual).
+  const f = fatorUpsellPara(u, db);
+  const real = pode(u, 'upsell.ver_real');
+  const ajusta = pode(u, 'upsell.ajustar');
+  const [ajuste, setAjuste] = useState<{ osId: string; zerar: boolean } | null>(null);
   const hoje = hojeKey();
   const iniMes = hoje.slice(0, 8) + '01';
   const fimMesAnt = addDias(iniMes + 'T15:00:00Z', -1).slice(0, 10);
@@ -222,7 +228,7 @@ function Volumetria() {
         <Kpi rotulo="OS concluídas" valor={t.ordens} />
         <Kpi rotulo="Faturamento" valor={fmtBRL(t.faturamento)} dica={`Ticket médio ${t.ticketMedio == null ? '—' : fmtBRL(t.ticketMedio)}`} explicacao={{ formula: 'Soma do valor total das OS concluídas no período (venda inicial + adicionais). Ticket médio = faturamento ÷ OS.' }} />
         <Kpi rotulo="Taxa de upsell" valor={t.taxaUpsell == null ? '—' : `${t.taxaUpsell.toFixed(1).replace('.', ',')}%`} dica={`${t.comUpsell} OS com venda adicional`} explicacao={{ formula: 'OS com pelo menos um item vendido além do balcão (checklist ou bancada) ÷ OS concluídas.' }} />
-        <Kpi rotulo="Total em upsell" valor={fmtBRL(t.valorUpsell)} dica={`Ticket médio do upsell ${t.ticketUpsell == null ? '—' : fmtBRL(t.ticketUpsell)}`} explicacao={{ formula: 'Soma do que foi vendido além do balcão. Ticket médio do upsell = total ÷ OS com upsell. Valor real, sem fator de ajuste.' }} />
+        <Kpi rotulo="Total em upsell" valor={fmtBRL(t.valorUpsell * f)} dica={`Ticket médio do upsell ${t.ticketUpsell == null ? '—' : fmtBRL(t.ticketUpsell * f)}`} explicacao={{ formula: 'Soma do que foi vendido além do balcão. Ticket médio do upsell = total ÷ OS com upsell.' }} />
       </div>
       <Card titulo="Por lubrificador">
         {v.linhas.length === 0 ? <Empty titulo="Nenhuma OS concluída no período." /> : (
@@ -236,8 +242,8 @@ function Volumetria() {
                     <td className="num">{l.ordens}</td>
                     <td className="num">{l.comUpsell}</td>
                     <td className="num">{pctTxt(l.comUpsell, l.ordens)}</td>
-                    <td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtBRL(l.valorUpsell)}</td>
-                    <td className="num" style={{ whiteSpace: 'nowrap' }}>{l.comUpsell ? fmtBRL(l.valorUpsell / l.comUpsell) : '—'}</td>
+                    <td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtBRL(l.valorUpsell * f)}</td>
+                    <td className="num" style={{ whiteSpace: 'nowrap' }}>{l.comUpsell ? fmtBRL((l.valorUpsell * f) / l.comUpsell) : '—'}</td>
                     <td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtBRL(l.faturamento)}</td>
                     <td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtBRL(l.faturamento / l.ordens)}</td>
                   </tr>
@@ -246,29 +252,43 @@ function Volumetria() {
             </table>
           </div>
         )}
-        <p className="tiny muted" style={{ marginTop: 8 }}>Toque num lubrificador para ver as OS com upsell. Só a liderança e a direção veem esta aba. Valores reais, sem o fator de ajuste do sistema atual.</p>
+        <p className="tiny muted" style={{ marginTop: 8 }}>Toque num lubrificador para ver as OS com upsell. Só a liderança e a direção veem esta aba.
+          {real && db.fatorUpsell ? <> <b>Só você vê:</b> aqui o upsell é o real; a liderança vê o upsell com o fator de {String(db.fatorUpsell).replace('.', ',')}% da configuração do sistema atual, sem aviso.</> : null}</p>
       </Card>
       {aberto != null && (() => {
         const l = v.linhas.find(x => x.mecanicoId === aberto);
         if (!l) return null;
         return (
-          <Sheet titulo={`${nome(aberto)} · OS com upsell`} sub={`${l.comUpsell} OS · ${fmtBRL(l.valorUpsell)} · ${fmtData(de + 'T15:00:00Z')} a ${fmtData(ate + 'T15:00:00Z')}`} onClose={() => setAberto(null)}>
+          <Sheet titulo={`${nome(aberto)} · OS com upsell`} sub={`${l.comUpsell} OS · ${fmtBRL(l.valorUpsell * f)} · ${fmtData(de + 'T15:00:00Z')} a ${fmtData(ate + 'T15:00:00Z')}`} onClose={() => setAberto(null)}>
             <div className="list">
               {l.osComUpsell.map(o => {
                 const vei = db.veiculos.find(x => x.id === o.veiculoId);
                 const cli = db.clientes.find(x => x.id === o.clienteId);
-                const up = o.totaisRegistrados?.upsell ?? valoresOS(o).upsell;
+                const up = valoresOS(o).upsell;
                 return (
-                  <a key={o.id} className="li" href={`#/os/${o.id}`} onClick={() => setAberto(null)}>
-                    {vei && <Placa placa={vei.placa} />}
-                    <div className="grow"><div className="ttl">OS #{o.numero} · {cli?.nome || '—'}</div><div className="meta">{fmtData(o.concluidaEm)} · {o.servicos.filter(s => s.origem !== 'balcao' && s.executado).map(s => SERVICOS[s.key].nome).join(', ') || 'adicional'}</div></div>
-                    <b>{fmtBRL(up)}</b>
-                  </a>
+                  <div key={o.id} className="li" style={{ flexWrap: 'wrap' }}>
+                    <a href={`#/os/${o.id}`} onClick={() => setAberto(null)} style={{ display: 'flex', gap: 10, alignItems: 'center', flex: '1 1 220px', minWidth: 0, color: 'inherit', textDecoration: 'none' }}>
+                      {vei && <Placa placa={vei.placa} />}
+                      <div className="grow" style={{ minWidth: 0 }}><div className="ttl">OS #{o.numero} · {cli?.nome || '—'}</div><div className="meta">{fmtData(o.concluidaEm)} · {o.servicos.filter(s => s.origem !== 'balcao' && s.executado).map(s => SERVICOS[s.key].nome).join(', ') || 'adicional'}</div></div>
+                      {/* Valor por OS só para a direção: para a liderança a soma já vem com o fator. */}
+                      {real && <b>{fmtBRL(up)}</b>}
+                    </a>
+                    {ajusta && (
+                      <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+                        <Btn variante="sec" tamanho="sm" onClick={() => setAjuste({ osId: o.id, zerar: false })} data-editar-upsell={o.numero}>Editar</Btn>
+                        <Btn variante="danger" tamanho="sm" onClick={() => setAjuste({ osId: o.id, zerar: true })} data-zerar-upsell={o.numero}>Zerar</Btn>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
           </Sheet>
         );
+      })()}
+      {ajuste && (() => {
+        const o = db.os.find(x => x.id === ajuste.osId);
+        return o ? <AjustarUpsellSheet u={u} os={o} zerar={ajuste.zerar} onClose={() => setAjuste(null)} /> : null;
       })()}
     </div>
   );

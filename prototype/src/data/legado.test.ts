@@ -109,6 +109,19 @@ describe('ponte com o sistema atual', () => {
     expect(d.tempoServico).toBe('0h 45min');
   });
 
+  it('upsell editado/zerado pela direção grava só valorUpsell e fezUpsell (faturamento não muda)', () => {
+    const nomes = new MapaNomes(usuarios);
+    const os = osDeLegado('doc1', legado, nomes);
+    const a = legadoDeOS(os, undefined, undefined, nomes);
+    const zerado = legadoDeOS({ ...os, totaisRegistrados: { ...os.totaisRegistrados!, upsell: 0, fezUpsell: false } }, undefined, undefined, nomes);
+    expect(camposAlterados(a, zerado).sort()).toEqual(['fezUpsell', 'valorUpsell']);
+    expect(zerado).toMatchObject({ valorUpsell: 0, fezUpsell: false, valorTotal: 310 });
+    const editado = legadoDeOS({ ...os, totaisRegistrados: { ...os.totaisRegistrados!, upsell: 45, fezUpsell: true } }, undefined, undefined, nomes);
+    expect(camposAlterados(a, editado)).toEqual(['valorUpsell']);
+    // Lido de volta, o valor editado é o que vale.
+    expect(osDeLegado('doc1', { ...legado, valorUpsell: 45 }, nomes).totaisRegistrados).toEqual({ total: 310, upsell: 45, fezUpsell: true });
+  });
+
   it('ler e gravar sem mudança nenhuma não altera campo algum', () => {
     const nomes = new MapaNomes(usuarios);
     const os = osDeLegado('doc1', legado, nomes);

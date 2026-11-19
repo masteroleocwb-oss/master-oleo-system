@@ -6,7 +6,7 @@ import { sugestoesOcultar } from '../domain/checklist';
 import {
   abrirOS, acaoOcorrencia, adicionarEvidencia, adicionarFotoRetorno, auditarChecklist, buscarVeiculosEClientes, concluirChecklist, corrigirPlaca, ErroValidacao,
   filaRodizio, finalizarOS, finalizarRetorno, garantirChecklist, gerarLink, iniciarOS, obterRelatorioPublico, ocultarItemPara, pausarOS, previsaoFila, projetarRelatorio, proximoDaFila,
-  recomendacoesAbertas, definirPedidoOlist, editarOS, devolverOS, registrarItemChecklist, retomarOS, revogarLink, salvarRetorno, setStatusRodizio, valoresOS,
+  recomendacoesAbertas, definirPedidoOlist, editarOS, devolverOS, registrarItemChecklist, retomarOS, revogarLink, salvarRetorno, setStatusRodizio, valoresOS, ajustarUpsell, fatorUpsellPara, upsellDosItens,
 } from './api';
 import { indicadoresMecanico, volumetria } from './metricas';
 import { gerarSeed } from './seed';
@@ -624,5 +624,50 @@ describe('Volumetria', () => {
     expect(volumetria(d, de, ate, mec).linhas.every(l => l.mecanicoId === mec)).toBe(true);
     expect(volumetria(d, '2000-01-01', '2000-01-02').totais.ordens).toBe(0);
     expect(volumetria(d, de, ate).totais.ordens).toBeGreaterThanOrEqual(volumetria(d, dia, dia).totais.ordens);
+  });
+});
+
+describe('Editar/zerar upsell e fator de ajuste', () => {
+  const concluidaComUpsell = () => getDB().os.find(o => o.status === 'concluido' && valoresOS(o).upsell > 0)!;
+
+  it('só a direção edita; a liderança não', async () => {
+    const os = concluidaComUpsell();
+    await expect(ajustarUpsell(U('u_lid'), os.id, '10')).rejects.toBeInstanceOf(ErroPermissao);
+    await expect(ajustarUpsell(U('u_ven'), os.id, '10')).rejects.toBeInstanceOf(ErroPermissao);
+  });
+
+  it('editar muda o upsell da Volumetria; zerar tira a OS das com upsell; o faturamento não muda', async () => {
+    const dir = getDB().usuarios.find(u => u.role === 'direcao' && u.ativo)!;
+    const os = concluidaComUpsell();
+    const antes = valoresOS(os);
+    const itens = upsellDosItens(os);
+    await ajustarUpsell(dir, os.id, '12,50', 'teste');
+    let o = getDB().os.find(x => x.id === os.id)!;
+    expect(valoresOS(o)).toMatchObject({ upsell: 12.5, fezUpsell: true, total: antes.total });
+    expect(upsellDosItens(o)).toBe(itens);
+    await ajustarUpsell(dir, os.id, 0);
+    o = getDB().os.find(x => x.id === os.id)!;
+    expect(valoresOS(o)).toMatchObject({ upsell: 0, fezUpsell: false, total: antes.total });
+    const ev = getDB().eventos.filter(e => e.entidadeId === os.id && e.tipo.startsWith('os.upsell_'));
+    expect(ev.map(e => e.tipo)).toEqual(['os.upsell_editado', 'os.upsell_zerado']);
+    expect(ev.every(e => !/R\$|\d+,\d{2}/.test(e.resumo))).toBe(true); // resumo sem valores (aparece para quem abre a OS)
+  });
+
+  it('valida valor e só aceita OS concluída', async () => {
+    const dir = getDB().usuarios.find(u => u.role === 'direcao' && u.ativo)!;
+    const os = concluidaComUpsell();
+    await expect(ajustarUpsell(dir, os.id, '-5')).rejects.toThrow();
+    await expect(ajustarUpsell(dir, os.id, '')).rejects.toThrow(/Informe/);
+    await expect(ajustarUpsell(dir, os.id, '999999')).rejects.toThrow(/inválido/);
+    const aberta = getDB().os.find(o => o.status !== 'concluido')!;
+    await expect(ajustarUpsell(dir, aberta.id, '10')).rejects.toThrow(/concluída/);
+  });
+
+  it('fator: direção vê o real; liderança vê com o fator', () => {
+    const d = getDB();
+    const dir = d.usuarios.find(u => u.role === 'direcao' && u.ativo)!;
+    expect(fatorUpsellPara(dir, { ...d, fatorUpsell: -13 })).toBe(1);
+    expect(fatorUpsellPara(U('u_lid'), { ...d, fatorUpsell: -13 })).toBeCloseTo(0.87);
+    expect(fatorUpsellPara(U('u_lid'), { ...d, fatorUpsell: 0 })).toBe(1);
   });
 });

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { MODO_REAL } from '../data/modo';
 import { urlRelatorio } from '../domain/contato';
 import { ir, useRota } from '../app/nav';
-import { cancelarOS, decidirExcecao, DIAS_LINK_AUTOMATICO, encerrarOSEsquecida, definirPedidoOlist, podeEditarOS, definirVisibilidadeFoto, estadoLink, gerarLink, marcarNaoOferecer, nomeDe, projetarRelatorio, registrarCompartilhamento, revogarLink, valoresOS } from '../data/api';
+import { cancelarOS, decidirExcecao, DIAS_LINK_AUTOMATICO, encerrarOSEsquecida, definirPedidoOlist, podeEditarOS, definirVisibilidadeFoto, estadoLink, gerarLink, marcarNaoOferecer, nomeDe, projetarRelatorio, registrarCompartilhamento, revogarLink, upsellDosItens, valoresOS } from '../data/api';
 import { ESTADOS, GRUPOS, MOTIVO_PAUSA, SERVICOS, semTeste, TIPOS_CAMBIO_AUTO } from '../domain/catalogo';
 import { fotosAtivasDoItem, progresso } from '../domain/checklist';
 import { pode } from '../domain/permissions';
@@ -13,6 +13,7 @@ import { CarroDeLojaBadge, ChecklistBadge, Cronometro, EstadoBadge, RegistroFora
 import { etapasDaOS } from '../domain/tempo';
 import { AuditoriaSheet } from './Lideranca';
 import { EditarOSSheet } from './EditarOS';
+import { AjustarUpsellSheet } from './AjustarUpsell';
 import { rotaTrabalho } from './Operacao';
 import { AjudaBotao } from './Ajuda';
 import { PausarBotao, RetomarBotao, DevolverBotao } from './Pausa';
@@ -29,6 +30,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
   const [naoOf, setNaoOf] = useState(false);
   const [auditar, setAuditar] = useState(false);
   const [editar, setEditar] = useState(false);
+  const [ajustarUp, setAjustarUp] = useState(false);
   const fotoAcao = useAcao();
   if (!os) return <div className="card"><Empty titulo="OS não encontrada." /></div>;
 
@@ -97,8 +99,14 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
               </table></div>
               {pode(u, 'os.ver_valores') && (
                 <div className="row between" style={{ marginTop: 10 }}>
-                  <span className="small muted">Venda inicial {fmtBRL(val.inicial)} + itens do checklist {fmtBRL(val.upsell)}</span>
+                  <span className="small muted">Venda inicial {fmtBRL(val.inicial)} + itens do checklist {fmtBRL(upsellDosItens(os))}</span>
                   <b>{fmtBRL(val.total)}</b>
+                </div>
+              )}
+              {pode(u, 'upsell.ajustar') && os.status === 'concluido' && (
+                <div className="row between" style={{ marginTop: 8, gap: 8, flexWrap: 'wrap' }}>
+                  <span className="small">Upsell na Volumetria: <b>{fmtBRL(val.upsell)}</b>{Math.abs(val.upsell - upsellDosItens(os)) >= 0.005 && <span className="muted"> (ajustado)</span>}</span>
+                  <Btn variante="sec" tamanho="sm" onClick={() => setAjustarUp(true)} data-ajustar-upsell>Editar upsell</Btn>
                 </div>
               )}
             </Card>
@@ -215,6 +223,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
       )}
 
       {editar && <EditarOSSheet u={u} os={os} onClose={() => setEditar(false)} />}
+      {ajustarUp && <AjustarUpsellSheet u={u} os={os} onClose={() => setAjustarUp(false)} />}
       {cancelar && <CancelarSheet u={u} os={os} modo={cancelar} onClose={() => setCancelar(false)} />}
       {naoOf && <NaoOferecerSheet u={u} os={os} onClose={() => setNaoOf(false)} />}
       {auditar && c && <AuditoriaSheet u={u} checklistId={c.id} onClose={() => setAuditar(false)} />}

@@ -224,8 +224,8 @@ export function volumetria(d: DB, de: string, ate: string, mecanicoId?: string) 
   for (const o of os) {
     const id = o.mecanicoId || '';
     const l = porMec.get(id) ?? { mecanicoId: id, ordens: 0, faturamento: 0, comUpsell: 0, valorUpsell: 0, osComUpsell: [] };
-    const r = o.totaisRegistrados;
-    const v = r ? { total: r.total, upsell: r.upsell, fez: r.fezUpsell } : (({ total, upsell }) => ({ total, upsell, fez: upsell > 0 }))(valoresOS(o));
+    const x = valoresOS(o);
+    const v = { total: x.total, upsell: x.upsell, fez: x.fezUpsell };
     l.ordens++;
     l.faturamento += v.total;
     if (v.fez) { l.comUpsell++; l.valorUpsell += v.upsell; l.osComUpsell.push(o); }

@@ -843,11 +843,39 @@ export async function encerrarOSEsquecida(u: Usuario, osId: string, motivo: stri
   });
 }
 
+/** Soma dos itens vendidos além do balcão (recomendações do checklist e adicionais da bancada). */
+export const upsellDosItens = (os: OrdemServico) => os.servicos.filter(s => s.origem !== 'balcao' && s.executado).reduce((a, s) => a + (s.valor || 0), 0);
+
 export const valoresOS = (os: OrdemServico) => {
-  // Upsell = o que foi vendido além do balcão: recomendações do checklist e adicionais da bancada.
-  const upsell = os.servicos.filter(s => s.origem !== 'balcao' && s.executado).reduce((a, s) => a + (s.valor || 0), 0);
-  return { inicial: os.valorInicial, upsell, total: os.valorInicial + upsell };
+  // Vale o total gravado na OS (o mesmo que o sistema atual usa, inclusive upsell editado/zerado pela direção).
+  const r = os.totaisRegistrados;
+  if (r) return { inicial: os.valorInicial, upsell: r.upsell, total: r.total, fezUpsell: r.fezUpsell };
+  const upsell = upsellDosItens(os);
+  return { inicial: os.valorInicial, upsell, total: os.valorInicial + upsell, fezUpsell: upsell > 0 };
 };
+
+/** Multiplicador do upsell para quem vê: direção vê o real; os demais, com o fator de ajuste do sistema atual. */
+export const fatorUpsellPara = (u: Usuario, d: DB) => (pode(u, 'upsell.ver_real') ? 1 : 1 + (d.fatorUpsell || 0) / 100);
+
+/** Edita (ou zera, com 0) o upsell de uma OS concluída. Igual ao "Editar/Zerar upsell" do sistema atual: o faturamento da OS não muda. */
+export async function ajustarUpsell(u: Usuario, osId: string, valor: string | number, motivo = '') {
+  exigir(u, 'upsell.ajustar');
+  const v = Math.round(lerReais(valor) * 100) / 100;
+  if (!(v >= 0) || v > 100_000) throw new ErroValidacao('Valor de upsell inválido.');
+  if (typeof valor === 'string' && !valor.trim()) throw new ErroValidacao('Informe o valor do upsell (0 para zerar).');
+  if (String(valor).includes('-')) throw new ErroValidacao('Valor de upsell inválido.');
+  return transacao(d => {
+    const os = osPorId(d, osId);
+    if (os.status !== 'concluido') throw new ErroValidacao('Só dá para ajustar o upsell de OS concluída.');
+    const atual = valoresOS(os);
+    if (Math.abs(atual.upsell - v) < 0.005 && atual.fezUpsell === v > 0) throw new ErroValidacao('O upsell já está com esse valor.');
+    os.totaisRegistrados = { total: atual.total, upsell: v, fezUpsell: v > 0 };
+    // Sem valores no resumo: o histórico da OS aparece para quem abre a OS.
+    evento(d, u.id, v > 0 ? 'os.upsell_editado' : 'os.upsell_zerado', 'os', os.id, `OS #${os.numero}: upsell ${v > 0 ? 'editado' : 'zerado'} pela direção`,
+      { antes: { upsell: atual.upsell, fezUpsell: atual.fezUpsell }, depois: { upsell: v, fezUpsell: v > 0 }, motivo: motivo.trim() || undefined });
+    return os;
+  });
+}
 
 // ───────────────────────── Comercial ─────────────────────────
 

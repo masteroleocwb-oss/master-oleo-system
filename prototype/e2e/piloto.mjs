@@ -37,6 +37,7 @@ async function preparar() {
     { email: 'vend@teste.dev', nome: 'Fausto Vendas', perfil: 'vendedor', nomeLegado: 'Faust' },
     { email: 'caio@teste.dev', nome: 'Caio Ferreira', perfil: 'mecanico' },
     { email: 'joi@teste.dev', nome: 'Joilson Souza', perfil: 'mecanico' },
+    { email: 'lid@teste.dev', nome: 'Lider Teste', perfil: 'lider' },
   ];
   const ids = {};
   for (const p of pessoas) {
@@ -294,6 +295,26 @@ try {
   const conc = await lerDoc(`orders/${doc.id}`);
   ok(conc.lubrificador === 'Joilson' && conc.plataforma.mecanicoId === joiId, 'Lubrificador corrigido (nome no sistema atual + conta)');
   ok(conc.inicio.includes(campoIni.slice(11) + ':00') && conc.plataforma.iniciadaEm === novoIni.toISOString().slice(0, 16) + ':00.000Z' && conc.status === 'concluido', 'Horário de início corrigido (sistema atual e sistema novo)');
+
+  console.log('6d. Upsell: direção edita e zera; liderança vê com o fator de ajuste (config/global.fatorAjuste = 100%)');
+  const vendaAntes = (await lerDoc(`orders/${doc.id}`)).valorTotal;
+  await dir.goto(NOVO + `#/os/${doc.id}`); await tocar(dir, '[data-ajustar-upsell]');
+  await preencher(dir, '#up-valor', '50'); await tocar(dir, '[data-salvar-upsell]'); await ate(dir, 'atualizado');
+  let up = await lerDoc(`orders/${doc.id}`);
+  ok(up.valorUpsell === 50 && up.fezUpsell === true && up.valorTotal === vendaAntes && up.status === 'concluido', 'Upsell editado grava valorUpsell no sistema atual; faturamento da OS não muda');
+  const lid = await nova(); await entrarNovo(lid, 'lid@teste.dev');
+  await lid.goto(NOVO + '#/lideranca'); await clicar(lid, 'Volumetria'); await esperar(300); await clicar(lid, 'Hoje', '[data-volumetria]'); await esperar(300);
+  const tLid = await lid.$eval('[data-volumetria]', e => e.innerText);
+  ok(/R\$\s100,00/.test(tLid) && !/R\$\s50,00/.test(tLid), 'Liderança vê o upsell com o fator (R$ 100,00 para R$ 50,00 real), sem aviso');
+  ok(!/fator|Só você vê/i.test(tLid), 'Liderança não vê menção ao fator');
+  await lid.$eval('[data-vol-tabela] tbody tr', e => e.click()); await esperar(300);
+  ok(!(await lid.$('[data-zerar-upsell]')) && !(await lid.$('[data-editar-upsell]')), 'Liderança não edita nem zera upsell');
+  await dir.goto(NOVO + '#/lideranca'); await clicar(dir, 'Volumetria'); await esperar(300); await clicar(dir, 'Hoje', '[data-volumetria]'); await esperar(300);
+  ok(/R\$\s50,00/.test(await dir.$eval('[data-volumetria]', e => e.innerText)), 'Direção vê o upsell real (R$ 50,00)');
+  await dir.$eval('[data-vol-tabela] tbody tr', e => e.click()); await tocar(dir, '[data-zerar-upsell]'); await tocar(dir, '[data-confirmar-zerar]'); await ate(dir, 'zerado');
+  up = await lerDoc(`orders/${doc.id}`);
+  ok(up.valorUpsell === 0 && up.fezUpsell === false && up.valorTotal === vendaAntes, 'Zerar grava fezUpsell=false e valorUpsell=0, como o sistema atual');
+  ok((await listar('eventos')).some(e => e.tipo === 'os.upsell_zerado' && !/R\$/.test(e.resumo)), 'Ajuste fica no histórico (sem valores no resumo)');
 
   console.log('7. Segurança');
   const anon = await nova();

@@ -120,7 +120,7 @@ function dbVazio(): DB {
   return {
     versao: 1, geradoEm: new Date().toISOString(), usuarios: [], clientes: [], veiculos: [], os: [], checklists: [], evidencias: [], oportunidades: [],
     catalogo: [], regrasIntervalo: [], manutencoes: [], compartilhamentos: [], metas: [], politicas: [], ocorrencias: [], auditorias: [], planosAcao: [],
-    diasExcecao: [], fechamentos: [], eventos: [], acessos: [], acessoDemo: false, contadorOS: 0, rodizio: { dia: '', status: {} },
+    diasExcecao: [], fechamentos: [], eventos: [], acessos: [], acessoDemo: false, contadorOS: 0, rodizio: { dia: '', status: {} }, fatorUpsell: 0,
   };
 }
 
@@ -196,6 +196,7 @@ function montarDB(): DB {
     acessos: raw.acessos,
     contadorOS: os.reduce((m, o) => Math.max(m, o.numero), 0),
     rodizio: { dia: rod.dia || '', status },
+    fatorUpsell: Number(raw.global.fatorAjuste) || 0,
   };
 }
 

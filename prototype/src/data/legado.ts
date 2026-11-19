@@ -344,6 +344,8 @@ export function legadoDeOS(os: OrdemServico, v: Veiculo | undefined, c: Cliente 
     d.valorUpsell = valorUpsell;
     d.valorTotal = os.valorInicial + valorUpsell;
     d.fezUpsell = aceitos.length > 0;
+    // Upsell ajustado pela direção (ou gravado assim pelo sistema atual): vale o registrado, não a soma dos itens.
+    if (os.totaisRegistrados) { d.valorUpsell = os.totaisRegistrados.upsell; d.fezUpsell = os.totaisRegistrados.fezUpsell; }
     d.quantidadeItensUpsell = aceitos.length;
     d.totalOfertasFeitas = ofertasFeitas;
     d.clienteAptoRecebeuOferta = ofertasFeitas > 0;

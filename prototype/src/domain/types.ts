@@ -514,4 +514,6 @@ export interface DB {
   acessoDemo: boolean;
   contadorOS: number;
   rodizio: Rodizio;
+  /** Fator de ajuste do upsell em % (config/global.fatorAjuste do sistema atual; ex.: -13). Quem não é direção vê o upsell somado com ele aplicado. */
+  fatorUpsell: number;
 }

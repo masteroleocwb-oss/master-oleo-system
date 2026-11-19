@@ -79,7 +79,7 @@ export function gerarSeed(): DB {
     versao: 1, geradoEm: agoraISO, usuarios: USUARIOS(criadoEm).map(u => ({ ...u, demo: true })), clientes: [], veiculos: [], os: [], checklists: [], evidencias: [],
     oportunidades: [], catalogo: CATALOGO_INICIAL.map(d => ({ ...d })), regrasIntervalo: REGRAS_INICIAIS.map(x => ({ ...x })),
     manutencoes: [], compartilhamentos: [], metas: [], politicas: [], ocorrencias: [], auditorias: [], planosAcao: [],
-    diasExcecao: [], fechamentos: [], eventos: [], acessos: [], acessoDemo: true, contadorOS: 7000, rodizio: { dia: hoje, status: {} },
+    diasExcecao: [], fechamentos: [], eventos: [], acessos: [], acessoDemo: true, contadorOS: 7000, rodizio: { dia: hoje, status: {} }, fatorUpsell: -13,
   };
 
   // ── Clientes e veículos ──
