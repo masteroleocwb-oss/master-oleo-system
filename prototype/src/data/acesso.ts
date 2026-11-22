@@ -212,4 +212,6 @@ export const RESULTADO_ACESSO: Record<ResultadoAcesso, { rotulo: string; tom: 'o
   usuario_inexistente: { rotulo: 'Login inexistente', tom: 'atencao' },
   desativado: { rotulo: 'Acesso desativado', tom: 'critico' },
   bloqueado: { rotulo: 'Bloqueado', tom: 'critico' },
+  // Gravado pelo sistema antigo quando alguém que não é da direção tenta entrar (desativado em 22/11/2026).
+  sistema_antigo: { rotulo: 'Barrado no sistema antigo', tom: 'atencao' },
 };

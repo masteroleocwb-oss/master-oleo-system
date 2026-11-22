@@ -29,7 +29,7 @@ export interface Usuario {
   nomeLegado?: string;
 }
 
-export type ResultadoAcesso = 'entrou' | 'entrou_demo' | 'saiu' | 'senha_errada' | 'usuario_inexistente' | 'desativado' | 'bloqueado' | 'senha_trocada' | 'sessao_expirada';
+export type ResultadoAcesso = 'entrou' | 'entrou_demo' | 'saiu' | 'senha_errada' | 'usuario_inexistente' | 'desativado' | 'bloqueado' | 'senha_trocada' | 'sessao_expirada' | 'sistema_antigo';
 
 /** Registro de acesso: quem, quando, de onde e o resultado. Só a direção vê a lista completa. */
 export interface RegistroAcesso {

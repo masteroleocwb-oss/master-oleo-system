@@ -321,6 +321,14 @@ try {
   ok((await listar('eventos')).some(e => e.tipo === 'os.upsell_zerado' && !/R\$/.test(e.resumo)), 'Ajuste fica no histórico (sem valores no resumo)');
 
   console.log('7. Segurança');
+  const vAnt = await nova();
+  await vAnt.goto(ATUAL); await vAnt.waitForSelector('#login-email');
+  ok(!!(await vAnt.$('[data-sistema-desativado]')), 'Sistema antigo avisa que foi desativado, com o endereço do novo');
+  await preencher(vAnt, '#login-email', 'vend@teste.dev'); await preencher(vAnt, '#login-senha', 'tigre-azul-77');
+  await vAnt.evaluate(() => [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Entrar').click());
+  await ate(vAnt, 'Este sistema foi desativado. Use o sistema novo');
+  ok(!!(await vAnt.$('#login-email')) && !(await txt(vAnt)).includes('Nova Ordem'), 'Vendedor não entra no sistema antigo (volta para o login com o aviso)');
+  ok((await listar('acessos')).some(a => a.resultado === 'sistema_antigo' && a.email === 'vend@teste.dev'), 'Tentativa fica no registro de acessos');
   const anon = await nova();
   await anon.goto(NOVO + '#/login'); await anon.waitForSelector('#login-email');
   const leitura = await fetch(`${FS}/orders`).then(r => r.status);
