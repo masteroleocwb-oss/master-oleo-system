@@ -7378,6 +7378,7 @@
             bloqueado: { rotulo: 'Bloqueado (muitas tentativas)', cor: '#c53030' },
             desativado: { rotulo: 'Acesso desativado', cor: '#c53030' },
             sem_perfil: { rotulo: 'Login sem perfil', cor: '#c53030' },
+            sistema_antigo: { rotulo: 'Barrado no sistema antigo', cor: '#c53030' },
             conta_criada: { rotulo: 'Criou conta', cor: '#2b6cb0' },
             perfil_alterado: { rotulo: 'Mudou perfil', cor: '#2b6cb0' },
             conta_desativada: { rotulo: 'Desativou conta', cor: '#c53030' },
@@ -7530,8 +7531,13 @@
                         <div style={{ textAlign: 'center', marginBottom: '18px' }}>
                             <div style={{ fontSize: '40px' }}>🚗</div>
                             <h2 style={{ margin: '4px 0', color: '#2d3748' }}>Master Óleo Curitiba</h2>
-                            <p style={{ margin: 0, color: '#718096', fontSize: '14px' }}>Entre com o seu e-mail e a sua senha.</p>
                         </div>
+                        <div data-sistema-desativado style={{ background: '#fff5f5', border: '1px solid #feb2b2', borderRadius: '10px', padding: '14px', marginBottom: '16px', textAlign: 'center' }}>
+                            <div style={{ fontWeight: 700, color: '#c53030', marginBottom: '6px' }}>Este sistema foi desativado</div>
+                            <div style={{ fontSize: '14px', color: '#4a5568', marginBottom: '10px' }}>Use o sistema novo, com o mesmo e-mail e senha.</div>
+                            <a href="https://sistema.masteroleo.com.br" style={{ ...estiloBotaoLogin, display: 'block', textDecoration: 'none', boxSizing: 'border-box' }}>Abrir o sistema novo</a>
+                        </div>
+                        <p style={{ margin: '0 0 12px', color: '#718096', fontSize: '13px', textAlign: 'center' }}>Acesso restrito à direção.</p>
                         <label style={rotuloLogin} htmlFor="login-email">E-mail</label>
                         <input id="login-email" type="email" autoComplete="username" autoCapitalize="none" value={email}
                             onChange={e => { setEmail(e.target.value); if (erro) setErro(''); }} style={estiloCampo(false)} autoFocus />
@@ -7785,7 +7791,7 @@
             };
 
             const nomePorUid = Object.fromEntries(lista.map(u => [u.uid, u.nome]));
-            const falha = (r) => ['senha_errada', 'bloqueado', 'desativado', 'sem_perfil'].includes(r);
+            const falha = (r) => ['senha_errada', 'bloqueado', 'desativado', 'sem_perfil', 'sistema_antigo'].includes(r);
             const desde24h = Date.now() - 24 * 3600e3;
             const acessosFiltrados = (acessos || []).filter(a =>
                 (!soFalhas || falha(a.resultado)) &&
@@ -7939,6 +7945,12 @@
                         if (!p || p.ativo !== true) {
                             setAviso(p ? 'Seu acesso está desativado. Fale com a direção.' : 'Este login ainda não tem perfil no sistema. Fale com a direção.');
                             await sairDaConta(p ? 'desativado' : 'sem_perfil');
+                            return;
+                        }
+                        // Sistema antigo desativado (22/11/2026): só a direção entra. Os demais usam o sistema novo.
+                        if (p.perfil !== 'direcao') {
+                            setAviso('Este sistema foi desativado. Use o sistema novo: sistema.masteroleo.com.br');
+                            await sairDaConta('sistema_antigo');
                             return;
                         }
                         setEstado({ fase: p.trocarSenha ? 'trocarSenha' : 'app', usuario: { ...p, uid: user.uid, email: user.email } });
