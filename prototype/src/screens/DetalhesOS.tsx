@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { MODO_REAL } from '../data/modo';
 import { urlRelatorio } from '../domain/contato';
 import { ir, useRota } from '../app/nav';
-import { cancelarOS, decidirExcecao, DIAS_LINK_AUTOMATICO, encerrarOSEsquecida, definirPedidoOlist, podeEditarOS, definirVisibilidadeFoto, estadoLink, gerarLink, marcarNaoOferecer, nomeDe, projetarRelatorio, registrarCompartilhamento, revogarLink, upsellDosItens, valoresOS } from '../data/api';
+import { cancelarOS, decidirExcecao, DIAS_LINK_AUTOMATICO, encerrarOSEsquecida, definirPedidoOlist, podeEditarOS, definirVisibilidadeFoto, estadoLink, gerarLink, marcarNaoOferecer, nomeDe, projetarRelatorio, registrarCompartilhamento, registrarTermoImpresso, revogarLink, upsellDosItens, valoresOS } from '../data/api';
+import { imprimirTermoCambio, PRAZO_GARANTIA_CAMBIO_DIAS, validadeGarantia } from './TermoCambio';
 import { ESTADOS, GRUPOS, MOTIVO_PAUSA, SERVICOS, semTeste, TIPOS_CAMBIO_AUTO } from '../domain/catalogo';
 import { fotosAtivasDoItem, progresso } from '../domain/checklist';
 import { pode } from '../domain/permissions';
@@ -31,12 +32,21 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
   const [auditar, setAuditar] = useState(false);
   const [editar, setEditar] = useState(false);
   const [ajustarUp, setAjustarUp] = useState(false);
+  const [termoBloqueado, setTermoBloqueado] = useState(false);
+  // Termo de garantia do câmbio automático: abre sozinho logo depois de criar a OS; depois, pelo botão.
+  const [termo, setTermo] = useState(() => !!query.get('criada'));
   const fotoAcao = useAcao();
   if (!os) return <div className="card"><Empty titulo="OS não encontrada." /></div>;
 
   const v = db.veiculos.find(x => x.id === os.veiculoId)!;
   const cli = db.clientes.find(x => x.id === os.clienteId);
   const c = db.checklists.find(x => x.id === os.checklistId);
+  const podeTermo = os.servicos.some(s => s.key === 'cambioAutomatico') && !os.retornoDeOsId && pode(u, 'os.abrir');
+  const imprimirTermo = () => {
+    const ok = imprimirTermoCambio({ os, veiculo: v, cliente: cli, operador: u });
+    setTermoBloqueado(!ok);
+    if (ok) { setTermo(false); registrarTermoImpresso(u, os.id).catch(() => { /* histórico é complemento */ }); }
+  };
   const pr = c ? progresso(c, db.evidencias) : null;
   const val = valoresOS(os);
   const eventos = db.eventos.filter(e => e.entidadeId === os.id || (c && e.entidadeId === c.id) || db.evidencias.some(x => x.id === e.entidadeId && x.osId === os.id) || db.compartilhamentos.some(s => s.id === e.entidadeId && s.osId === os.id) || db.oportunidades.some(o => o.id === e.entidadeId && o.osId === os.id)).sort((a, b) => b.em.localeCompare(a.em));
@@ -63,6 +73,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
             return <Btn onClick={() => ir(rotaTrabalho(os, ckOk))}>{os.retornoDeOsId ? 'Atendimento do retorno' : ckOk || os.carroDeLoja ? 'Executar e finalizar' : 'Abrir checklist'}</Btn>;
           })()}
           {podeEditarOS(u, os) && <Btn variante="sec" onClick={() => setEditar(true)} data-editar-os>Editar OS</Btn>}
+          {podeTermo && <Btn variante="sec" onClick={() => setTermo(true)} data-termo-cambio>Termo de garantia</Btn>}
           <RetomarBotao u={u} os={os} /><AjudaBotao u={u} os={os} /><PausarBotao u={u} os={os} /><DevolverBotao u={u} os={os} />
           {pode(u, 'checklist.auditar') && c && (c.status === 'concluido' || c.status === 'excecao_autorizada') && os.mecanicoId !== u.id && <Btn variante="sec" onClick={() => setAuditar(true)}>Auditar checklist</Btn>}
           {pode(u, 'excecao.declarar') && !os.naoOferecer && os.status !== 'concluido' && cli?.tipo === 'frota' && <Btn variante="sec" onClick={() => setNaoOf(true)}>Marcar “não oferecer”</Btn>}
@@ -128,6 +139,7 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
                 {pode(u, 'cliente.ver_contato') && (cli?.cidade || cli?.comoConheceu) && <><dt className="muted">Endereço</dt><dd style={{ margin: 0 }}>{[cli.bairro, cli.cidade].filter(Boolean).join(', ') || '—'}{cli.comoConheceu ? ` · conheceu por: ${cli.comoConheceu === 'Outro' ? cli.comoConheceuDetalhe : cli.comoConheceu}` : ''}</dd></>}
                 {(!os.retornoDeOsId || os.pedidoOlist) && <><dt className="muted">Pedido Olist</dt><dd style={{ margin: 0 }}><PedidoOlist u={u} os={os} /></dd></>}
                 <dt className="muted">Vendedor</dt><dd style={{ margin: 0 }}>{nomeDe(db, os.vendedorId)}</dd>
+                {os.planilhaVendas && <><dt className="muted">Planilha de vendas</dt><dd style={{ margin: 0 }} data-planilha-confirmada>Incluída, confirmado por {nomeDe(db, os.planilhaVendas.por)} em {fmtDataHora(os.planilhaVendas.em)}</dd></>}
                 <dt className="muted">Mecânico</dt><dd style={{ margin: 0 }}>{os.mecanicoId ? nomeDe(db, os.mecanicoId) : 'Aguardando rodízio'}</dd>
                 <dt className="muted">Aberta</dt><dd style={{ margin: 0 }}>{fmtDataHora(os.abertaEm)}</dd>
                 {os.iniciadaEm && <><dt className="muted">Início</dt><dd style={{ margin: 0 }}>{fmtDataHora(os.iniciadaEm)}</dd></>}
@@ -224,6 +236,19 @@ export function DetalhesOS({ u, osId }: { u: Usuario; osId: string }) {
 
       {editar && <EditarOSSheet u={u} os={os} onClose={() => setEditar(false)} />}
       {ajustarUp && <AjustarUpsellSheet u={u} os={os} onClose={() => setAjustarUp(false)} />}
+      {termo && podeTermo && (
+        <Sheet titulo="Termo de garantia do câmbio automático" sub={`OS #${os.numero} · garantia de ${PRAZO_GARANTIA_CAMBIO_DIAS} dias, até ${fmtData(validadeGarantia(os))}`} onClose={() => setTermo(false)}
+          rodape={<><Btn variante="sec" onClick={() => setTermo(false)}>Fechar</Btn><Btn onClick={imprimirTermo} data-imprimir-termo>Imprimir 2 vias</Btn></>}>
+          <p style={{ marginTop: 0 }}>Esta OS tem troca de óleo do câmbio automático. Imprima o termo de garantia com os dados do cliente já preenchidos:</p>
+          <ol className="small" style={{ paddingLeft: 18 }}>
+            <li>Saem <b>2 vias</b>: uma do cliente e uma da Master Óleo.</li>
+            <li>O cliente <b>assina as duas</b>. Quem atendeu assina no campo da Master Óleo.</li>
+            <li>Entregue a 1ª via ao cliente e guarde a 2ª via assinada.</li>
+          </ol>
+          {!cli?.documento && <Alerta tipo="warn">O cliente está sem CPF/CNPJ no cadastro: o campo sai em branco para preencher à mão.</Alerta>}
+          {termoBloqueado && <div style={{ marginTop: 8 }}><Alerta tipo="crit">O navegador bloqueou a janela do termo. Permita janelas pop-up para este site e toque em “Imprimir 2 vias” de novo.</Alerta></div>}
+        </Sheet>
+      )}
       {cancelar && <CancelarSheet u={u} os={os} modo={cancelar} onClose={() => setCancelar(false)} />}
       {naoOf && <NaoOferecerSheet u={u} os={os} onClose={() => setNaoOf(false)} />}
       {auditar && c && <AuditoriaSheet u={u} checklistId={c.id} onClose={() => setAuditar(false)} />}

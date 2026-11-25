@@ -154,6 +154,7 @@ export function derivarCadastros(orders: [string, DocLegado][]): { veiculos: Vei
     clientes.push({
       id: idCliente(placa), nome: ultimo('cliente') || 'Cliente sem nome', telefone: ultimo('tel'), tipo: 'particular',
       comoConheceu: ultimo('comoConheceu'), comoConheceuDetalhe: ultimo('comoConheceuDetalhe'), cidade: ultimo('cidade'), bairro: ultimo('bairro'),
+      ...(ultimo('cpf') ? { documento: ultimo('cpf')!.replace(/\D/g, '') } : {}),
     });
   }
   return { veiculos, clientes };
@@ -176,6 +177,7 @@ export interface Plataforma {
   foraDaOrdem?: OrdemServico['foraDaOrdem'];
   checklistId?: string;
   naoOferecer?: OrdemServico['naoOferecer'];
+  planilhaVendas?: OrdemServico['planilhaVendas'];
   retornoDeOsId?: string;
   atendimentoRetorno?: OrdemServico['retorno'];
   canceladaMotivo?: string;
@@ -258,6 +260,7 @@ export function osDeLegado(id: string, o: DocLegado, nomes: MapaNomes): OrdemSer
     foraDaOrdem: p.foraDaOrdem,
     checklistId: p.checklistId,
     naoOferecer: p.naoOferecer,
+    planilhaVendas: p.planilhaVendas,
     retornoDeOsId: p.retornoDeOsId,
     retorno: p.atendimentoRetorno,
     canceladaMotivo: p.canceladaMotivo,
@@ -301,6 +304,7 @@ export function legadoDeOS(os: OrdemServico, v: Veiculo | undefined, c: Cliente 
   if (c?.comoConheceuDetalhe) d.comoConheceuDetalhe = c.comoConheceuDetalhe;
   if (c?.cidade) d.cidade = c.cidade;
   if (c?.bairro) d.bairro = c.bairro;
+  if (c?.documento) d.cpf = c.documento;
   if (os.carroDeLoja) { d.carroDeLoja = true; d.kmPorMes = 0; }
   else if (v?.kmPorMes) d.kmPorMes = v.kmPorMes;
   if (os.iniciadaEm) d.inicio = brDeISO(os.iniciadaEm);
@@ -326,7 +330,7 @@ export function legadoDeOS(os: OrdemServico, v: Veiculo | undefined, c: Cliente 
   for (const s of balcao) execucao[s.key] = { executado: s.executado, ...(s.quantidadeExecutada ? { quantidadeExecutada: s.quantidadeExecutada } : {}), ...(s.intervaloKm ? { intervaloKm: s.intervaloKm } : {}), ...(s.tipoCambio ? { tipoCambio: s.tipoCambio } : {}) };
   const plataforma: Plataforma = {
     vendedorId: os.vendedorId, mecanicoId: os.mecanicoId, criadaPor: os.criadaPor, extras, execucao,
-    ofertas: os.ofertas, pausas: os.pausas, assistencias: os.assistencias, foraDaOrdem: os.foraDaOrdem, checklistId: os.checklistId, naoOferecer: os.naoOferecer,
+    ofertas: os.ofertas, pausas: os.pausas, assistencias: os.assistencias, foraDaOrdem: os.foraDaOrdem, checklistId: os.checklistId, naoOferecer: os.naoOferecer, planilhaVendas: os.planilhaVendas,
     retornoDeOsId: os.retornoDeOsId, atendimentoRetorno: os.retorno, canceladaMotivo: os.canceladaMotivo, obsCliente: os.obsCliente,
     iniciadaEm: os.iniciadaEm, concluidaEm: os.status === 'concluido' || os.status === 'encerrada' ? os.concluidaEm : undefined,
   };

@@ -52,6 +52,8 @@ export interface Cliente {
   comoConheceuDetalhe?: string;
   cidade?: string;
   bairro?: string;
+  /** CPF ou CNPJ (só dígitos). Pedido na abertura quando há troca de óleo do câmbio automático (vai no termo de garantia). */
+  documento?: string;
 }
 
 export type Cambio = 'manual' | 'automatico';
@@ -150,6 +152,8 @@ export interface OrdemServico {
   pedidoOlist?: string;
   /** Carro de loja (revenda): km por mês zerado. */
   carroDeLoja?: boolean;
+  /** Quem abriu a OS declarou que lançou a venda na planilha de vendas (e assume a responsabilidade se não lançou). */
+  planilhaVendas?: { por: string; em: string };
   status: StatusOS;
   veiculoId: string;
   clienteId: string;

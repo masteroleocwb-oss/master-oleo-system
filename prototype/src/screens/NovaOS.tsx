@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ir } from '../app/nav';
-import { abrirOS, buscarVeiculosEClientes, cadastroFinal, faltasCadastroCliente, recomendacoesAbertas, validarNovaOS, type CadastroCliente, type NovaOSInput } from '../data/api';
+import { abrirOS, buscarVeiculosEClientes, cadastroFinal, faltasCadastroCliente, recomendacoesAbertas, temTermoCambio, validarNovaOS, type CadastroCliente, type NovaOSInput } from '../data/api';
 import { CIDADES_SUGERIDAS, COMO_CONHECEU, RECOMENDACAO, RESPOSTA_CLIENTE, SERVICO_KEYS, SERVICOS, servicoAplicavel } from '../domain/catalogo';
 import { ANOS, MARCAS, MARCAS_MODELOS, OUTRO } from '../domain/veiculosCatalogo';
 import type { Cambio, ServicoKey, ServicoOS, Usuario } from '../domain/types';
-import { fmtBRL, fmtData, fmtKm, fmtTelefone, lerReais, normalizarPlaca, placaValida, telefoneValido } from '../domain/util';
+import { documentoValido, fmtBRL, fmtData, fmtDocumento, fmtKm, fmtTelefone, lerReais, normalizarPlaca, placaValida, telefoneValido } from '../domain/util';
 import { Alerta, Badge, Btn, Card, Field, Placa, SaveIndicator, Segmented, useAcao, useDB, type SaveState } from '../ui/components';
 
 const RASCUNHO = 'mo-proto:rascunho-nova-os';
@@ -30,6 +30,10 @@ interface Form {
   valor: string;
   naoTesteFreio: boolean; naoTesteCambio: boolean;
   carroDeLoja?: boolean;
+  /** CPF/CNPJ do cliente (câmbio automático: vai no termo de garantia). */
+  documento?: string;
+  /** "Foi incluído na planilha de vendas?" Nunca vem do rascunho: tem que marcar na hora. */
+  planilha?: boolean;
 }
 
 const VAZIO = (vendedorId: string): Form => ({
@@ -66,7 +70,7 @@ export function NovaOS({ u }: { u: Usuario }) {
   const cambioAtual: Cambio | undefined = veiculo?.cambio ?? (f.novo ? f.cambio : undefined);
   const servicosVisiveis = SERVICO_KEYS.filter(k => servicoAplicavel(k, cambioAtual));
   const clienteSemTel = !!veiculo && !telefoneValido(cliente?.telefone);
-  const dadosDigitados: Partial<CadastroCliente> = { comoConheceu: f.comoConheceu, comoConheceuDetalhe: f.comoConheceu === 'Outro' ? f.comoConheceuDetalhe : undefined, cidade: f.cidade, bairro: f.bairro };
+  const dadosDigitados: Partial<CadastroCliente> = { comoConheceu: f.comoConheceu, comoConheceuDetalhe: f.comoConheceu === 'Outro' ? f.comoConheceuDetalhe : undefined, cidade: f.cidade, bairro: f.bairro, documento: f.documento };
   // Cliente antigo: pede só o que falta no cadastro (fica gravado para as próximas visitas).
   const faltaNoCadastro = veiculo && cliente ? {
     comoConheceu: !cliente.comoConheceu || (cliente.comoConheceu === 'Outro' && !cliente.comoConheceuDetalhe), cidade: !cliente.cidade, bairro: !cliente.bairro,
@@ -96,7 +100,10 @@ export function NovaOS({ u }: { u: Usuario }) {
     valorInicial: retorno ? 0 : lerReais(f.valor),
     naoFazerTesteFreio: (!retorno && f.naoTesteFreio && temFreio) || undefined,
     naoFazerTesteCambio: (!retorno && f.naoTesteCambio && temCambio) || undefined,
+    planilhaVendas: !retorno && !!f.planilha,
   };
+  const pedeDocumento = !retorno && temTermoCambio(entrada.servicos);
+  const documentoTexto = f.documento ?? fmtDocumento(cliente?.documento);
   const erros = [
     ...validarNovaOS(entrada, cliente),
     ...(retorno && !f.retornoDeOsId ? ['Escolha a OS original do retorno.'] : []),
@@ -115,7 +122,7 @@ export function NovaOS({ u }: { u: Usuario }) {
   const ultimas = veiculo ? db.os.filter(o => o.veiculoId === veiculo.id && o.status === 'concluido').sort((a, b) => b.abertaEm.localeCompare(a.abertaEm)).slice(0, 2) : [];
   const recsAbertas = veiculo ? recomendacoesAbertas(db, veiculo.id) : [];
   const faltaCampo = (campo: keyof CadastroCliente) => tentou && faltasCadastroCliente(f.novo ? cadastroFinal(undefined, entrada.novoCliente) : cadastroFinal(cliente, entrada.completarCliente))
-    .some(e => e.includes({ telefone: 'telefone', comoConheceu: 'onheceu', comoConheceuDetalhe: 'Outro', cidade: 'cidade', bairro: 'bairro' }[campo]));
+    .some(e => e.includes({ telefone: 'telefone', comoConheceu: 'onheceu', comoConheceuDetalhe: 'Outro', cidade: 'cidade', bairro: 'bairro', documento: 'CPF' }[campo]));
   // Função (não componente): manter os inputs montados entre renders, sem perder o foco ao digitar.
   const camposCadastro = (mostrar: { comoConheceu: boolean; cidade: boolean; bairro: boolean }) => (
     <>
@@ -166,7 +173,7 @@ export function NovaOS({ u }: { u: Usuario }) {
           <Alerta tipo="warn">
             <b>Há um cadastro não finalizado neste aparelho.</b> Se começar um novo cadastro, ele será substituído.
             <div className="row" style={{ marginTop: 8 }}>
-              <Btn tamanho="sm" onClick={() => { setF({ ...VAZIO(f.vendedorId), ...rascunho }); setRascunho(null); }}>Recuperar rascunho</Btn>
+              <Btn tamanho="sm" onClick={() => { setF({ ...VAZIO(f.vendedorId), ...rascunho, planilha: false }); setRascunho(null); }}>Recuperar rascunho</Btn>
               <Btn tamanho="sm" variante="sec" onClick={() => { try { localStorage.removeItem(RASCUNHO); } catch { /* ignora */ } setRascunho(null); }}>Descartar</Btn>
             </div>
           </Alerta>
@@ -319,6 +326,14 @@ export function NovaOS({ u }: { u: Usuario }) {
             </div>
           </div>
         ))}
+        {pedeDocumento && (
+          <div style={{ marginBottom: 10 }}>
+            <Field rotulo="CPF ou CNPJ do cliente" obrigatorio htmlFor="cli-doc" dica="Câmbio automático: vai preenchido no termo de garantia que o cliente assina."
+              erro={tentou && !documentoValido(documentoTexto) ? 'CPF ou CNPJ inválido' : null}>
+              <input id="cli-doc" className="input" inputMode="numeric" value={documentoTexto} onChange={e => set({ documento: e.target.value.replace(/[^\d./-]/g, '').slice(0, 18) })} placeholder="000.000.000-00" />
+            </Field>
+          </div>
+        )}
         {(temFreio || temCambio) && <div className="divider" />}
         {temFreio && <label className="check"><input type="checkbox" checked={f.naoTesteFreio} onChange={e => set({ naoTesteFreio: e.target.checked })} /><span><b>Fluido de freio: NÃO FAZER TESTE — SÓ EXECUTAR</b><br /><span className="small muted">Aparece em destaque para o mecânico.</span></span></label>}
         {temCambio && <label className="check"><input type="checkbox" checked={f.naoTesteCambio} onChange={e => set({ naoTesteCambio: e.target.checked })} /><span><b>Câmbio: NÃO FAZER TESTE — SÓ EXECUTAR</b><br /><span className="small muted">Aparece em destaque para o mecânico.</span></span></label>}
@@ -348,6 +363,19 @@ export function NovaOS({ u }: { u: Usuario }) {
           </Field>
         </div>
       </Card>
+
+      {!retorno && (
+        <Card titulo="4. Planilha de vendas">
+          <label className="check" data-planilha-vendas>
+            <input type="checkbox" checked={!!f.planilha} onChange={e => set({ planilha: e.target.checked })} />
+            <span><b>Esta venda foi incluída na planilha de vendas.</b></span>
+          </label>
+          <div style={{ marginTop: 8 }}>
+            <Alerta tipo="warn">Ao marcar, você confirma que lançou a venda na planilha. Se marcar e a venda não estiver na planilha, você assume a responsabilidade caso o cliente não pague. Fica registrado com o seu nome, data e hora.</Alerta>
+          </div>
+          {tentou && !f.planilha && <p className="small" style={{ color: 'var(--crit)', marginTop: 6 }}>Marque depois de lançar a venda na planilha.</p>}
+        </Card>
+      )}
 
       {tentou && erros.length > 0 && <div style={{ marginTop: 12 }}><Alerta tipo="crit"><b>Falta preencher:</b><ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{erros.map(e => <li key={e}>{e}</li>)}</ul></Alerta></div>}
       <div className="row" style={{ marginTop: 16, justifyContent: 'flex-end' }}>

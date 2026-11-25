@@ -122,6 +122,15 @@ describe('ponte com o sistema atual', () => {
     expect(osDeLegado('doc1', { ...legado, valorUpsell: 45 }, nomes).totaisRegistrados).toEqual({ total: 310, upsell: 45, fezUpsell: true });
   });
 
+  it('CPF/CNPJ do cliente vai e volta no campo cpf do sistema atual', () => {
+    const nomes = new MapaNomes(usuarios);
+    const os = osDeLegado('doc1', legado, nomes);
+    const d = legadoDeOS(os, undefined, { id: 'c', nome: 'X', tipo: 'particular', documento: '52998224725' }, nomes);
+    expect(d.cpf).toBe('52998224725');
+    const { clientes } = derivarCadastros([['doc1', { ...legado, cpf: '529.982.247-25' }]]);
+    expect(clientes[0].documento).toBe('52998224725');
+  });
+
   it('ler e gravar sem mudança nenhuma não altera campo algum', () => {
     const nomes = new MapaNomes(usuarios);
     const os = osDeLegado('doc1', legado, nomes);

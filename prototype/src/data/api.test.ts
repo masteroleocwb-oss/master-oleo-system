@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ErroPermissao } from '../domain/permissions';
 import type { Usuario } from '../domain/types';
-import { fixarAgora, minutosTrabalhados } from '../domain/util';
+import { documentoValido, fixarAgora, fmtDocumento, minutosTrabalhados } from '../domain/util';
+import { htmlTermoCambio, validadeGarantia } from '../screens/TermoCambio';
 import { sugestoesOcultar } from '../domain/checklist';
 import {
   abrirOS, acaoOcorrencia, adicionarEvidencia, adicionarFotoRetorno, auditarChecklist, buscarVeiculosEClientes, concluirChecklist, corrigirPlaca, ErroValidacao,
@@ -21,7 +22,7 @@ beforeEach(() => {
   setControle({ latenciaMs: 0, falharProximo: false, offline: false });
 });
 
-const novaOS = (por = 'u_ven') => abrirOS(U(por), { veiculoId: 'v5', vendedorId: 'u_ven', kmPorMes: 1200, servicos: [{ key: 'oleoMotor', quantidade: '4', origem: 'balcao', executado: false }], valorInicial: 300, pedidoOlist: '100200' });
+const novaOS = (por = 'u_ven') => abrirOS(U(por), { veiculoId: 'v5', vendedorId: 'u_ven', kmPorMes: 1200, servicos: [{ key: 'oleoMotor', quantidade: '4', origem: 'balcao', executado: false }], valorInicial: 300, planilhaVendas: true, pedidoOlist: '100200' });
 
 describe('abertura de OS', () => {
   it('numera dentro da transação: aberturas simultâneas nunca repetem número', async () => {
@@ -288,7 +289,7 @@ describe('relatório público', () => {
 describe('abertura: telefone obrigatório', () => {
   it('veículo novo sem telefone não abre; cliente antigo sem telefone precisa informar', async () => {
     const novo = { placa: 'QAT2B34', marca: 'Fiat', modelo: 'Argo', ano: 2021, motor: '1.3', cambio: 'manual' as const, combustivel: 'Flex' as const };
-    const base = { vendedorId: 'u_ven', kmPorMes: 1200, servicos: [{ key: 'oleoMotor' as const, quantidade: '4', origem: 'balcao' as const, executado: false }], valorInicial: 300, pedidoOlist: '100201' };
+    const base = { vendedorId: 'u_ven', kmPorMes: 1200, servicos: [{ key: 'oleoMotor' as const, quantidade: '4', origem: 'balcao' as const, executado: false }], valorInicial: 300, planilhaVendas: true, pedidoOlist: '100201' };
     const cad = { comoConheceu: 'Google', cidade: 'Curitiba', bairro: 'Portão' };
     await expect(abrirOS(U('u_ven'), { ...base, novoVeiculo: novo, novoCliente: { nome: 'Cliente Teste', telefone: '', ...cad } })).rejects.toThrow(/telefone/);
     await abrirOS(U('u_ven'), { ...base, novoVeiculo: novo, novoCliente: { nome: 'Cliente Teste', telefone: '(41) 98888-7777', ...cad } });
@@ -329,7 +330,7 @@ describe('histórico e gestão', () => {
     await expect(ocultarItemPara(U('u_lid'), g.defId, g, 'x')).rejects.toBeInstanceOf(ErroPermissao);
     await ocultarItemPara(U('u_dir'), g.defId, { marca: g.marca, modelo: g.modelo, motor: g.motor }, 'Sugestão do sistema');
     const v = getDB().veiculos.find(x => x.marca === g.marca && x.modelo === g.modelo && x.motor === g.motor)!;
-    const os = await abrirOS(U('u_ven'), { veiculoId: v.id, vendedorId: 'u_ven', kmPorMes: 1200, servicos: [{ key: 'oleoMotor', quantidade: '4', origem: 'balcao', executado: false }], valorInicial: 200, pedidoOlist: '100202' });
+    const os = await abrirOS(U('u_ven'), { veiculoId: v.id, vendedorId: 'u_ven', kmPorMes: 1200, servicos: [{ key: 'oleoMotor', quantidade: '4', origem: 'balcao', executado: false }], valorInicial: 200, planilhaVendas: true, pedidoOlist: '100202' });
     await iniciarOS(U('u_lid'), os.id, previsaoFila(getDB()).get(os.id)?.mecanicoId || 'u_m4', 'teste');
     const c = getDB().checklists.find(x => x.osId === os.id)!;
     expect(c.defs.some(x => x.id === g.defId)).toBe(false);
@@ -381,7 +382,7 @@ describe('base de demonstração', () => {
 
 describe('km rodados por mês', () => {
   it('é obrigatório na abertura, fica no veículo e antecipa a data da próxima troca', async () => {
-    const sem = { veiculoId: 'v5', vendedorId: 'u_ven', servicos: [{ key: 'oleoMotor' as const, quantidade: '4', origem: 'balcao' as const, executado: false }], valorInicial: 300, pedidoOlist: '100300' };
+    const sem = { veiculoId: 'v5', vendedorId: 'u_ven', servicos: [{ key: 'oleoMotor' as const, quantidade: '4', origem: 'balcao' as const, executado: false }], valorInicial: 300, planilhaVendas: true, pedidoOlist: '100300' };
     await expect(abrirOS(U('u_ven'), sem)).rejects.toThrow(/km/);
     await expect(abrirOS(U('u_ven'), { ...sem, kmPorMes: 90000 })).rejects.toThrow(/fora do normal/);
     await abrirOS(U('u_ven'), { ...sem, kmPorMes: 2500 });
@@ -393,7 +394,7 @@ describe('km rodados por mês', () => {
   });
 
   it('carro de loja abre sem km por mês: fica zerado e a próxima troca vai pela data', async () => {
-    const sem = { veiculoId: 'v5', vendedorId: 'u_ven', servicos: [{ key: 'oleoMotor' as const, quantidade: '4', origem: 'balcao' as const, executado: false }], valorInicial: 300, pedidoOlist: '100301' };
+    const sem = { veiculoId: 'v5', vendedorId: 'u_ven', servicos: [{ key: 'oleoMotor' as const, quantidade: '4', origem: 'balcao' as const, executado: false }], valorInicial: 300, planilhaVendas: true, pedidoOlist: '100301' };
     const os = await abrirOS(U('u_ven'), { ...sem, carroDeLoja: true });
     expect(getDB().os.find(o => o.id === os.id)?.carroDeLoja).toBe(true);
     expect(getDB().veiculos.find(v => v.id === 'v5')?.kmPorMes).toBeUndefined();
@@ -401,7 +402,7 @@ describe('km rodados por mês', () => {
 });
 
 describe('carro de loja e liderança que atende', () => {
-  const loja = { veiculoId: 'v5', vendedorId: 'u_ven', servicos: [{ key: 'oleoMotor' as const, quantidade: '4', origem: 'balcao' as const, executado: false }], valorInicial: 300, pedidoOlist: '100301', carroDeLoja: true };
+  const loja = { veiculoId: 'v5', vendedorId: 'u_ven', servicos: [{ key: 'oleoMotor' as const, quantidade: '4', origem: 'balcao' as const, executado: false }], valorInicial: 300, planilhaVendas: true, pedidoOlist: '100301', carroDeLoja: true };
 
   it('carro de loja finaliza sem checklist e fica fora da base do checklist %', async () => {
     const os = await abrirOS(U('u_ven'), loja);
@@ -463,7 +464,7 @@ describe('carro de loja e liderança que atende', () => {
 });
 
 describe('cadastro do cliente e pedido do Olist na abertura', () => {
-  const base = { vendedorId: 'u_ven', kmPorMes: 1200, servicos: [{ key: 'oleoMotor' as const, quantidade: '4', origem: 'balcao' as const, executado: false }], valorInicial: 300, pedidoOlist: '100201' };
+  const base = { vendedorId: 'u_ven', kmPorMes: 1200, servicos: [{ key: 'oleoMotor' as const, quantidade: '4', origem: 'balcao' as const, executado: false }], valorInicial: 300, planilhaVendas: true, pedidoOlist: '100201' };
   const novo = { placa: 'QAT3C45', marca: 'Fiat', modelo: 'Argo', ano: 2021, motor: '1.3', cambio: 'manual' as const, combustivel: 'Flex' as const };
 
   it('cliente novo exige como conheceu, cidade e bairro; "Outro" exige descrição', async () => {
@@ -471,7 +472,7 @@ describe('cadastro do cliente e pedido do Olist na abertura', () => {
     await expect(abrirOS(U('u_ven'), { ...base, novoVeiculo: novo, novoCliente: { ...cli, comoConheceu: '', cidade: '', bairro: '' } }))
       .rejects.toThrow(/conheceu.*cidade.*bairro/);
     await expect(abrirOS(U('u_ven'), { ...base, novoVeiculo: novo, novoCliente: { ...cli, comoConheceu: 'Outro', cidade: 'Curitiba', bairro: 'Batel' } })).rejects.toThrow(/Outro/);
-    const os = await abrirOS(U('u_ven'), { ...base, novoVeiculo: novo, pedidoOlist: ' 104523 ', novoCliente: { ...cli, comoConheceu: 'Outro', comoConheceuDetalhe: 'Evento da rua', cidade: 'Curitiba', bairro: 'Batel' } });
+    const os = await abrirOS(U('u_ven'), { ...base, novoVeiculo: novo, planilhaVendas: true, pedidoOlist: ' 104523 ', novoCliente: { ...cli, comoConheceu: 'Outro', comoConheceuDetalhe: 'Evento da rua', cidade: 'Curitiba', bairro: 'Batel' } });
     const c = getDB().clientes.find(x => x.id === os.clienteId)!;
     expect([c.comoConheceu, c.comoConheceuDetalhe, c.cidade, c.bairro]).toEqual(['Outro', 'Evento da rua', 'Curitiba', 'Batel']);
     expect(getDB().os.find(o => o.id === os.id)!.pedidoOlist).toBe('104523');
@@ -490,8 +491,8 @@ describe('cadastro do cliente e pedido do Olist na abertura', () => {
   it('pedido do Olist é obrigatório na abertura (exceto retorno em garantia)', async () => {
     const { pedidoOlist: _p, ...sem } = base;
     await expect(abrirOS(U('u_ven'), { ...sem, veiculoId: 'v5' })).rejects.toThrow(/pedido do Olist/);
-    await expect(abrirOS(U('u_ven'), { ...sem, veiculoId: 'v5', pedidoOlist: '   ' })).rejects.toThrow(/pedido do Olist/);
-    const os = await abrirOS(U('u_ven'), { ...sem, veiculoId: 'v5', pedidoOlist: '104777' });
+    await expect(abrirOS(U('u_ven'), { ...sem, veiculoId: 'v5', planilhaVendas: true, pedidoOlist: '   ' })).rejects.toThrow(/pedido do Olist/);
+    const os = await abrirOS(U('u_ven'), { ...sem, veiculoId: 'v5', planilhaVendas: true, pedidoOlist: '104777' });
     await expect(definirPedidoOlist(U('u_ven'), os.id, '')).rejects.toThrow(/obrigatório/);
     const orig = getDB().os.find(o => o.status === 'concluido' && o.checklistId && getDB().clientes.find(c => c.id === o.clienteId)?.cidade)!;
     const ret = await abrirOS(U('u_ven'), { veiculoId: orig.veiculoId, vendedorId: 'u_ven', kmPorMes: 1200, servicos: [], valorInicial: 0, retornoDeOsId: orig.id, problemaRelatado: 'Barulho' });
@@ -527,7 +528,7 @@ describe('recomendações não feitas continuam nas próximas manutenções', ()
     expect(rel.proximas[0].estadoItem).toBe('prioritario'); // prioritários primeiro
 
     // Próxima visita: o item volta OK (cliente trocou em outro lugar ou aqui) → a recomendação é resolvida.
-    const os2 = await abrirOS(U('u_ven'), { veiculoId: v.id, vendedorId: 'u_ven', kmPorMes: 1200, servicos: [{ key: 'oleoMotor', quantidade: '4', origem: 'balcao', executado: false }], valorInicial: 250, pedidoOlist: '100203' });
+    const os2 = await abrirOS(U('u_ven'), { veiculoId: v.id, vendedorId: 'u_ven', kmPorMes: 1200, servicos: [{ key: 'oleoMotor', quantidade: '4', origem: 'balcao', executado: false }], valorInicial: 250, planilhaVendas: true, pedidoOlist: '100203' });
     await iniciarOS(U('u_lid'), os2.id, 'u_m2', 'teste');
     const c2 = getDB().checklists.find(x => x.osId === os2.id)!;
     for (const d of c2.defs) await registrarItemChecklist(U('u_m2'), c2.id, d.id, 'ok', {});
@@ -592,7 +593,7 @@ describe('editar OS', () => {
 
 describe('óleo de motor na abertura', () => {
   it('litros no cárter são obrigatórios e conferidos', async () => {
-    const base = { veiculoId: 'v5', vendedorId: 'u_ven', kmPorMes: 1200, valorInicial: 300, pedidoOlist: '100200' };
+    const base = { veiculoId: 'v5', vendedorId: 'u_ven', kmPorMes: 1200, valorInicial: 300, planilhaVendas: true, pedidoOlist: '100200' };
     await expect(abrirOS(U('u_ven'), { ...base, servicos: [{ key: 'oleoMotor', origem: 'balcao', executado: false }] })).rejects.toThrow(/cárter/);
     await expect(abrirOS(U('u_ven'), { ...base, servicos: [{ key: 'oleoMotor', quantidade: '40', origem: 'balcao', executado: false }] })).rejects.toThrow(/fora do normal/);
     const os = await abrirOS(U('u_ven'), { ...base, servicos: [{ key: 'oleoMotor', quantidade: '3,5', origem: 'balcao', executado: false }] });
@@ -669,5 +670,56 @@ describe('Editar/zerar upsell e fator de ajuste', () => {
     expect(fatorUpsellPara(dir, { ...d, fatorUpsell: -13 })).toBe(1);
     expect(fatorUpsellPara(U('u_lid'), { ...d, fatorUpsell: -13 })).toBeCloseTo(0.87);
     expect(fatorUpsellPara(U('u_lid'), { ...d, fatorUpsell: 0 })).toBe(1);
+  });
+});
+
+describe('Câmbio automático: CPF/CNPJ e termo de garantia; planilha de vendas', () => {
+  const novo = { placa: 'RAT4D56', marca: 'Toyota', modelo: 'Corolla', ano: 2019, motor: '2.0', cambio: 'automatico' as const, combustivel: 'Flex' as const };
+  const cli = { nome: 'Ana <Teste>', telefone: '(41) 98888-2222', comoConheceu: 'Google', cidade: 'Curitiba', bairro: 'Batel' };
+  const servicos = [
+    { key: 'oleoMotor' as const, quantidade: '4', origem: 'balcao' as const, executado: false },
+    { key: 'cambioAutomatico' as const, marca: 'ATF', quantidade: '8', carter: '4', origem: 'balcao' as const, executado: false },
+  ];
+  const base = { vendedorId: 'u_ven', kmPorMes: 1200, servicos, valorInicial: 1500, pedidoOlist: '100300', novoVeiculo: novo };
+
+  it('valida CPF e CNPJ pelos dígitos verificadores', () => {
+    expect(documentoValido('529.982.247-25')).toBe(true);
+    expect(documentoValido('11.222.333/0001-81')).toBe(true);
+    expect(documentoValido('529.982.247-26')).toBe(false);
+    expect(documentoValido('111.111.111-11')).toBe(false);
+    expect(documentoValido('123')).toBe(false);
+    expect(fmtDocumento('52998224725')).toBe('529.982.247-25');
+    expect(fmtDocumento('11222333000181')).toBe('11.222.333/0001-81');
+  });
+
+  it('sem CPF/CNPJ válido não abre; sem confirmar a planilha não abre; com tudo, grava CPF e a confirmação', async () => {
+    await expect(abrirOS(U('u_ven'), { ...base, planilhaVendas: true, novoCliente: cli })).rejects.toThrow(/CPF ou CNPJ/);
+    await expect(abrirOS(U('u_ven'), { ...base, planilhaVendas: true, novoCliente: { ...cli, documento: '529.982.247-26' } })).rejects.toThrow(/CPF ou CNPJ/);
+    await expect(abrirOS(U('u_ven'), { ...base, novoCliente: { ...cli, documento: '529.982.247-25' } })).rejects.toThrow(/planilha de vendas/);
+    const os = await abrirOS(U('u_ven'), { ...base, planilhaVendas: true, novoCliente: { ...cli, documento: '529.982.247-25' } });
+    const o = getDB().os.find(x => x.id === os.id)!;
+    expect(o.planilhaVendas?.por).toBe('u_ven');
+    expect(getDB().clientes.find(c => c.id === o.clienteId)!.documento).toBe('52998224725');
+  });
+
+  it('sem câmbio automático não pede CPF', async () => {
+    const os = await abrirOS(U('u_ven'), { ...base, servicos: [servicos[0]], novoVeiculo: { ...novo, placa: 'RAT4D57' }, planilhaVendas: true, novoCliente: cli });
+    expect(os.id).toBeTruthy();
+  });
+
+  it('termo sai com os dados do cliente, validade de 90 dias, 2 vias e texto protegido', async () => {
+    const os = await abrirOS(U('u_ven'), { ...base, novoVeiculo: { ...novo, placa: 'RAT4D58' }, planilhaVendas: true, novoCliente: { ...cli, documento: '52998224725' } });
+    const d = getDB();
+    const o = d.os.find(x => x.id === os.id)!;
+    const html = htmlTermoCambio({ os: o, veiculo: d.veiculos.find(v => v.id === o.veiculoId), cliente: d.clientes.find(c => c.id === o.clienteId), operador: U('u_ven'), logoUrl: 'logo.png' });
+    expect(html).toContain('Ana &lt;Teste&gt;');
+    expect(html).not.toContain('Ana <Teste>');
+    expect(html).toContain('529.982.247-25');
+    expect(html).toContain('RAT-4D58');
+    expect(html).toContain('Toyota Corolla 2019');
+    expect(html).toContain(`<td>${o.numero}</td>`);
+    expect(html).toContain('1ª VIA — CLIENTE');
+    expect(html).toContain('2ª VIA — MASTER ÓLEO');
+    expect(Date.parse(validadeGarantia(o)) - Date.parse(o.abertaEm)).toBe(90 * 864e5);
   });
 });

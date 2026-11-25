@@ -107,6 +107,27 @@ export const ultimoDiaDoMes = (mes: string) => {
 };
 
 /** Telefone brasileiro com DDD: 10 ou 11 dígitos. */
+/** CPF (11 dígitos) ou CNPJ (14), com dígitos verificadores. */
+export const documentoValido = (x?: string) => {
+  const n = (x || '').replace(/\D/g, '');
+  if (n.length !== 11 && n.length !== 14) return false;
+  if (/^(\d)\1+$/.test(n)) return false;
+  const dig = (base: string, pesos: number[]) => { const s = pesos.reduce((a, p, i) => a + Number(base[i]) * p, 0) % 11; return s < 2 ? 0 : 11 - s; };
+  if (n.length === 11) {
+    const d1 = dig(n, [10, 9, 8, 7, 6, 5, 4, 3, 2]);
+    const d2 = dig(n, [11, 10, 9, 8, 7, 6, 5, 4, 3, 2]);
+    return d1 === Number(n[9]) && d2 === Number(n[10]);
+  }
+  const d1 = dig(n, [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  const d2 = dig(n, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  return d1 === Number(n[12]) && d2 === Number(n[13]);
+};
+export const fmtDocumento = (x?: string) => {
+  const n = (x || '').replace(/\D/g, '');
+  if (n.length === 11) return n.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  if (n.length === 14) return n.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+  return x || '';
+};
 export const telefoneValido = (t?: string) => { const n = (t || '').replace(/\D/g, ''); return n.length === 10 || n.length === 11; };
 export const fmtTelefone = (t: string) => {
   const n = t.replace(/\D/g, '').slice(0, 11);

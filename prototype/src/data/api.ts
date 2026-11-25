@@ -9,7 +9,7 @@ import type {
   AtendimentoRetorno, Cambio, Checklist, Cliente, DB, EstadoItem, EstadoRecomendado, Evento, ItemInspecaoDef, ManutencaoPrevista, Meta, Ocorrencia, Oportunidade, OrdemServico, OrigemIntervalo,
   Pausa, Role, ServicoKey, ServicoOS, SituacaoOportunidade, Usuario, Veiculo, TipoCambioAuto,
 } from '../domain/types';
-import { addDias, agoraISO, diaKey, diffMin, fmtPlaca, lerReais, hojeKey, novoId, novoToken, normalizarPlaca, placaValida, primeiroNome, telefoneValido } from '../domain/util';
+import { addDias, agoraISO, diaKey, diffMin, fmtPlaca, lerReais, hojeKey, novoId, novoToken, normalizarPlaca, placaValida, primeiroNome, telefoneValido, documentoValido } from '../domain/util';
 import { idCliente, idVeiculo } from './legado';
 import { MODO_REAL } from './modo';
 import { definirProjetor } from './nuvem';
@@ -63,7 +63,7 @@ export const buscarVeiculosEClientes = (u: Usuario, termo: string) => {
 // ───────────────────────── Abertura ─────────────────────────
 
 /** Dados do cliente exigidos na abertura de OS. */
-export interface CadastroCliente { telefone: string; comoConheceu: string; comoConheceuDetalhe?: string; cidade: string; bairro: string }
+export interface CadastroCliente { telefone: string; comoConheceu: string; comoConheceuDetalhe?: string; cidade: string; bairro: string; documento?: string }
 
 export interface NovaOSInput {
   veiculoId?: string;
@@ -87,6 +87,8 @@ export interface NovaOSInput {
   abertaEm?: string;
   naoFazerTesteFreio?: boolean;
   naoFazerTesteCambio?: boolean;
+  /** "Foi incluído na planilha de vendas?" — obrigatório marcar (menos no retorno). */
+  planilhaVendas?: boolean;
 }
 
 const preenchido = (x?: string) => (x?.trim() ? x.trim() : undefined);
@@ -98,7 +100,11 @@ export const cadastroFinal = (atual: Partial<Cliente> | undefined, novo: Partial
   comoConheceuDetalhe: preenchido(novo?.comoConheceuDetalhe) ?? atual?.comoConheceuDetalhe,
   cidade: preenchido(novo?.cidade) ?? atual?.cidade,
   bairro: preenchido(novo?.bairro) ?? atual?.bairro,
+  documento: (novo?.documento || '').replace(/\D/g, '') || atual?.documento,
 });
+
+/** Troca de óleo do câmbio automático vendida no balcão: pede CPF/CNPJ e gera o termo de garantia. */
+export const temTermoCambio = (servicos: { key: string; origem?: string }[]) => servicos.some(s => s.key === 'cambioAutomatico' && (s.origem ?? 'balcao') === 'balcao');
 
 export const faltasCadastroCliente = (c: Partial<CadastroCliente>): string[] => [
   ...(!telefoneValido(c.telefone) ? ['Informe o telefone do cliente com DDD.'] : []),
@@ -124,6 +130,11 @@ export const validarNovaOS = (i: NovaOSInput, clienteAtual?: Partial<Cliente>): 
   else if (!(i.kmPorMes! > 0)) e.push('Informe quantos km o carro roda por mês (ou marque "Carro de loja").');
   else if (i.kmPorMes! > 20000) e.push('Km por mês fora do normal: confira o número.');
   if (retorno && !i.problemaRelatado?.trim()) e.push('Descreva o problema que o cliente relatou.');
+  if (!retorno && temTermoCambio(i.servicos)) {
+    const doc = i.veiculoId ? cadastroFinal(clienteAtual, i.completarCliente).documento : cadastroFinal(undefined, i.novoCliente).documento;
+    if (!documentoValido(doc)) e.push('Câmbio automático: informe o CPF ou CNPJ do cliente (vai no termo de garantia).');
+  }
+  if (!retorno && !i.planilhaVendas) e.push('Confirme que a venda foi incluída na planilha de vendas.');
   if (!retorno && !i.servicos.length) e.push('Selecione pelo menos um serviço.');
   const oleo = retorno ? undefined : i.servicos.find(s => s.key === 'oleoMotor');
   if (oleo) {
@@ -194,6 +205,7 @@ export async function abrirOS(u: Usuario, i: NovaOSInput) {
       id: novoId('os'), numero, status: 'aguardando', veiculoId: veiculo.id, clienteId: veiculo.clienteId, vendedorId: i.vendedorId, pedidoOlist: preenchido(i.pedidoOlist),
       abertaEm: i.abertaEm || agoraISO(), servicos: (i.retornoDeOsId ? [] : i.servicos).map(s => ({ ...s, origem: 'balcao' as const, executado: false })), valorInicial: i.valorInicial,
       naoFazerTesteFreio: i.naoFazerTesteFreio, naoFazerTesteCambio: i.naoFazerTesteCambio, carroDeLoja: i.carroDeLoja || undefined, criadaPor: u.id,
+      ...(!i.retornoDeOsId && i.planilhaVendas ? { planilhaVendas: { por: u.id, em: agoraISO() } } : {}),
       ...(origem ? { retornoDeOsId: origem.id, retorno: { problemaRelatado: i.problemaRelatado!.trim() } } : {}),
     };
     d.os.push(os);
@@ -840,6 +852,15 @@ export async function encerrarOSEsquecida(u: Usuario, osId: string, motivo: stri
     fecharAjudasDaOS(os, agoraISO(), u.id);
     os.canceladaMotivo = motivo.trim();
     evento(d, u.id, 'os.encerrada', 'os', os.id, `OS #${os.numero} encerrada sem execução: ${motivo.trim()}`, { antes, depois: 'encerrada', motivo });
+  });
+}
+
+/** Registra no histórico que o termo de garantia do câmbio foi impresso (quem e quando). */
+export async function registrarTermoImpresso(u: Usuario, osId: string) {
+  exigir(u, 'os.abrir');
+  return transacao(d => {
+    const os = osPorId(d, osId);
+    evento(d, u.id, 'os.termo_garantia', 'os', os.id, `Termo de garantia do câmbio da OS #${os.numero} impresso (2 vias)`);
   });
 }
 

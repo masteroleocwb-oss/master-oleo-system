@@ -118,6 +118,8 @@ console.log('Fluxos obrigatórios');
 // Abertura: litros no cárter do motor são obrigatórios quando há troca de óleo.
 async function salvarOS() {
   if (await page.$('[data-campo="oleoMotor-quantidade"]') && !(await page.$eval('[data-campo="oleoMotor-quantidade"]', e => e.value))) await preencher('[data-campo="oleoMotor-quantidade"]', '4');
+  if (await page.$('#cli-doc') && !(await page.$eval('#cli-doc', e => e.value))) await preencher('#cli-doc', '529.982.247-25');
+  if (await page.$('[data-planilha-vendas] input') && !(await page.$eval('[data-planilha-vendas] input', e => e.checked))) await page.$eval('[data-planilha-vendas] input', e => e.click());
   await clicar('Salvar e colocar na fila');
 }
 

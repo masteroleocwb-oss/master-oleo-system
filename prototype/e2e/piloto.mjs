@@ -101,12 +101,17 @@ try {
   await foto(vend, '01-nova-os');
   await preencher(vend, '[data-campo="oleoMotor-quantidade"]', '4');
   await clicar(vend, 'Salvar e colocar na fila');
+  await ate(vend, 'Confirme que a venda foi incluída na planilha de vendas');
+  ok(!(await listar('orders')).some(o => o.numeroOrdem === 7006), 'Sem marcar "incluída na planilha de vendas", a OS não abre');
+  await tocar(vend, '[data-planilha-vendas] input');
+  await clicar(vend, 'Salvar e colocar na fila');
   await ate(vend, 'OS #7006');
   const doc = (await listar('orders')).find(o => o.numeroOrdem === 7006);
   ok(!!doc, 'OS gravada em `orders` com o número seguinte (7006)');
   ok(doc.status === 'aguardando' && doc.vendedor === 'Faust' && doc.placa === 'ABC1234' && doc.oleoMotor === true && doc.valorInicial === '300.00', 'Formato do sistema atual (status, vendedor, placa, serviços, valor)');
   ok(doc.kmPorMes === 2000 && doc.pedidoOlist === '555123' && doc.cidade === 'Curitiba', 'Km por mês, pedido Olist e cadastro ficam na OS');
   ok(doc.oleoQuantidade === '4', 'Litros no cárter do motor gravados no campo do sistema atual (oleoQuantidade)');
+  ok(doc.plataforma?.planilhaVendas?.por && doc.plataforma.planilhaVendas.em, 'Confirmação da planilha de vendas gravada com quem e quando');
   ok((await lerDoc('config/contadores')).numeroOrdem === 7006, 'Contador do sistema atual avançou');
 
   console.log('2. O sistema atual enxerga a OS aberta no novo');
@@ -328,7 +333,9 @@ try {
   await vAnt.evaluate(() => [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Entrar').click());
   await ate(vAnt, 'Este sistema foi desativado. Use o sistema novo');
   ok(!!(await vAnt.$('#login-email')) && !(await txt(vAnt)).includes('Nova Ordem'), 'Vendedor não entra no sistema antigo (volta para o login com o aviso)');
-  ok((await listar('acessos')).some(a => a.resultado === 'sistema_antigo' && a.email === 'vend@teste.dev'), 'Tentativa fica no registro de acessos');
+  let barrado = false;
+  for (let i = 0; i < 20 && !barrado; i++) { barrado = (await listar('acessos')).some(a => a.resultado === 'sistema_antigo' && a.email === 'vend@teste.dev'); if (!barrado) await esperar(250); }
+  ok(barrado, 'Tentativa fica no registro de acessos');
   const anon = await nova();
   await anon.goto(NOVO + '#/login'); await anon.waitForSelector('#login-email');
   const leitura = await fetch(`${FS}/orders`).then(r => r.status);
